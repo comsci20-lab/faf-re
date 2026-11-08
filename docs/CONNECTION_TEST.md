@@ -37,10 +37,23 @@ another run can replace the completed results.
 ## Install
 
 Run `FAF-Lag-Test-Setup.exe` (installation author: **Microchip**) and select the
-rebuilt engine's folder. The installer contains only the three hook files;
-the rebuilt engine must already be installed. Existing hook files are backed
-up under `fafengine/lag-test-backups`. The installer is unsigned and does not
-download anything, configure the FAF client, or change firewall settings.
+FAF data folder (normally `C:\ProgramData\FAForever`). Close the FAF client
+and game first. The installer includes the rebuilt x64 engine, its shader
+libraries and engine hooks, including Lag Test. It copies your local FAF
+initialization files into `bin_x64` and configures the current user's FAF client
+to launch that engine, including the mod and selection-ring settings.
+
+Requires 64-bit Windows, an existing FAF/Forged Alliance installation, and the
+64-bit DirectX June 2010 runtime. Launch a normal FAF game once before setup.
+Setup reports missing prerequisites. It does not include the commercial game
+assets or replace the FAF desktop client. Every participant needs this setup.
+
+Existing replaced files and client settings are backed up under
+`FAForever/lag-test-backups/<installation-id>` with a `restore-map.json` listing
+their original locations. Failed writes trigger rollback. To return to classic
+FAF, close the client and restore its backed-up `client.prefs` to its recorded
+location. The installer remains unsigned, downloads nothing, and changes no
+firewall settings. Source/build script: `tools/lag-test-installer/`.
 
 The standard build stages `data/fafengine/` beside the engine executable. For
 an already-built engine, copy the **contents** of that directory into the
