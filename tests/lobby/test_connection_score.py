@@ -124,6 +124,23 @@ class Node:
 
 
 class ConnectionTests(unittest.TestCase):
+    def test_probe_flood_is_bounded_and_duplicate_probes_are_not_echoed(self):
+        net = Network({1: "Alice", 2: "Bob"})
+        alice, bob = Node(net, 1), Node(net, 2)
+        net.advance(1)
+        alice.start()
+        token = next(item[3]["token"] for item in net.queue if item[3].get("action") == "start")
+        net.advance(.1)
+        packet = {"Type": "FafConnectionTest1", "version": 1, "SenderID": 1,
+                  "action": "probe", "token": token, "sequence": 42}
+        before = net.serial
+        for _ in range(100):
+            bob.comm.DataReceived(bob.comm, bob.lua.table_from(packet))
+        self.assertEqual(net.serial - before, 1)
+        packet["sequence"] = 43
+        bob.comm.DataReceived(bob.comm, bob.lua.table_from(packet))
+        self.assertEqual(net.serial - before, 1)
+
     def test_deadlines_duplicates_and_missing_replies(self):
         lua = LuaRuntime()
         score = lua.execute((SOURCE / "connectionscore.lua").read_text())

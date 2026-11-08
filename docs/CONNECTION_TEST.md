@@ -36,6 +36,12 @@ another run can replace the completed results.
 
 ## Install
 
+Run `FAF-Lag-Test-Setup.exe` (installation author: **Microchip**) and select the
+rebuilt engine's folder. The installer contains only the three hook files;
+the rebuilt engine must already be installed. Existing hook files are backed
+up under `fafengine/lag-test-backups`. The installer is unsigned and does not
+download anything, configure the FAF client, or change firewall settings.
+
 The standard build stages `data/fafengine/` beside the engine executable. For
 an already-built engine, copy the **contents** of that directory into the
 `fafengine` directory beside the executable, keeping the `lua/ui/lobby/` layout.

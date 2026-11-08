@@ -9,6 +9,21 @@ local comm, host, generation = nil, nil, 0
 local capable, greeted, roster, reports = {}, {}, {}, {}
 local current, resultToken, reportDeadline, button, popup, body
 local messageType = 'FafConnectionTest1'
+local receiveLimits, lastStart = {}, -100
+
+local function CleanReport(report)
+    if type(report) ~= 'table' or type(report.links) ~= 'table' then return nil end
+    local clean = {links = {}, invalid = report.invalid and true or nil}
+    for id in pairs(roster) do
+        local link = report.links[id]
+        if type(link) == 'table' and link.sent == Score.SampleCount
+            and type(link.onTime) == 'number' and link.onTime >= 0
+            and link.onTime <= Score.SampleCount and link.onTime == math.floor(link.onTime) then
+            clean.links[id] = {sent = Score.SampleCount, onTime = link.onTime}
+        end
+    end
+    return clean
+end
 
 local function LocalID() return tonumber(comm:GetLocalPlayerID()) end
 local function Peers()
@@ -70,8 +85,9 @@ end
 local function Begin(token)
     reports, resultToken, reportDeadline = {}, token, nil
     local now = GetSystemTimeSeconds()
+    lastStart = now
     current = {token = token, start = now, last = now, next = now,
-        sequence = 0, links = {}, invalid = nil}
+        sequence = 0, links = {}, received = {}, invalid = nil}
     for id in pairs(roster) do if id ~= LocalID() then current.links[id] = Score.New() end end
     status = 'Testing for about 60 seconds. Keep the game responsive; avoid CPU benchmarks.'
     Refresh()
@@ -80,6 +96,9 @@ end
 local function Start()
     if not comm:IsHost() then status = 'Only the host can start the test.'; Refresh(); return end
     if current then return end
+    if GetSystemTimeSeconds() - lastStart < 65 then
+        status = 'Please wait before starting another test.'; Refresh(); return
+    end
     roster, reports = Peers(), {}
     local count = 0
     for id, name in pairs(roster) do
@@ -136,6 +155,7 @@ end
 function Attach(connection)
     if comm == connection then return end
     comm, host, capable, greeted, reports, roster, current, resultToken, reportDeadline = connection, nil, {}, {}, {}, {}, nil, nil, nil
+    receiveLimits, lastStart = {}, -100
     local this = comm
     local oldHosting, oldConnected = comm.Hosting, comm.ConnectionToHostEstablished
     comm.Hosting = function(self)
@@ -150,29 +170,42 @@ function Attach(connection)
     comm.DataReceived = function(self, data)
         if data.Type ~= messageType then return oldReceive(self, data) end
         local sender = tonumber(data.SenderID)
-        if data.version ~= 1 or not sender or not Peers()[sender] then return end
+        if data.version ~= 1 or not sender then return end
+        local now = GetSystemTimeSeconds()
+        local limit = receiveLimits[sender]
+        if not limit or now - limit.start >= 1 then
+            limit = {start = now, count = 0}; receiveLimits[sender] = limit
+        end
+        limit.count = limit.count + 1
+        if limit.count > 32 or not Peers()[sender] then return end
         if data.action == 'hello' then
+            if capable[sender] then return end
             capable[sender] = true
             Send(sender, 'helloReply')
         elseif data.action == 'helloReply' then capable[sender] = true
         elseif data.action == 'start' and sender == host and type(data.token) == 'string'
-            and string.len(data.token) < 100 and not current then
+            and string.len(data.token) < 100 and not current
+            and data.token ~= resultToken and now - lastStart >= 65 then
             roster = Peers()
             Begin(data.token)
         elseif current and data.token == current.token and roster[sender] then
             if data.action == 'probe' and type(data.sequence) == 'number'
                 and data.sequence >= 1 and data.sequence <= Score.SampleCount
                 and data.sequence == math.floor(data.sequence) then
+                local received = current.received[sender] or {}
+                current.received[sender] = received
+                if received[data.sequence] then return end
+                received[data.sequence] = true
                 Send(sender, 'echo', {token = data.token, sequence = data.sequence})
             elseif data.action == 'echo' and current.links[sender] then
                 current.links[sender]:Reply(data.sequence, GetSystemTimeSeconds())
             elseif data.action == 'report' and type(data.report) == 'table' and not reports[sender] then
                 -- Only the engine-authenticated sender can provide its own row.
-                reports[sender] = data.report
+                reports[sender] = CleanReport(data.report)
             end
         elseif not current and data.action == 'report' and type(data.report) == 'table'
             and roster[sender] and not reports[sender] and data.token == resultToken then
-            reports[sender] = data.report
+            reports[sender] = CleanReport(data.report)
         end
         Refresh()
     end
@@ -222,7 +255,7 @@ function Attach(connection)
                 Refresh()
             end
             for id in pairs(greeted) do
-                if not peers[id] then greeted[id], capable[id] = nil, nil end
+                if not peers[id] then greeted[id], capable[id], receiveLimits[id] = nil, nil, nil end
             end
             if not current and reportDeadline then Refresh() end
             WaitSeconds(0.05)
