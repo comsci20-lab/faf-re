@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
+#include <vector>
 
 #include "boost/shared_ptr.h"
 #include "gpg/core/containers/ArchiveSerialization.h"
@@ -923,6 +924,38 @@ namespace moho
           }
         }
       }
+      // Engine addition: expose the same per-receiver buffers as DrawNetworkStats.
+      // No packets, simulation commands or peer reports are changed.
+      uint32_t dispatched = 0;
+      uint32_t available = 0;
+      std::vector<int32_t> ackSnapshot;
+      {
+        // Copy under the manager lock, then release it before any Lua allocation.
+        boost::recursive_mutex::scoped_lock diagnosticsLock(clientManager->mLock);
+        client->GetLatestBeatDispatchedRemote(dispatched);
+        client->GetAvailableBeatRemote(available);
+        const auto* const acks = client->GetLatestAcksVector();
+        if (acks != nullptr && dispatched != 0) {
+          for (std::size_t peer = 0; peer < clientCount && peer < acks->size(); ++peer) {
+            ackSnapshot.push_back((*acks)[peer]);
+          }
+        }
+      }
+      LuaPlus::LuaObject diagnostics{};
+      diagnostics.AssignNewTable(state, 0, 0);
+      diagnostics.SetInteger("version", 1);
+      diagnostics.SetNumber("dispatched", dispatched);
+      diagnostics.SetInteger("available", static_cast<int32_t>(available - dispatched));
+      LuaPlus::LuaObject buffers{};
+      buffers.AssignNewTable(state, 0, 0);
+      for (std::size_t peer = 0; peer < ackSnapshot.size(); ++peer) {
+        if (ackSnapshot[peer] >= 0) {
+          buffers.SetInteger(static_cast<int>(peer + 1),
+            static_cast<int32_t>(static_cast<uint32_t>(ackSnapshot[peer]) - dispatched));
+        }
+      }
+      diagnostics.SetObject("buffers", buffers);
+      clientEntry.SetObject("fafReNetwork", diagnostics);
 
       LuaPlus::LuaObject commandSources{};
       commandSources.AssignNewTable(state, 0, 0);
