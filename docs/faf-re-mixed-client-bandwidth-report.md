@@ -10,7 +10,7 @@ Tested upstream engine base: `e4cc5d8b03cc29a9100fa29f08eea57f6aaa0a95`, x64 Rel
 
 ## Finding
 
-In a local 12-player reproduction, one faf-re client plus eleven classic FAF clients ran at approximately 7.1â€“7.4 simulation ticks/second instead of the normal target of ten. Raising **only the faf-re client's `net_MaxSendRate` from 2048 to 8192 bytes/second per peer**, with order-stream checks enabled, restored 9.75 ticks/second. No crash or desync was reported in that completed run.
+In a local 12-player reproduction, one faf-re client plus eleven classic FAF clients ran at approximately 7.1-7.4 simulation ticks/second instead of the normal target of ten. Raising **only the faf-re client's `net_MaxSendRate` from 2048 to 8192 bytes/second per peer**, with order-stream checks enabled, restored 9.75 ticks/second. No crash or desync was reported in that completed run.
 
 This strongly identifies the combination of larger acknowledgement messages and the unchanged send budget as the bottleneck in this reproduction. It is not an inherent consequence of 64-bit execution or a fast CPU forcing slower machines to render faster.
 
@@ -21,7 +21,7 @@ This strongly identifies the combination of larger acknowledgement messages and 
 - `src/moho/net/NetConVars.cpp`: checks are enabled by default, but `net_MaxSendRate` remains the retail value of **2048**.
 - `src/moho/net/CNetUDPConnection.cpp`, `GetSentTime`, `GetBacklogTimeout`, and the send path: outgoing packet bytes accumulate against a per-connection rate budget; excess backlog delays sending.
 
-At twelve senders and approximately ten advances per sender per second, uncompressed ACK messages alone are approximately `12 Ã— 10 Ã— 24 = 2880 bytes/second` to each remote peer, before other traffic. This is an illustrative estimate, not a packet capture: advances can be batched, transport overhead and compression affect the wire rate, and hash data is difficult to compress. Delayed confirmations hold up the lockstep simulation for everyone.
+At twelve senders and approximately ten advances per sender per second, uncompressed ACK messages alone are approximately `12 * 10 * 24 = 2880 bytes/second` to each remote peer, before other traffic. This is an illustrative estimate, not a packet capture: advances can be batched, transport overhead and compression affect the wire rate, and hash data is difficult to compress. Delayed confirmations hold up the lockstep simulation for everyone.
 
 Classic peers completed the mixed tests; they do not provide the extra order-stream comparison themselves. This report does not claim compatibility with every historical classic build.
 
