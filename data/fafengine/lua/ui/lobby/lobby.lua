@@ -26,6 +26,7 @@ end
 
 local originalReallyCreateLobby = ReallyCreateLobby
 function ReallyCreateLobby(protocol, localPort, name, uid, traversal, over, exitBehavior, hasGame)
+    import('/fafengine/lua/ui/translation.lua').Reset()
     if microchipSimWorkers ~= nil then
         ConExecute('sim_Workers ' .. tostring(microchipSimWorkers))
         LOG('Microchip lobby: simulation workers requested=' .. tostring(microchipSimWorkers))
@@ -33,6 +34,18 @@ function ReallyCreateLobby(protocol, localPort, name, uid, traversal, over, exit
     parent = nil
     originalReallyCreateLobby(protocol, localPort, name, uid, traversal, over, exitBehavior, hasGame)
     if connection then ConnectionTest.Attach(connection) end
+end
+
+local originalAddChatText = AddChatText
+function AddChatText(text, playerID, scrollToBottom)
+    originalAddChatText(text, playerID, scrollToBottom)
+    if not playerID then return end
+    local currentConnection = connection
+    import('/fafengine/lua/ui/translation.lua').Translate(text, function(english)
+        if currentConnection and connection == currentConnection then
+            originalAddChatText(english, playerID, false)
+        end
+    end)
 end
 
 local originalCreateUI = CreateUI

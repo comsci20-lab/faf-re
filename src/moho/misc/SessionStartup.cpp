@@ -1,4 +1,5 @@
 #include "moho/misc/SessionStartup.h"
+#include "moho/misc/OfflineTranslation.h"
 
 #include <Windows.h>
 
@@ -1608,6 +1609,7 @@ namespace
       (void)::moho::func_PrefetchSession_LuaFuncDef();
       (void)::moho::func_GetSessionClients_LuaFuncDef();
       (void)::moho::func_InternalSaveGame_LuaFuncDef();
+      ::moho::RegisterOfflineTranslation();
     }
   };
 
