@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
@@ -11,6 +11,8 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using System.Drawing;
+using System.Drawing.Drawing2D;
 
 [assembly: AssemblyTitle("Microchip faf-re builder")]
 [assembly: AssemblyDescription("Download, build and install faf-re and the lobby Lag Test")]
@@ -258,6 +260,27 @@ internal static class Setup
     }
 }
 
+internal sealed class FafButton : Button
+{
+    bool hover, pressed;
+    internal bool Primary;
+    internal FafButton() { FlatStyle = FlatStyle.Flat; Cursor = Cursors.Hand; SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true); }
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = pressed = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { pressed = true; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { pressed = false; Invalidate(); base.OnMouseUp(e); }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+        Color top = !Enabled ? Color.FromArgb(27, 36, 43) : pressed ? Color.FromArgb(20, 46, 58) : hover ? Color.FromArgb(51, 80, 94) : Color.FromArgb(39, 57, 69);
+        using (var fill = new LinearGradientBrush(bounds, top, Color.FromArgb(15, 26, 34), 90f)) e.Graphics.FillRectangle(fill, bounds);
+        using (var edge = new Pen(Enabled && (hover || Primary) ? Color.FromArgb(105, 211, 228) : Color.FromArgb(64, 85, 98))) e.Graphics.DrawRectangle(edge, bounds);
+        using (var highlight = new Pen(Color.FromArgb(68, 93, 106))) e.Graphics.DrawLine(highlight, 5, 2, Width - 6, 2);
+        TextRenderer.DrawText(e.Graphics, Text, Font, bounds, Enabled ? Color.FromArgb(220, 239, 244) : Color.FromArgb(103, 121, 133), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(4, 4, Width - 9, Height - 9), Color.LightCyan, Color.Transparent);
+    }
+}
+
 internal sealed class BuilderForm : Form
 {
     readonly ComboBox versions = new ComboBox { Left = 145, Top = 72, Width = 410, DropDownStyle = ComboBoxStyle.DropDownList };
@@ -266,24 +289,23 @@ internal sealed class BuilderForm : Form
     readonly TextBox log = new TextBox { Left = 20, Top = 302, Width = 650, Height = 210, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
     readonly CheckBox closed = new CheckBox { Left = 20, Top = 193, Width = 650, Text = "I have closed the FAF client and game." };
     readonly Label installedInfo = new Label { Left = 20, Top = 216, Width = 650, Height = 18 };
-    readonly Button install = new Button { Left = 20, Top = 238, Width = 200, Height = 38, Text = "Install faf-re" };
-    readonly Button lag = new Button { Left = 237, Top = 238, Width = 200, Height = 38, Text = "Install Lag Test" };
-    readonly Button connect = new Button { Left = 454, Top = 238, Width = 216, Height = 38, Text = "Connect with FAF client" };
-    readonly Button refresh = new Button { Left = 565, Top = 69, Width = 105, Text = "Refresh" };
-    readonly Button browseEngine = new Button { Left = 565, Top = 109, Width = 105, Text = "Browse..." };
-    readonly Button browseData = new Button { Left = 565, Top = 149, Width = 105, Text = "Browse..." };
+    readonly FafButton install = new FafButton { Left = 20, Top = 238, Width = 200, Height = 38, Text = "Install faf-re" };
+    readonly FafButton lag = new FafButton { Left = 237, Top = 238, Width = 200, Height = 38, Text = "Install Lag Test" };
+    readonly FafButton connect = new FafButton { Left = 454, Top = 238, Width = 216, Height = 38, Text = "Connect with FAF client" };
+    readonly FafButton refresh = new FafButton { Left = 565, Top = 69, Width = 105, Text = "Refresh" };
+    readonly FafButton browseEngine = new FafButton { Left = 565, Top = 109, Width = 105, Text = "Browse..." };
+    readonly FafButton browseData = new FafButton { Left = 565, Top = 149, Width = 105, Text = "Browse..." };
     bool busy;
     string Engine { get { return engines.SelectedItem as string; } }
     internal BuilderForm()
     {
-        Text = "Microchip faf-re builder"; ClientSize = new System.Drawing.Size(690, 535);
+        Text = "Microchip faf-re builder"; ClientSize = new Size(900, 768);
+        AutoScaleMode = AutoScaleMode.Dpi; Font = new Font("Segoe UI", 10f);
+        BackColor = Color.FromArgb(8, 14, 20); ForeColor = Color.FromArgb(218, 231, 238);
+        DoubleBuffered = true;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen;
-        Controls.AddRange(new Control[] {
-            new Label { Left = 20, Top = 15, Width = 650, Height = 45, Text = "Microchip faf-re builder | Author: Microchip\r\nBuilds the selected x64 engine and installs Lag Test. Connect to FAF separately." },
-            new Label { Left = 20, Top = 75, Width = 120, Text = "Version" },
-            new Label { Left = 20, Top = 115, Width = 120, Text = "Installed faf-re" },
-            new Label { Left = 20, Top = 155, Width = 120, Text = "FAF data folder" },
-            versions, engines, data, closed, installedInfo, install, lag, connect, refresh, browseEngine, browseData, log });
+        Controls.AddRange(new Control[] { versions, engines, data, closed, installedInfo, install, lag, connect, refresh, browseEngine, browseData, log });
+        ApplyTheme();
         data.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "FAForever");
         Detect();
         engines.SelectedIndexChanged += delegate { UpdateButtons(); };
@@ -296,6 +318,69 @@ internal sealed class BuilderForm : Form
         connect.Click += async delegate { await Act("Connect"); };
         Shown += async delegate { await LoadVersions(); };
         FormClosing += (s, e) => { if (busy) { e.Cancel = true; MessageBox.Show(this, "Please wait for the current operation to finish."); } };
+    }
+    void Caption(string text, int x, int y, int width, float size, Color color, FontStyle style = FontStyle.Regular)
+    {
+        Controls.Add(new Label { Text = text, Left = x, Top = y, Width = width, Height = size >= 20 ? 42 : 26, ForeColor = color, BackColor = Color.Transparent, Font = new Font("Segoe UI", size, style) });
+    }
+    void ApplyTheme()
+    {
+        Color cyan = Color.FromArgb(114, 215, 230), muted = Color.FromArgb(145, 169, 184);
+        Caption("FORGED ALLIANCE FOREVER", 30, 15, 500, 9, cyan, FontStyle.Bold);
+        Caption("Microchip faf-re builder", 28, 36, 690, 25, ForeColor, FontStyle.Bold);
+        Caption("Engine installation   /   Lag Test   /   FAF connection", 31, 84, 650, 10, muted);
+        Caption("01  /  INSTALLATION", 44, 139, 500, 11, cyan, FontStyle.Bold);
+        Caption("Version", 44, 183, 150, 10, ForeColor);
+        Caption("Installed faf-re", 44, 229, 150, 10, ForeColor);
+        Caption("FAF data folder", 44, 275, 150, 10, ForeColor);
+        versions.SetBounds(208, 177, 514, 30); refresh.SetBounds(738, 177, 116, 30);
+        engines.SetBounds(208, 223, 514, 30); browseEngine.SetBounds(738, 223, 116, 30);
+        data.SetBounds(208, 269, 514, 30); browseData.SetBounds(738, 269, 116, 30);
+        installedInfo.SetBounds(208, 312, 646, 22); installedInfo.ForeColor = cyan;
+        closed.SetBounds(44, 345, 810, 26); closed.ForeColor = muted; closed.BackColor = Color.FromArgb(17, 28, 38);
+        Caption("02  /  BUILD ENGINE", 44, 417, 240, 10, cyan, FontStyle.Bold);
+        Caption("03  /  PREPARE LOBBY", 334, 417, 240, 10, cyan, FontStyle.Bold);
+        Caption("04  /  CONNECT TO FAF", 624, 417, 240, 10, cyan, FontStyle.Bold);
+        install.SetBounds(44, 452, 232, 44); install.Primary = true;
+        lag.SetBounds(334, 452, 232, 44); connect.SetBounds(624, 452, 232, 44);
+        Caption("Download, build and install faf-re.", 44, 509, 236, 9, muted);
+        Caption("Add Lag Test to your engine.", 334, 509, 236, 9, muted);
+        Caption("Set FAF to use your engine.", 624, 509, 236, 9, muted);
+        Caption("ACTIVITY LOG", 30, 572, 300, 10, cyan, FontStyle.Bold);
+        log.SetBounds(30, 604, 840, 124); log.Font = new Font("Consolas", 9f);
+        log.BackColor = Color.FromArgb(6, 12, 17); log.ForeColor = Color.FromArgb(169, 198, 212); log.BorderStyle = BorderStyle.FixedSingle;
+        Caption("AUTHOR  /  Microchip", 30, 740, 350, 9, muted);
+        Caption("WINDOWS  /  X64", 726, 740, 150, 9, cyan);
+        foreach (var combo in new[] { versions, engines })
+        {
+            combo.FlatStyle = FlatStyle.Flat; combo.BackColor = Color.FromArgb(8, 18, 26); combo.ForeColor = ForeColor;
+            combo.DrawMode = DrawMode.OwnerDrawFixed; combo.ItemHeight = 24; combo.DropDownWidth = 646;
+            combo.DrawItem += (sender, e) => {
+                if (e.Index < 0) return;
+                var box = (ComboBox)sender;
+                bool selected = (e.State & DrawItemState.Selected) != 0;
+                using (var brush = new SolidBrush(selected ? Color.FromArgb(36, 68, 83) : Color.FromArgb(8, 18, 26))) e.Graphics.FillRectangle(brush, e.Bounds);
+                var bounds = new Rectangle(e.Bounds.X + 8, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height);
+                TextRenderer.DrawText(e.Graphics, Convert.ToString(box.Items[e.Index]), box.Font, bounds, box.Enabled ? ForeColor : muted, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                e.DrawFocusRectangle();
+            };
+        }
+        data.BackColor = Color.FromArgb(8, 18, 26); data.ForeColor = ForeColor; data.BorderStyle = BorderStyle.FixedSingle;
+        foreach (var button in new[] { install, lag, connect, refresh, browseEngine, browseData }) button.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        using (var fill = new LinearGradientBrush(new Rectangle(0, 0, Width, 112), Color.FromArgb(30, 48, 61), Color.FromArgb(8, 14, 20), 0f)) e.Graphics.FillRectangle(fill, 0, 0, Width, 112);
+        using (var accent = new Pen(Color.FromArgb(114, 215, 230), 2)) e.Graphics.DrawLine(accent, 30, 112, 155, 112);
+        foreach (var rect in new[] { new Rectangle(24, 126, 852, 260), new Rectangle(24, 402, 272, 148), new Rectangle(314, 402, 272, 148), new Rectangle(604, 402, 272, 148) })
+        {
+            int cut = 9;
+            var points = new[] { new Point(rect.Left + cut, rect.Top), new Point(rect.Right - cut, rect.Top), new Point(rect.Right, rect.Top + cut), new Point(rect.Right, rect.Bottom - cut), new Point(rect.Right - cut, rect.Bottom), new Point(rect.Left + cut, rect.Bottom), new Point(rect.Left, rect.Bottom - cut), new Point(rect.Left, rect.Top + cut) };
+            using (var fill = new SolidBrush(Color.FromArgb(17, 28, 38))) e.Graphics.FillPolygon(fill, points);
+            using (var border = new Pen(Color.FromArgb(52, 78, 94))) e.Graphics.DrawPolygon(border, points);
+        }
+        using (var border = new Pen(Color.FromArgb(52, 78, 94))) e.Graphics.DrawLine(border, 30, 733, 870, 733);
     }
     void Progress(string text)
     {
