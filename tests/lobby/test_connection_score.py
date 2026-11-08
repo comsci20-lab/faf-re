@@ -54,6 +54,14 @@ class Node:
         g.transport = lambda receiver, data: network.send(uid, int(receiver), data)
         self.lua.execute("""
             buttons = {}
+            preferences, commands = {}, {}
+            function GetPreference(key, fallback)
+                if preferences[key] == nil then return fallback end
+                return preferences[key]
+            end
+            function SetPreference(key, value) preferences[key] = value end
+            function ConExecute(command) table.insert(commands, command) end
+            function LOG() end
             function control()
                 local c = {}
                 for _, name in ipairs({'Width', 'Height', 'Depth'}) do c[name] = {Set=function() end} end
@@ -64,7 +72,7 @@ class Node:
             end
             ui = {bodyFont='body', titleFont='title', CreateText=control}
             ui.CreateButtonStd = function(parent, texture, text)
-                local c = control(); c.label=text; table.insert(buttons, c); return c
+                local c = control(); c.label={text=text, SetText=function(self,value) self.text=value end}; table.insert(buttons, c); return c
             end
             layout = setmetatable({}, {__index=function() return function() end end})
             function GetSystemTimeSeconds() return now end
@@ -121,7 +129,7 @@ class Node:
         network.nodes[uid] = self
 
     def start(self):
-        self.lua.execute("buttons[2].OnClick()")
+        self.lua.execute("buttons[3].OnClick()")
 
     @property
     def text(self):
@@ -129,6 +137,26 @@ class Node:
 
 
 class ConnectionTests(unittest.TestCase):
+    def test_checksum_toggle_is_local_persistent_and_applied_before_game(self):
+        net = Network({1: "Alice", 2: "Bob"})
+        alice, bob = Node(net, 1), Node(net, 2)
+        alice.lua.execute("""
+            assert(commands[1] == 'net_CheckOrderStreams 1')
+            assert(commands[2] == 'net_MaxSendRate 8192')
+            buttons[2].OnClick()
+            assert(preferences.microchip_extra_checksums == false)
+            assert(commands[3] == 'net_CheckOrderStreams 0')
+            assert(buttons[2].label.text == 'Checksums: Off')
+            Show(control())
+            assert(commands[4] == 'net_CheckOrderStreams 0')
+            buttons[6].OnClick()
+            assert(preferences.microchip_extra_checksums == true)
+            assert(commands[5] == 'net_CheckOrderStreams 1')
+            assert(commands[6] == 'net_MaxSendRate 8192')
+        """)
+        self.assertEqual(bob.lua.globals().commands[1], 'net_CheckOrderStreams 1')
+        self.assertEqual(net.serial, 0)
+
     def test_join_callback_preserves_player_name_and_host_id(self):
         net = Network({1: "Alice", 2: "Bob"})
         bob = Node(net, 2)

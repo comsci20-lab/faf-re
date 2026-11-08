@@ -1,6 +1,7 @@
+param([string]$OutputPath)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$output = Join-Path $root 'out/Microchip faf-re builder.exe'
+$output = if ($OutputPath) { [IO.Path]::GetFullPath($OutputPath) } else { Join-Path $root 'out/Microchip faf-re builder.exe' }
 New-Item -ItemType Directory -Path (Split-Path $output) -Force | Out-Null
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.Core.dll', "/out:$output", "/win32manifest:$PSScriptRoot/app.manifest", "/resource:$PSScriptRoot/Build-FafRe.ps1,worker.ps1")

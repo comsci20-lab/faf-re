@@ -7,7 +7,7 @@ local Popup = import('/lua/ui/controls/popups/popup.lua').Popup
 
 local comm, host, generation = nil, nil, 0
 local capable, greeted, roster, reports = {}, {}, {}, {}
-local current, resultToken, reportDeadline, button, popup, body
+local current, resultToken, reportDeadline, button, checksumButton, popup, body
 local messageType = 'FafConnectionTest1'
 local receiveLimits, lastStart = {}, -100
 
@@ -117,6 +117,15 @@ end
 
 function Show(parent, anchor)
     if button then button:Destroy() end
+    if checksumButton then checksumButton:Destroy() end
+    local checksums = GetPreference('microchip_extra_checksums', true) ~= false
+    local function ApplyChecksums()
+        ConExecute('net_CheckOrderStreams ' .. (checksums and '1' or '0'))
+        -- Extra ACK digests exceed the original 2 KB/s budget in large lobbies.
+        if checksums then ConExecute('net_MaxSendRate 8192') end
+        LOG('Microchip lobby: extra checksums ' .. (checksums and 'on; send limit 8192 bytes/sec' or 'off'))
+    end
+    ApplyChecksums()
     button = UIUtil.CreateButtonStd(parent, '/BUTTON/medium/', 'Lag Test', 12)
     Layout.SetDimensions(button, 130, 32)
     if anchor then
@@ -126,6 +135,22 @@ function Show(parent, anchor)
         Layout.AtRightTopIn(button, parent, 25, 45)
     end
     Layout.DepthOverParent(button, parent, 100)
+    checksumButton = UIUtil.CreateButtonStd(parent, '/BUTTON/medium/', checksums and 'Checksums: On' or 'Checksums: Off', 12)
+    Layout.SetDimensions(checksumButton, 130, 32)
+    if anchor then
+        Layout.AtHorizontalCenterIn(button, anchor:GetParent(), -69)
+        Layout.AtHorizontalCenterIn(checksumButton, anchor:GetParent(), 69)
+        checksumButton.Top:Set(function() return anchor.Bottom() + 4 end)
+    else
+        Layout.AtRightTopIn(checksumButton, parent, 163, 45)
+    end
+    Layout.DepthOverParent(checksumButton, parent, 100)
+    checksumButton.OnClick = function()
+        checksums = not checksums
+        SetPreference('microchip_extra_checksums', checksums)
+        ApplyChecksums()
+        checksumButton.label:SetText(checksums and 'Checksums: On' or 'Checksums: Off')
+    end
     button.OnClick = function()
         if popup then popup:Destroy(); popup = nil; body = nil end
         local content = Group(parent)
