@@ -2,200 +2,379 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
-using System.IO.Compression;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Diagnostics;
+using System.Threading.Tasks;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("FAF Lag Test Installer")]
-[assembly: AssemblyDescription("Installs the lobby Lag Test hook for the rebuilt FAF engine")]
+[assembly: AssemblyTitle("Microchip faf-re builder")]
+[assembly: AssemblyDescription("Download, build and install faf-re and the lobby Lag Test")]
 [assembly: AssemblyCompany("Microchip")]
-[assembly: AssemblyProduct("FAF Lag Test")]
+[assembly: AssemblyProduct("Microchip faf-re builder")]
 [assembly: AssemblyCopyright("Author: Microchip")]
-[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyVersion("2.0.0.0")]
 
-internal static class Installer
+internal sealed class VersionChoice
 {
-    private static Dictionary<string, byte[]> Payload()
+    public string Label, Revision;
+    public override string ToString() { return Label; }
+}
+
+internal static class Setup
+{
+    internal static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 16777216 };
+    internal static string Prefs { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Forged Alliance Forever", "client.prefs"); } }
+    internal static string Work { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microchip", "faf-re-builder"); } }
+    internal static readonly string[] Hooks = { "lobby.lua", "connectiontest.lua", "connectionscore.lua" };
+    internal static byte[] Resource(string name)
     {
-        var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-        using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("engine.zip"))
-        using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
-            foreach (var entry in zip.Entries)
+        using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name))
+        {
+            if (stream == null) throw new InvalidDataException("Missing installer resource: " + name);
+            using (var buffer = new MemoryStream()) { stream.CopyTo(buffer); return buffer.ToArray(); }
+        }
+    }
+    internal static void CheckPath(string path)
+    {
+        for (var dir = new DirectoryInfo(Path.GetFullPath(path)); dir != null; dir = dir.Parent)
+            if (dir.Exists && (dir.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Choose a folder without links or junctions.");
+    }
+    internal static Dictionary<string, object> ReadSettings(string prefs)
+    {
+        if (!File.Exists(prefs)) throw new IOException("FAF client settings were not found. Open and close the FAF client first.");
+        return Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(prefs));
+    }
+    internal static Dictionary<string, object> GameSettings(Dictionary<string, object> settings)
+    {
+        object game;
+        if (!settings.TryGetValue("forgedAlliance", out game) || !(game is Dictionary<string, object>)) throw new IOException("The FAF client settings format is unsupported.");
+        return (Dictionary<string, object>)game;
+    }
+    internal static bool IsEngine(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(Path.Combine(path, "fafengine"))) return false;
+            using (var reader = new BinaryReader(File.OpenRead(Path.Combine(path, "main_x64.exe"))))
             {
-                string name = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
-                if (Path.IsPathRooted(name) || name.Contains("..") || name.Contains(":"))
-                    throw new InvalidDataException("Invalid package path.");
-                using (var source = entry.Open())
-                using (var buffer = new MemoryStream())
+                if (reader.ReadUInt16() != 0x5a4d) return false;
+                reader.BaseStream.Position = 0x3c;
+                int offset = reader.ReadInt32();
+                if (offset < 64 || offset > reader.BaseStream.Length - 6) return false;
+                reader.BaseStream.Position = offset;
+                return reader.ReadUInt32() == 0x4550 && reader.ReadUInt16() == 0x8664;
+            }
+        }
+        catch { return false; }
+    }
+    internal static List<string> Detect(string prefs, IEnumerable<string> candidates)
+    {
+        var paths = new List<string>();
+        try
+        {
+            var game = GameSettings(ReadSettings(prefs)); object value;
+            if (game.TryGetValue("executionDirectory", out value) && value is string) paths.Add((string)value);
+            if (game.TryGetValue("executableDecorator", out value) && value is string)
+            {
+                string command = ((string)value).Trim();
+                if (command.StartsWith("\""))
                 {
-                    source.CopyTo(buffer);
-                    if (buffer.Length == 0) throw new InvalidDataException("Empty package file.");
-                    files.Add(name, buffer.ToArray());
+                    int end = command.IndexOf('"', 1);
+                    if (end > 1) paths.Add(Path.GetDirectoryName(command.Substring(1, end - 1)));
                 }
             }
-        foreach (string required in new[] { "main_x64.exe", "dxcompiler.dll", "dxil.dll", @"fafengine\lua\ui\lobby\lobby.lua", @"fafengine\lua\ui\lobby\connectiontest.lua", @"fafengine\lua\ui\lobby\connectionscore.lua" })
-            if (!files.ContainsKey(required)) throw new InvalidDataException("Missing " + required);
-        return files;
-    }
-
-    private static string Install(string root, string prefs)
-    {
-        if (!Environment.Is64BitOperatingSystem) throw new IOException("64-bit Windows is required.");
-        root = Path.GetFullPath(root);
-        string source = Path.Combine(root, "bin"), target = Path.Combine(root, "bin_x64");
-        if (!File.Exists(Path.Combine(root, "fa_path.lua")) || !File.Exists(Path.Combine(source, "init_faf.lua")))
-            throw new IOException("Choose the FAF data folder containing fa_path.lua and bin. Launch a normal FAF game once first.");
-        if (!File.Exists(prefs)) throw new IOException("FAF client settings were not found. Open and close the FAF client first.");
-        CheckPath(target); CheckPath(Path.GetDirectoryName(prefs));
-        var json = new JavaScriptSerializer { MaxJsonLength = 16777216 };
-        var settings = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(prefs));
-        object value;
-        var game = settings.TryGetValue("forgedAlliance", out value) ? value as Dictionary<string, object> : null;
-        if (game == null) throw new IOException("The FAF client settings format is unsupported.");
-        var files = Payload();
-        foreach (string name in new[] { "init.lua", "init_faf.lua", "init_fafbeta.lua", "init_ladder1v1.lua", "init_nonxt.lua", "SupComDataPath.lua", "SupComDataPathFAF.lua" })
-        {
-            string path = Path.Combine(source, name);
-            if (File.Exists(path)) files[name] = File.ReadAllBytes(path);
         }
-        var writes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in files) writes.Add(Path.Combine(target, file.Key), file.Value);
-        game["executionDirectory"] = target;
-        game["executableDecorator"] = "\"" + Path.Combine(target, "main_x64.exe") + "\" /con lua_AllowPrecompiledChunks=1;ren_GpuSelectBrackets=0";
-        writes.Add(Path.GetFullPath(prefs), System.Text.Encoding.UTF8.GetBytes(json.Serialize(settings)));
-        foreach (string path in writes.Keys)
+        catch { /* A missing client preference file must not stop engine detection. */ }
+        paths.AddRange(candidates);
+        return paths.Where(p => !string.IsNullOrWhiteSpace(p) && IsEngine(p)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+    internal static string WriteFiles(string backupRoot, Dictionary<string, byte[]> files)
+    {
+        foreach (string path in files.Keys)
         {
             CheckPath(Path.GetDirectoryName(path));
-            if (File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("Cannot replace linked files.");
+            if (File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Cannot replace linked files.");
         }
-        string backup = Path.Combine(root, "lag-test-backups", Guid.NewGuid().ToString("N"));
-        CheckPath(backup); Directory.CreateDirectory(backup);
-        var originals = new Dictionary<string, string>();
-        int index = 0;
-        foreach (string path in writes.Keys)
+        string backup = Path.Combine(backupRoot, "lag-test-backups", Guid.NewGuid().ToString("N"));
+        CheckPath(backup);
+        // Client preferences can contain private account settings; do not inherit
+        // the shared FAF data folder's read permissions for these backups.
+        var security = new DirectorySecurity(); security.SetAccessRuleProtection(true, false);
+        security.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        Directory.CreateDirectory(backup, security);
+        var originals = new Dictionary<string, string>(); int index = 0;
+        foreach (string path in files.Keys)
         {
             string saved = null;
-            if (File.Exists(path)) { saved = Path.Combine(backup, (++index).ToString() + "-" + Path.GetFileName(path)); File.Copy(path, saved); }
+            if (File.Exists(path)) { saved = Path.Combine(backup, (++index) + "-" + Path.GetFileName(path)); File.Copy(path, saved); }
             originals.Add(path, saved);
         }
-        File.WriteAllText(Path.Combine(backup, "restore-map.json"), json.Serialize(originals));
+        File.WriteAllText(Path.Combine(backup, "restore-map.json"), Json.Serialize(originals));
         var changed = new List<string>();
         try
         {
-            foreach (var file in writes)
+            foreach (var file in files)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(file.Key));
-                changed.Add(file.Key);
-                File.WriteAllBytes(file.Key, file.Value);
+                changed.Add(file.Key); File.WriteAllBytes(file.Key, file.Value);
             }
         }
-        catch
+        catch (Exception original)
         {
+            var errors = new List<string>();
             foreach (string path in changed)
-            {
-                if (originals[path] == null) File.Delete(path);
-                else File.Copy(originals[path], path, true);
-            }
+                try
+                {
+                    if (originals[path] == null) File.Delete(path);
+                    else if (!File.ReadAllBytes(path).SequenceEqual(File.ReadAllBytes(originals[path]))) File.Copy(originals[path], path, true);
+                }
+                catch { errors.Add(path); }
+            if (errors.Count > 0) throw new IOException(original.Message + "\r\nSome files need restoring from: " + backup, original);
             throw;
         }
         return backup;
     }
-
-    private static int SelfTest()
+    internal static void AddHooks(Dictionary<string, byte[]> files, string target)
     {
-        string root = Path.Combine(Path.GetTempPath(), "faf-installer-test-" + Guid.NewGuid().ToString("N"));
+        foreach (string name in Hooks) files[Path.Combine(target, "fafengine", "lua", "ui", "lobby", name)] = Resource(name);
+    }
+    internal static string InstallHooks(string target)
+    {
+        if (!IsEngine(target)) throw new IOException("Choose the folder containing the existing faf-re main_x64.exe and fafengine directory.");
+        var files = new Dictionary<string, byte[]>(); AddHooks(files, target);
+        return WriteFiles(target, files);
+    }
+    internal static string InstallBuild(string root, string output, string revision, bool shortcut, string existingTarget = null)
+    {
+        root = Path.GetFullPath(root);
+        string target = existingTarget ?? Path.Combine(root, "bin_x64"), original = Path.Combine(root, "bin");
+        if (!File.Exists(Path.Combine(root, "fa_path.lua")) || !File.Exists(Path.Combine(original, "init_faf.lua"))) throw new IOException("Choose the FAF data folder containing fa_path.lua and bin. Launch a normal FAF game once first.");
+        if (!IsEngine(output)) throw new IOException("The build did not produce a valid x64 engine and its fafengine folder.");
+        var files = new Dictionary<string, byte[]>();
+        foreach (string name in new[] { "main_x64.exe", "dxcompiler.dll", "dxil.dll" }) files.Add(Path.Combine(target, name), File.ReadAllBytes(Path.Combine(output, name)));
+        string engineHooks = Path.Combine(output, "fafengine");
+        if (Directory.Exists(engineHooks))
+            foreach (string source in Directory.GetFiles(engineHooks, "*", SearchOption.AllDirectories))
+                files.Add(Path.Combine(target, "fafengine", source.Substring(engineHooks.Length + 1)), File.ReadAllBytes(source));
+        files[Path.Combine(target, "fafengine", "lua", "options", "options.lua")] = Resource("options.lua");
+        AddHooks(files, target);
+        foreach (string source in Directory.GetFiles(original, "*.lua")) files[Path.Combine(target, Path.GetFileName(source))] = File.ReadAllBytes(source);
+        files[Path.Combine(target, "microchip-install.json")] = Encoding.UTF8.GetBytes(Json.Serialize(new { revision = revision, source = "https://github.com/Draiget/faf-re", author = "Microchip", installedUtc = DateTime.UtcNow.ToString("o") }));
+        if (shortcut)
+        {
+            string temporary = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".lnk");
+            try
+            {
+                Type type = Type.GetTypeFromProgID("WScript.Shell");
+                object shell = Activator.CreateInstance(type);
+                object link = type.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { temporary });
+                Type linkType = link.GetType();
+                linkType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, link, new object[] { Path.Combine(target, "main_x64.exe") });
+                linkType.InvokeMember("Arguments", BindingFlags.SetProperty, null, link, new object[] { "/init init_faf.lua /nobugreport /con lua_AllowPrecompiledChunks=1;ren_GpuSelectBrackets=0" });
+                linkType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, link, new object[] { target });
+                linkType.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
+                files[Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "FAF Rebuilt x64.lnk")] = File.ReadAllBytes(temporary);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+        return WriteFiles(root, files);
+    }
+    internal static string Connect(string target, string prefs)
+    {
+        if (!IsEngine(target) || !File.Exists(Path.Combine(target, "init_faf.lua"))) throw new IOException("Install a ready-to-run faf-re engine first.");
+        var settings = ReadSettings(prefs); var game = GameSettings(settings);
+        game["executionDirectory"] = target;
+        game["executableDecorator"] = "\"" + Path.Combine(target, "main_x64.exe") + "\" /con lua_AllowPrecompiledChunks=1;ren_GpuSelectBrackets=0";
+        return WriteFiles(target, new Dictionary<string, byte[]> { { Path.GetFullPath(prefs), Encoding.UTF8.GetBytes(Json.Serialize(settings)) } });
+    }
+    internal static string Quote(string value)
+    {
+        var result = new StringBuilder("\""); int slashes = 0;
+        foreach (char character in value)
+        {
+            if (character == '\\') { slashes++; continue; }
+            result.Append('\\', character == '"' ? slashes * 2 + 1 : slashes);
+            result.Append(character); slashes = 0;
+        }
+        result.Append('\\', slashes * 2); return result.Append('"').ToString();
+    }
+    internal static object Api(string endpoint)
+    {
+        using (var client = new WebClient())
+        {
+            client.Headers["User-Agent"] = "Microchip-faf-re-builder";
+            return Json.DeserializeObject(client.DownloadString("https://api.github.com/repos/Draiget/faf-re/" + endpoint));
+        }
+    }
+    internal static List<VersionChoice> Versions()
+    {
+        var latest = (Dictionary<string, object>)((object[])Api("commits?per_page=1"))[0];
+        string sha = (string)latest["sha"];
+        var choices = new List<VersionChoice> { new VersionChoice { Label = "Latest (" + sha.Substring(0, 8) + ")", Revision = sha } };
+        object[] tags;
+        try { tags = (object[])Api("tags?per_page=50"); } catch (WebException) { tags = new object[0]; }
+        foreach (Dictionary<string, object> tag in tags)
+        {
+            var commit = (Dictionary<string, object>)tag["commit"];
+            choices.Add(new VersionChoice { Label = (string)tag["name"] + " (" + ((string)commit["sha"]).Substring(0, 8) + ")", Revision = (string)commit["sha"] });
+        }
+        const string previous = "e4cc5d8b03cc29a9100fa29f08eea57f6aaa0a95";
+        if (!choices.Any(choice => choice.Revision == previous))
+            choices.Add(new VersionChoice { Label = "Previously working - 26 Oct 2026 (e4cc5d8b)", Revision = previous });
+        return choices;
+    }
+    internal static string RunWorker(string mode, string revision, Action<string> progress)
+    {
+        string run = Path.Combine(Work, "runs", Guid.NewGuid().ToString("N")); CheckPath(run); Directory.CreateDirectory(run);
+        string script = Path.Combine(run, "Build-FafRe.ps1"), result = Path.Combine(run, "result.json"), log = Path.Combine(run, "build.log");
+        File.WriteAllBytes(script, Resource("worker.ps1"));
+        progress("Log: " + log);
+        var start = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"));
+        start.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(script) + " -Mode " + mode + " -Workspace " + Quote(Work) + " -ResultFile " + Quote(result) + (mode == "Build" ? " -Revision " + revision : "");
+        start.UseShellExecute = false; start.CreateNoWindow = true; start.RedirectStandardOutput = true; start.RedirectStandardError = true;
+        using (var writer = new StreamWriter(log, false, Encoding.UTF8))
+        using (var process = new Process { StartInfo = start })
+        {
+            Action<string> line = text => { if (text == null) return; lock (writer) { writer.WriteLine(text); writer.Flush(); } progress(text); };
+            process.OutputDataReceived += (s, e) => line(e.Data); process.ErrorDataReceived += (s, e) => line(e.Data);
+            process.Start(); process.BeginOutputReadLine(); process.BeginErrorReadLine(); process.WaitForExit();
+            if (!File.Exists(result)) throw new IOException("The operation failed before it could report a result. Log: " + log);
+            if (process.ExitCode != 0)
+            {
+                var failure = Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(result));
+                object reason;
+                throw new IOException((failure.TryGetValue("error", out reason) ? Convert.ToString(reason) : "The operation failed.") + "\r\n\r\nLog: " + log);
+            }
+        }
+        var data = Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(result));
+        if (!(bool)data["success"]) throw new IOException((string)data["error"]);
+        return mode == "Build" ? (string)data["output"] : null;
+    }
+}
+
+internal sealed class BuilderForm : Form
+{
+    readonly ComboBox versions = new ComboBox { Left = 145, Top = 72, Width = 410, DropDownStyle = ComboBoxStyle.DropDownList };
+    readonly ComboBox engines = new ComboBox { Left = 145, Top = 112, Width = 410, DropDownStyle = ComboBoxStyle.DropDownList };
+    readonly TextBox data = new TextBox { Left = 145, Top = 152, Width = 410 };
+    readonly TextBox log = new TextBox { Left = 20, Top = 302, Width = 650, Height = 210, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
+    readonly CheckBox closed = new CheckBox { Left = 20, Top = 193, Width = 650, Text = "I have closed the FAF client and game." };
+    readonly Label installedInfo = new Label { Left = 20, Top = 216, Width = 650, Height = 18 };
+    readonly Button install = new Button { Left = 20, Top = 238, Width = 200, Height = 38, Text = "Install faf-re" };
+    readonly Button lag = new Button { Left = 237, Top = 238, Width = 200, Height = 38, Text = "Install Lag Test" };
+    readonly Button connect = new Button { Left = 454, Top = 238, Width = 216, Height = 38, Text = "Connect with FAF client" };
+    readonly Button refresh = new Button { Left = 565, Top = 69, Width = 105, Text = "Refresh" };
+    readonly Button browseEngine = new Button { Left = 565, Top = 109, Width = 105, Text = "Browse..." };
+    readonly Button browseData = new Button { Left = 565, Top = 149, Width = 105, Text = "Browse..." };
+    bool busy;
+    string Engine { get { return engines.SelectedItem as string; } }
+    internal BuilderForm()
+    {
+        Text = "Microchip faf-re builder"; ClientSize = new System.Drawing.Size(690, 535);
+        FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen;
+        Controls.AddRange(new Control[] {
+            new Label { Left = 20, Top = 15, Width = 650, Height = 45, Text = "Microchip faf-re builder | Author: Microchip\r\nBuilds the selected x64 engine and installs Lag Test. Connect to FAF separately." },
+            new Label { Left = 20, Top = 75, Width = 120, Text = "Version" },
+            new Label { Left = 20, Top = 115, Width = 120, Text = "Installed faf-re" },
+            new Label { Left = 20, Top = 155, Width = 120, Text = "FAF data folder" },
+            versions, engines, data, closed, installedInfo, install, lag, connect, refresh, browseEngine, browseData, log });
+        data.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "FAForever");
+        Detect();
+        engines.SelectedIndexChanged += delegate { UpdateButtons(); };
+        data.TextChanged += delegate { if (!busy) Detect(); };
+        refresh.Click += async delegate { await LoadVersions(); };
+        browseEngine.Click += delegate { using (var picker = new FolderBrowserDialog()) { if (picker.ShowDialog(this) == DialogResult.OK) { if (!Setup.IsEngine(picker.SelectedPath)) { MessageBox.Show(this, "Choose the folder containing faf-re main_x64.exe and fafengine."); return; } Detect(picker.SelectedPath); } } };
+        browseData.Click += delegate { using (var picker = new FolderBrowserDialog()) { if (picker.ShowDialog(this) == DialogResult.OK) data.Text = picker.SelectedPath; } };
+        install.Click += async delegate { await Act("Build"); };
+        lag.Click += async delegate { await Act("Lag"); };
+        connect.Click += async delegate { await Act("Connect"); };
+        Shown += async delegate { await LoadVersions(); };
+        FormClosing += (s, e) => { if (busy) { e.Cancel = true; MessageBox.Show(this, "Please wait for the current operation to finish."); } };
+    }
+    void Progress(string text)
+    {
+        if (IsDisposed) return;
+        BeginInvoke((Action)(() => { if (log.TextLength > 120000) log.Text = log.Text.Substring(log.TextLength - 60000); log.AppendText(text + Environment.NewLine); }));
+    }
+    void Detect(string extra = null)
+    {
+        string selected = extra ?? Engine;
+        var candidates = new List<string> { Path.Combine(data.Text, "bin_x64"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FAForever", "bin_x64") };
+        if (selected != null) candidates.Insert(0, selected);
+        var found = Setup.Detect(Setup.Prefs, candidates);
+        engines.Items.Clear(); engines.Items.AddRange(found.Cast<object>().ToArray());
+        if (found.Count > 0) engines.SelectedItem = selected != null && found.Contains(selected) ? selected : found[0];
+        if (Engine != null)
+        {
+            string parent = Path.GetDirectoryName(Engine);
+            if (File.Exists(Path.Combine(parent, "fa_path.lua")) && data.Text != parent) data.Text = parent;
+        }
+        installedInfo.Text = Engine == null ? "No existing faf-re found. Select a version and click Install faf-re." : "Existing faf-re found; installed version unknown.";
+        if (Engine != null)
+            try
+            {
+                var info = Setup.Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(Engine, "microchip-install.json")));
+                string revision = (string)info["revision"];
+                if (revision.Length >= 8) installedInfo.Text = "Installed version: " + revision.Substring(0, 8);
+            }
+            catch { }
+        UpdateButtons();
+    }
+    void UpdateButtons()
+    {
+        install.Text = Engine == null ? "Install faf-re" : "Update / install version";
+        install.Enabled = !busy && versions.SelectedItem != null;
+        lag.Enabled = connect.Enabled = !busy && Engine != null;
+        versions.Enabled = refresh.Enabled = engines.Enabled = browseEngine.Enabled = browseData.Enabled = data.Enabled = closed.Enabled = !busy;
+    }
+    async Task LoadVersions()
+    {
+        busy = true; UpdateButtons();
+        try { var values = await Task.Run(() => Setup.Versions()); versions.Items.Clear(); versions.Items.AddRange(values.Cast<object>().ToArray()); versions.SelectedIndex = 0; Progress("Latest upstream revision selected. " + values.Count + " versions available."); }
+        catch (Exception error) { Progress("Could not load versions: " + error.Message + " Click Refresh to retry. Existing Lag Test and FAF connection controls still work offline."); }
+        finally { busy = false; UpdateButtons(); }
+    }
+    async Task Act(string action)
+    {
+        if (!closed.Checked) { MessageBox.Show(this, "Close the FAF client and game, then tick the confirmation box."); return; }
+        string target = Engine, root = data.Text;
+        var version = versions.SelectedItem as VersionChoice;
+        if (action == "Build" && version == null) return;
+        if (action == "Build" && (!File.Exists(Path.Combine(root, "fa_path.lua")) || !File.Exists(Path.Combine(root, "bin", "init_faf.lua")))) { MessageBox.Show(this, "Select your FAF data folder. Launch a normal FAF game once before setup."); return; }
+        busy = true; UpdateButtons();
         try
         {
-            Directory.CreateDirectory(Path.Combine(root, "bin"));
-            File.WriteAllText(Path.Combine(root, "fa_path.lua"), "-- test");
-            File.WriteAllText(Path.Combine(root, "bin", "init_faf.lua"), "-- local init");
-            string prefs = Path.Combine(root, "client.prefs");
-            File.WriteAllText(prefs, "{\"forgedAlliance\":{},\"keep\":123}");
-            string backup = Install(root, prefs);
-            var settings = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(prefs));
-            var game = (Dictionary<string, object>)settings["forgedAlliance"];
-            if ((int)settings["keep"] != 123 || (string)game["executionDirectory"] != Path.Combine(root, "bin_x64")) return 1;
-            foreach (var file in Payload())
-                if (!Convert.ToBase64String(File.ReadAllBytes(Path.Combine(root, "bin_x64", file.Key))).Equals(Convert.ToBase64String(file.Value))) return 2;
-            if (!File.Exists(Path.Combine(backup, "restore-map.json"))) return 3;
-            if (!((string)game["executableDecorator"]).Contains("ren_GpuSelectBrackets=0")) return 4;
-            Install(root, prefs); // Updating an existing installation also backs it up.
-            string engine = Path.Combine(root, "bin_x64", "main_x64.exe");
-            File.WriteAllText(engine, "rollback sentinel");
-            using (var locked = new FileStream(prefs, FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                try { Install(root, prefs); return 5; }
-                catch (IOException) { }
-            }
-            if (File.ReadAllText(engine) != "rollback sentinel") return 6;
-            return 0;
+            string backup = await Task.Run(() => {
+                if (action == "Connect") return Setup.Connect(target, Setup.Prefs);
+                if (action == "Lag") { Setup.RunWorker("Runtime", null, Progress); return Setup.InstallHooks(target); }
+                Progress("Downloading/building " + version.Label + ". FAF launch settings will remain unchanged.");
+                string output = Setup.RunWorker("Build", version.Revision, Progress);
+                return Setup.InstallBuild(root, output, version.Revision, true, target);
+            });
+            Progress("Completed. Backup: " + backup);
+            Detect(action == "Build" ? (target ?? Path.Combine(root, "bin_x64")) : target);
+            MessageBox.Show(this, action == "Connect" ? "FAF client connected to faf-re. Open FAF to play." : "All installed, ready to go.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        catch (Exception error) { Progress("ERROR: " + error.Message); MessageBox.Show(this, error.Message, "Operation failed", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        finally { busy = false; UpdateButtons(); }
     }
+}
 
-    private static void CheckPath(string path)
-    {
-        for (DirectoryInfo directory = new DirectoryInfo(path); directory != null; directory = directory.Parent)
-            if (directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("Choose a folder without links or junctions.");
-    }
-
+internal static class Installer
+{
     [STAThread]
-    private static int Main(string[] args)
+    static int Main(string[] args)
     {
-        if (args.Length == 1 && args[0] == "--verify")
-        {
-            Payload();
-            return 0;
-        }
-        if (args.Length == 1 && args[0] == "--selftest") return SelfTest();
-        Application.EnableVisualStyles();
-        using (Form form = new Form())
-        {
-            form.Text = "FAF Lag Test Setup - Microchip";
-            form.ClientSize = new System.Drawing.Size(570, 240);
-            form.FormBorderStyle = FormBorderStyle.FixedDialog;
-            form.MaximizeBox = false;
-            form.StartPosition = FormStartPosition.CenterScreen;
-            Label description = new Label { Left = 20, Top = 18, Width = 530, Height = 90,
-                Text = "FAF Lag Test\r\nAuthor: Microchip\r\n\r\nInstalls the rebuilt x64 engine and Lag Test, and configures FAF.\r\nSelect the FAF data folder. FAF and Forged Alliance must be installed." };
-            TextBox folder = new TextBox { Left = 20, Top = 116, Width = 420,
-                Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "FAForever") };
-            Button browse = new Button { Left = 450, Top = 113, Width = 100, Text = "Browse..." };
-            browse.Click += delegate {
-                using (FolderBrowserDialog picker = new FolderBrowserDialog())
-                {
-                    if (Directory.Exists(folder.Text)) picker.SelectedPath = folder.Text;
-                    if (picker.ShowDialog(form) == DialogResult.OK) folder.Text = picker.SelectedPath;
-                }
-            };
-            CheckBox closed = new CheckBox { Left = 20, Top = 153, Width = 530, Text = "I have closed the FAF client and game." };
-            Button install = new Button { Left = 340, Top = 180, Width = 100, Text = "Install" };
-            Button close = new Button { Left = 450, Top = 180, Width = 100, Text = "Close" };
-            close.Click += delegate { form.Close(); };
-            install.Click += delegate {
-                try
-                {
-                    if (!closed.Checked) throw new IOException("Close the FAF client and game, then tick the confirmation box.");
-                    foreach (string dll in new[] { "d3dx9_43.dll", "X3DAudio1_7.dll" })
-                        if (!File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", dll)))
-                            throw new IOException("The 64-bit DirectX June 2010 runtime is required (missing " + dll + "). Install Microsoft's DirectX End-User Runtimes, then run setup again.");
-                    string prefs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Forged Alliance Forever", "client.prefs");
-                    string backup = Install(folder.Text, prefs);
-                    MessageBox.Show(form, "Engine and Lag Test installed. Open FAF to play.\r\n\r\nPrevious files and FAF settings were backed up to:\r\n" + backup,
-                        "Installation complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    form.Close();
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    MessageBox.Show(form, "Windows denied access to that folder. Close setup, then run it as administrator if you trust it.", "Installation failed");
-                }
-                catch (Exception error) { MessageBox.Show(form, error.Message, "Installation failed"); }
-            };
-            form.Controls.AddRange(new Control[] { description, folder, browse, closed, install, close });
-            Application.Run(form);
-        }
-        return 0;
+        ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+        if (args.Length == 1 && args[0] == "--verify") { foreach (string name in Setup.Hooks.Concat(new[] { "options.lua", "worker.ps1" })) if (Setup.Resource(name).Length == 0) return 1; return 0; }
+        if (args.Length == 1 && args[0] == "--selftest") return BuilderTests.Run();
+        if (!Environment.Is64BitOperatingSystem) { MessageBox.Show("64-bit Windows is required."); return 1; }
+        Application.EnableVisualStyles(); Application.Run(new BuilderForm()); return 0;
     }
 }

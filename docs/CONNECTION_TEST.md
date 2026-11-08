@@ -36,24 +36,56 @@ another run can replace the completed results.
 
 ## Install
 
-Run `FAF-Lag-Test-Setup.exe` (installation author: **Microchip**) and select the
-FAF data folder (normally `C:\ProgramData\FAForever`). Close the FAF client
-and game first. The installer includes the rebuilt x64 engine, its shader
-libraries and engine hooks, including Lag Test. It copies your local FAF
-initialization files into `bin_x64` and configures the current user's FAF client
-to launch that engine, including the mod and selection-ring settings.
+Run **`Microchip faf-re builder.exe`** (author: **Microchip**). The window
+checks FAF's saved engine paths and common folders for an existing x64 faf-re
+installation. Use **Browse** beside “Installed faf-re” for a custom folder.
+Close the game and FAF client before changing files or settings.
 
-Requires 64-bit Windows, an existing FAF/Forged Alliance installation, and the
-64-bit DirectX June 2010 runtime. Launch a normal FAF game once before setup.
-Setup reports missing prerequisites. It does not include the commercial game
-assets or replace the FAF desktop client. Every participant needs this setup.
+- **Version:** defaults to the latest upstream commit. Tagged versions are also
+  listed. **Refresh** checks upstream again. The selected full commit is held
+  fixed throughout that build, even if upstream changes during installation.  The previously working 26 October revision (`e4cc5d8b`) is also offered as a  fallback. Latest remains the default.
+- **Install faf-re / Update / install version:** downloads the selected upstream
+  source, installs missing Git, LLVM, Visual Studio 2022 C++/ATL/CMake/Windows SDK
+  tools and the DirectX runtime, then builds x64 Release. It stages the engine,
+  shader libraries, engine hooks and local FAF initialization scripts, installs
+  Lag Test, and creates a desktop shortcut with the compiled-mod and selection-
+  ring settings from the HTML guide. Existing detected installations are updated
+  in their selected directory. This button **does not change FAF client settings**.
+- **Install Lag Test:** adds/updates only the three lobby hooks in the selected
+  existing faf-re directory. It checks the required x64 DirectX runtime and
+  installs it if missing. It does not rebuild or replace the engine.
+- **Connect with FAF client:** separately backs up and changes only the current
+  user's FAF execution directory and executable command to use the selected
+  engine, including the mod and selection-ring settings. Relaunch FAF afterward.
 
-Existing replaced files and client settings are backed up under
-`FAForever/lag-test-backups/<installation-id>` with a `restore-map.json` listing
-their original locations. Failed writes trigger rollback. To return to classic
-FAF, close the client and restore its backed-up `client.prefs` to its recorded
-location. The installer remains unsigned, downloads nothing, and changes no
-firewall settings. Source/build script: `tools/lag-test-installer/`.
+The FAF data folder normally is `C:\ProgramData\FAForever`; select another
+folder if yours is customized. FAF and your own Forged Alliance installation
+must already work; launch a normal FAF game once before setup. Commercial game
+assets and the FAF desktop client are not included. Every test participant
+needs faf-re and Lag Test installed.
+
+Windows administrator prompts may appear while installing prerequisites. If a
+prerequisite requires restarting Windows, setup reports it and can be run again
+afterward. Build downloads and source checkouts are cached per version under
+`%LOCALAPPDATA%\Microchip\faf-re-builder`; compilation uses up to four jobs.
+Progress and per-run logs appear in the window. Success shows **“All installed,
+ready to go.”** A failed download/build never triggers that success message or
+installs an incomplete build.Validation on 8 November: upstream revision `a9583624` compiled but failed itsown post-build `faf_math_dump` parity check (`acos`, two blocks). Setup preservesthat failure and does not install that build. Choose the previously workingrevision or a later upstream revision that passes its checks; do not disablethe check to force installation.
+
+Archives are checked against the selected source's SHA-256 manifest. Git/LLVM
+installers use official release SHA-256 metadata; Microsoft prerequisite
+installers require a valid Microsoft publisher signature. Downloads retry up
+to three times, use the official GitHub asset API when the release route fails,
+and use Boost's official archive mirror if SourceForge returns an error page.
+The application remains unsigned and changes no firewall settings.
+
+Replaced files are backed up with a `restore-map.json` listing their original
+locations. Engine builds use `FAForever/lag-test-backups/<id>`; Lag Test and
+connection changes use `<engine-folder>/lag-test-backups/<id>`. Failed writes
+attempt rollback and identify the backup if any restoration needs attention.
+To return to classic FAF, close the client and restore its backed-up
+`client.prefs` to its recorded location. Source/build script:
+`tools/lag-test-installer/`.
 
 The standard build stages `data/fafengine/` beside the engine executable. For
 an already-built engine, copy the **contents** of that directory into the
