@@ -1,6 +1,7 @@
 # Microchip F11 Lag Links
 
 Author: **Microchip**. UI-only; other players do not need to install it.
+Version 2 fixes Lua 5.0 syntax compatibility, checked during real-client tests.
 
 ## Install
 

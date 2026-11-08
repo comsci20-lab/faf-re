@@ -52,7 +52,7 @@ function New()
                     end)
                     if waiting[1] then
                         labels[receiver] = ' [waits for ' .. string.sub(waiting[1].name, 1, 16) ..
-                            (#waiting > 1 and (' +' .. tostring(#waiting - 1)) or '') .. '?]'
+                            (table.getn(waiting) > 1 and (' +' .. tostring(table.getn(waiting) - 1)) or '') .. '?]'
                     end
                 end
             end

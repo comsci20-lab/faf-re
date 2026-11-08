@@ -28,7 +28,7 @@ function New()
             local data = type(client.fafReNetwork) == 'table' and client.fafReNetwork or {}
             local buffers = {}
             for _, sender in ipairs(ids) do
-                if #buffers >= 32 then break end
+                if table.getn(buffers) >= 32 then break end
                 if type(data.buffers) == 'table' and type(data.buffers[sender]) == 'number' then
                     table.insert(buffers, tostring(sender) .. ':' .. Number(data.buffers[sender]))
                 end

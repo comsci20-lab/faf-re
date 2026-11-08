@@ -10,6 +10,8 @@ The engine hook is off by default. Set the top-level Game.prefs preference
 `microchip_network_diagnostics = true`, then launch a new multiplayer game.
 Leave the Microchip F11 UI mod disabled for the comparison. F11 does not need
 to be open. The recorder samples every two seconds and sends no packets.
+Two seconds is the target: the UI scheduler can wait longer at low frame rates.
+The recorded wall-clock interval is used when calculating tick progress.
 
 Logs go to the normal FAF match log:
 `%APPDATA%/Forged Alliance Forever/logs/game_<id>.log`.
