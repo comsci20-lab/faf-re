@@ -4,8 +4,8 @@ $ErrorActionPreference = 'Stop'
 if (Get-Process main_x64,ForgedAlliance -ErrorAction SilentlyContinue) { throw 'Close the game before installing.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $built = Join-Path $repo 'build/clang-x64-release/src'
-$home = Join-Path $env:LOCALAPPDATA 'Microchip/faf-translator'
-foreach ($file in @("$built/main_x64.exe", "$home/worker.py", "$home/python/Scripts/python.exe", "$EngineDirectory/main_x64.exe")) {
+$translatorHome = Join-Path $env:LOCALAPPDATA 'Microchip/faf-translator'
+foreach ($file in @("$built/main_x64.exe", "$translatorHome/worker.py", "$translatorHome/python/Scripts/python.exe", "$EngineDirectory/main_x64.exe")) {
     if (-not (Test-Path -LiteralPath $file)) { throw "Required file missing: $file" }
 }
 $prefs = Join-Path $env:LOCALAPPDATA 'Gas Powered Games/Supreme Commander Forged Alliance/Game.prefs'
