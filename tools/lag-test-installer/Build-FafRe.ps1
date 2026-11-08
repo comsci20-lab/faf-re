@@ -104,6 +104,13 @@ function Find-Git {
     }
     return $null
 }
+function Ensure-UCRT {
+    $library = "${env:ProgramFiles(x86)}/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64/libucrt.lib"
+    if (Test-Path -LiteralPath $library) { return }
+    $installer = Get-Download 'https://download.microsoft.com/download/1/0/e/10e6da02-01f7-40d4-8942-b98b53b36cf9/windowssdk/winsdksetup.exe' 'winsdksetup-22000.exe' '521b6410d3fdd92adbcfe941fc24746ea340288b3767fe39026bc70907ae0322' ''
+    Install-Elevated $installer '/features OptionId.DesktopCPPx64 /quiet /norestart /ceip off'
+    if (-not (Test-Path -LiteralPath $library)) { throw 'SDK 22000 x64 UCRT is required for simulation math parity.' }
+}
 function Ensure-Git {
     $git = Find-Git
     if (-not $git) {
@@ -161,6 +168,8 @@ function Build-Source([string]$Git, [string]$VS) {
     $changes = & $Git -C $source status --porcelain --untracked-files=no
     if ($changes) { throw 'The cached source has local changes. Preserve them and choose a fresh build folder.' }
     Invoke-Native $Git @('-C', $source, 'submodule', 'update', '--init', '--recursive')
+    $pinnedUcrt = (Get-Content (Join-Path $source 'src/CMakeLists.txt') -Raw).Contains('FAF_UCRT_LIB_VERSION')
+    if ($pinnedUcrt) { Ensure-UCRT }
     # Prefetch the checksum-pinned archives with retries before CMake's single-attempt
     # downloader runs. Read the selected version's manifest rather than hardcoding deps.
     $manifest = Get-Content (Join-Path $source 'cmake/FafDependencies.cmake') -Raw
@@ -199,7 +208,11 @@ function Build-Source([string]$Git, [string]$VS) {
     Write-Host "Building x64 Release ($jobs parallel jobs). Dependencies download automatically; this may take a while."
     # A failed configure leaves CMakeCache.txt behind; explicitly reconfigure on retry.
     Push-Location $source
-    try { Invoke-Native (Join-Path $tools 'CMake/bin/cmake.exe') @('--preset', 'clang-x64-release') }
+    try {
+        $configure = @('--preset', 'clang-x64-release')
+        if ($pinnedUcrt) { $configure += '-DFAF_UCRT_LIB_VERSION=10.0.22000.0' }
+        Invoke-Native (Join-Path $tools 'CMake/bin/cmake.exe') $configure
+    }
     finally { Pop-Location }
     & (Join-Path $source 'build.ps1') -NoCopy -Jobs $jobs
     $output = Join-Path $source 'build/clang-x64-release/src'
