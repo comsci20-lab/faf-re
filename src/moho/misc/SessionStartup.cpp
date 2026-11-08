@@ -1307,6 +1307,14 @@ namespace moho
       diagnostics.SetInteger("version", 1);
       diagnostics.SetNumber("dispatched", dispatched);
       diagnostics.SetInteger("available", static_cast<int32_t>(available - dispatched));
+      if (static_cast<IClient*>(client) == localClient) {
+        const auto bottleneck = clientManager->GetBottleneckInfo();
+        msvc8::string label;
+        FormatBottleneckLabel(bottleneck, label);
+        diagnostics.SetString("bottleneck", label.c_str());
+        diagnostics.SetInteger("actualRate", clientManager->GetSimRate());
+        diagnostics.SetInteger("requestedRate", clientManager->GetSimRateRequested());
+      }
       LuaPlus::LuaObject buffers{};
       buffers.AssignNewTable(state, 0, 0);
       for (std::size_t peer = 0; peer < ackSnapshot.size(); ++peer) {
