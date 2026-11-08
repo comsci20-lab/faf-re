@@ -13,6 +13,11 @@ try {
     $joins=@($mixed.steps | Where-Object join)
     if($joins.Count -ne 11 -or $joins[-1].join -ne 12){throw 'Classic peers must join before the x64 seat.'}
     if($mixed.mode -ne 'direct' -or $mixed.hub){throw 'Test must be local direct mode.'}
+    if(($mixed.players[-1].args -join ' ') -match 'RunWithTheWind|/d3d9|net_CheckOrderStreams|net_MaxSendRate'){throw 'Default test must not enable diagnostic probes.'}
+    & (Join-Path $PSScriptRoot 'Run-Classic-Test.ps1') -Players 12 -Seconds 60 -GenerateOnly -X64DrainProbe -X64LegacyAckProbe -X64SendRate 8192 -X64Renderer d3d9 -RunPath $testRoot | Out-Null
+    $probe=Get-Content (Join-Path $testRoot '12-player-mixed-x64.yaml') -Raw | ConvertFrom-Json
+    if($probe.players[-1].args[1] -notmatch 'wld_RunWithTheWind=1' -or $probe.players[-1].args[-1] -ne '/d3d9'){throw 'Diagnostic probes must apply to the x64 seat only.'}
+    if($probe.players[-1].args[1] -notmatch 'net_CheckOrderStreams=0' -or $probe.players[-1].args[1] -notmatch 'net_MaxSendRate=8192'){throw 'Network probes were not applied.'}
     $private=Get-Content (Join-Path $testRoot 'test-template.prefs') -Raw
     if($private -notmatch 'microchip_network_diagnostics = false' -or $private -notmatch 'microchip_client_test_recording = true'){throw 'Private logging preferences are wrong.'}
     if((Get-FileHash $prefs).Hash -ne $before){throw 'Normal game preferences were modified.'}

@@ -5,6 +5,11 @@ param(
     [switch]$Compare,
     [switch]$ClassicOnly,
     [switch]$GenerateOnly,
+    [switch]$X64DrainProbe,
+    [switch]$X64LegacyAckProbe,
+    [ValidateRange(2048,65536)][int]$X64SendRate = 2048,
+    [ValidateSet('auto','d3d9','d3d11','d3d12')][string]$X64Renderer = 'auto',
+    [ValidateRange(1,10)][int]$JoinDelaySeconds = 2,
     [switch]$Pause,
     [string]$FafRoot = "$env:ProgramData\FAForever",
     [string]$RunPath
@@ -53,13 +58,17 @@ function New-TestScenario([bool]$OnlyClassic) {
         if(-not $OnlyClassic -and $i -eq $Players) {
             $seat.name='MicrochipX64'; $seat.exe=$rebuilt
             $seat.args=@('/con','lua_AllowPrecompiledChunks=1;ren_GpuSelectBrackets=0')
+            if($X64DrainProbe){$seat.args[1]+=';wld_RunWithTheWind=1'}
+            if($X64LegacyAckProbe){$seat.args[1]+=';net_CheckOrderStreams=0'}
+            if($X64SendRate -ne 2048){$seat.args[1]+=';net_MaxSendRate='+[string]$X64SendRate}
+            if($X64Renderer -ne 'auto'){$seat.args+=('/'+$X64Renderer)}
         }
         $seats+=,$seat
     }
     $steps=@(@{start='all'},@{host=1})
     for($i=2;$i -le $Players;$i++){
         $steps+=,@{join=$i}
-        if($i -lt $Players){$steps+=,@{wait='2s'}}
+        if($i -lt $Players){$steps+=,@{wait=([string]$JoinDelaySeconds+'s')}}
     }
     $steps+=@(@{waitState=@{uids='all';state='Launching';timeout='3m'}},@{note='All clients launched; first 20 seconds are warm-up.'},@{wait=([string]$Seconds+'s')})
     return [ordered]@{
