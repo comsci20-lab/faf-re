@@ -82,7 +82,12 @@ class Node:
                     return peers
                 end,
                 SendData=function(self,id,data) transport(id,data) end,
-                Hosting=function() end, ConnectionToHostEstablished=function() end,
+                Hosting=function() end,
+                ConnectionToHostEstablished=function(self, localId, localName, hostId)
+                    assert(localId == uid and localName == peerNames[uid] and hostId == 1,
+                        'Join callback arguments were changed by the hook')
+                    connectedName, connectedHost = localName, hostId
+                end,
                 DataReceived=function() end, Destroy=function() end,
             }
         """)
@@ -110,7 +115,7 @@ class Node:
         if uid == host:
             self.comm.Hosting(self.comm)
         else:
-            self.comm.ConnectionToHostEstablished(self.comm, uid, host)
+            self.comm.ConnectionToHostEstablished(self.comm, uid, network.names[uid], host)
         g.Show(g.control())
         self.lua.execute("buttons[1].OnClick()")
         network.nodes[uid] = self
@@ -124,6 +129,12 @@ class Node:
 
 
 class ConnectionTests(unittest.TestCase):
+    def test_join_callback_preserves_player_name_and_host_id(self):
+        net = Network({1: "Alice", 2: "Bob"})
+        bob = Node(net, 2)
+        self.assertEqual(bob.lua.globals().connectedName, "Bob")
+        self.assertEqual(bob.lua.globals().connectedHost, 1)
+
     def test_probe_flood_is_bounded_and_duplicate_probes_are_not_echoed(self):
         net = Network({1: "Alice", 2: "Bob"})
         alice, bob = Node(net, 1), Node(net, 2)

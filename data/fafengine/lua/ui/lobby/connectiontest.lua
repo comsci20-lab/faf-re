@@ -162,9 +162,9 @@ function Attach(connection)
         host = LocalID()
         oldHosting(self)
     end
-    comm.ConnectionToHostEstablished = function(self, localId, hostId)
+    comm.ConnectionToHostEstablished = function(self, localId, localName, hostId)
         host = tonumber(hostId)
-        oldConnected(self, localId, hostId)
+        oldConnected(self, localId, localName, hostId)
     end
     local oldReceive = comm.DataReceived
     comm.DataReceived = function(self, data)
