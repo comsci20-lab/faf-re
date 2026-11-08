@@ -137,6 +137,28 @@ class Node:
 
 
 class ConnectionTests(unittest.TestCase):
+    def test_builder_threading_hook_applies_before_lobby_creation(self):
+        source = (SOURCE / "lobby.lua").read_text()
+        for workers in (None, 0, 4):
+            lua = LuaRuntime(unpack_returned_tuples=True)
+            lua.execute("""
+                commands = {}
+                function ConExecute(value) assert(not created); table.insert(commands, value) end
+                function LOG() end
+                function ReallyCreateLobby() created = true end
+                function CreateUI() end
+                function import(path)
+                    return {CreateLobbyComm=function() end, CreateButtonStd=function() end,
+                        CreateScreenGroup=function() end}
+                end
+            """)
+            configured = source if workers is None else source.replace(
+                "local microchipSimWorkers = nil", "local microchipSimWorkers = " + str(workers))
+            lua.execute(configured)
+            lua.globals().ReallyCreateLobby()
+            self.assertTrue(lua.globals().created)
+            self.assertEqual(lua.globals().commands[1], None if workers is None else "sim_Workers " + str(workers))
+
     def test_checksum_toggle_is_local_persistent_and_applied_before_game(self):
         net = Network({1: "Alice", 2: "Bob"})
         alice, bob = Node(net, 1), Node(net, 2)

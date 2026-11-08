@@ -2,6 +2,8 @@
 local ConnectionTest = import('/fafengine/lua/ui/lobby/connectiontest.lua')
 local Communication = import('/lua/ui/lobby/lobbyComm.lua')
 local UIUtil = import('/lua/ui/uiutil.lua')
+-- Filled by the builder only when a local threading preference is saved.
+local microchipSimWorkers = nil
 local originalCreateComm = Communication.CreateLobbyComm
 local connection, parent, buttonAnchor, optionsAnchor
 local originalCreateButton = UIUtil.CreateButtonStd
@@ -24,6 +26,10 @@ end
 
 local originalReallyCreateLobby = ReallyCreateLobby
 function ReallyCreateLobby(protocol, localPort, name, uid, traversal, over, exitBehavior, hasGame)
+    if microchipSimWorkers ~= nil then
+        ConExecute('sim_Workers ' .. tostring(microchipSimWorkers))
+        LOG('Microchip lobby: simulation workers requested=' .. tostring(microchipSimWorkers))
+    end
     parent = nil
     originalReallyCreateLobby(protocol, localPort, name, uid, traversal, over, exitBehavior, hasGame)
     if connection then ConnectionTest.Attach(connection) end

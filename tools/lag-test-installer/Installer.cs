@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
@@ -15,7 +15,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 
 [assembly: AssemblyTitle("Microchip faf-re builder")]
-[assembly: AssemblyDescription("Download, build and install faf-re and the lobby Lag Test")]
+[assembly: AssemblyDescription("Build and install faf-re, Lag Test and configurable simulation threading")]
 [assembly: AssemblyCompany("Microchip")]
 [assembly: AssemblyProduct("Microchip faf-re builder")]
 [assembly: AssemblyCopyright("Author: Microchip")]
@@ -142,9 +142,33 @@ internal static class Setup
         }
         return backup;
     }
+    internal static int MaximumWorkers { get { return Math.Max(1, Math.Min(64, Environment.ProcessorCount)); } }
+    internal static int[] Threading(string target)
+    {
+        string path = Path.Combine(target, "microchip-threading.json");
+        if (!File.Exists(path)) return new[] { 0, MaximumWorkers };
+        var value = Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(path));
+        return new[] { Convert.ToBoolean(value["enabled"]) ? 1 : 0, Math.Max(1, Math.Min(MaximumWorkers, Convert.ToInt32(value["workers"]))) };
+    }
+    internal static string SetThreading(string target, bool enabled, int workers)
+    {
+        if (!IsEngine(target)) throw new IOException("Install faf-re first.");
+        if (workers < 1 || workers > MaximumWorkers) throw new ArgumentOutOfRangeException("workers");
+        var files = new Dictionary<string, byte[]>(); AddHooks(files, target);
+        string lobby = Path.Combine(target, "fafengine", "lua", "ui", "lobby", "lobby.lua");
+        files[lobby] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(Resource("lobby.lua")).Replace("local microchipSimWorkers = nil", "local microchipSimWorkers = " + (enabled ? workers : 0)));
+        files[Path.Combine(target, "microchip-threading.json")] = Encoding.UTF8.GetBytes(Json.Serialize(new { enabled = enabled, workers = workers }));
+        return WriteFiles(target, files);
+    }
     internal static void AddHooks(Dictionary<string, byte[]> files, string target)
     {
         foreach (string name in Hooks) files[Path.Combine(target, "fafengine", "lua", "ui", "lobby", name)] = Resource(name);
+        if (File.Exists(Path.Combine(target, "microchip-threading.json")))
+        {
+            int[] saved = Threading(target);
+            string lobby = Path.Combine(target, "fafengine", "lua", "ui", "lobby", "lobby.lua");
+            files[lobby] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(Resource("lobby.lua")).Replace("local microchipSimWorkers = nil", "local microchipSimWorkers = " + (saved[0] != 0 ? saved[1] : 0)));
+        }
     }
     internal static string InstallHooks(string target)
     {
@@ -295,20 +319,25 @@ internal sealed class BuilderForm : Form
     readonly FafButton refresh = new FafButton { Left = 565, Top = 69, Width = 105, Text = "Refresh" };
     readonly FafButton browseEngine = new FafButton { Left = 565, Top = 109, Width = 105, Text = "Browse..." };
     readonly FafButton browseData = new FafButton { Left = 565, Top = 149, Width = 105, Text = "Browse..." };
+    readonly CheckBox parallel = new CheckBox { Text = "Enable parallel simulation", AutoSize = true };
+    readonly NumericUpDown workers = new NumericUpDown { Minimum = 1, Maximum = Setup.MaximumWorkers, Value = Setup.MaximumWorkers };
+    readonly FafButton applyThreading = new FafButton { Text = "Apply threading" };
     bool busy;
     string Engine { get { return engines.SelectedItem as string; } }
     internal BuilderForm()
     {
-        Text = "Microchip faf-re builder"; ClientSize = new Size(900, 768);
+        Text = "Microchip faf-re builder"; ClientSize = new Size(900, 838);
         AutoScaleMode = AutoScaleMode.Dpi; Font = new Font("Segoe UI", 10f);
         BackColor = Color.FromArgb(8, 14, 20); ForeColor = Color.FromArgb(218, 231, 238);
         DoubleBuffered = true;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen;
-        Controls.AddRange(new Control[] { versions, engines, data, closed, installedInfo, install, lag, connect, refresh, browseEngine, browseData, log });
+        Controls.AddRange(new Control[] { versions, engines, data, closed, installedInfo, install, lag, connect, refresh, browseEngine, browseData, log, parallel, workers, applyThreading });
         ApplyTheme();
         data.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "FAForever");
         Detect();
-        engines.SelectedIndexChanged += delegate { UpdateButtons(); };
+        engines.SelectedIndexChanged += delegate { LoadThreading(); UpdateButtons(); };
+        parallel.CheckedChanged += delegate { UpdateButtons(); };
+        applyThreading.Click += async delegate { await Act("Threading"); };
         data.TextChanged += delegate { if (!busy) Detect(); };
         refresh.Click += async delegate { await LoadVersions(); };
         browseEngine.Click += delegate { using (var picker = new FolderBrowserDialog()) { if (picker.ShowDialog(this) == DialogResult.OK) { if (!Setup.IsEngine(picker.SelectedPath)) { MessageBox.Show(this, "Choose the folder containing faf-re main_x64.exe and fafengine."); return; } Detect(picker.SelectedPath); } } };
@@ -337,20 +366,27 @@ internal sealed class BuilderForm : Form
         engines.SetBounds(208, 223, 514, 30); browseEngine.SetBounds(738, 223, 116, 30);
         data.SetBounds(208, 269, 514, 30); browseData.SetBounds(738, 269, 116, 30);
         installedInfo.SetBounds(208, 312, 646, 22); installedInfo.ForeColor = cyan;
-        closed.SetBounds(44, 345, 810, 26); closed.ForeColor = muted; closed.BackColor = Color.FromArgb(17, 28, 38);
-        Caption("02  /  BUILD ENGINE", 44, 417, 240, 10, cyan, FontStyle.Bold);
-        Caption("03  /  PREPARE LOBBY", 334, 417, 240, 10, cyan, FontStyle.Bold);
-        Caption("04  /  CONNECT TO FAF", 624, 417, 240, 10, cyan, FontStyle.Bold);
-        install.SetBounds(44, 452, 232, 44); install.Primary = true;
-        lag.SetBounds(334, 452, 232, 44); connect.SetBounds(624, 452, 232, 44);
-        Caption("Download, build and install faf-re.", 44, 509, 236, 9, muted);
-        Caption("Add Lag Test to your engine.", 334, 509, 236, 9, muted);
-        Caption("Set FAF to use your engine.", 624, 509, 236, 9, muted);
-        Caption("ACTIVITY LOG", 30, 572, 300, 10, cyan, FontStyle.Bold);
-        log.SetBounds(30, 604, 840, 124); log.Font = new Font("Consolas", 9f);
+        parallel.SetBounds(44, 345, 300, 26);
+        parallel.ForeColor = ForeColor; parallel.BackColor = Color.FromArgb(17, 28, 38);
+        Caption("Workers", 380, 347, 100, 10, ForeColor);
+        workers.SetBounds(480, 343, 90, 30);
+        workers.BackColor = Color.FromArgb(8, 18, 26); workers.ForeColor = ForeColor;
+        applyThreading.SetBounds(680, 340, 174, 36);
+        Caption("Up to " + Setup.MaximumWorkers + " CPU threads detected. Applies next lobby; engine affinity can reduce the count.", 44, 379, 810, 9, muted);
+        closed.SetBounds(44, 415, 810, 26); closed.ForeColor = muted; closed.BackColor = Color.FromArgb(17, 28, 38);
+        Caption("02  /  BUILD ENGINE", 44, 487, 240, 10, cyan, FontStyle.Bold);
+        Caption("03  /  PREPARE LOBBY", 334, 487, 240, 10, cyan, FontStyle.Bold);
+        Caption("04  /  CONNECT TO FAF", 624, 487, 240, 10, cyan, FontStyle.Bold);
+        install.SetBounds(44, 522, 232, 44); install.Primary = true;
+        lag.SetBounds(334, 522, 232, 44); connect.SetBounds(624, 522, 232, 44);
+        Caption("Download, build and install faf-re.", 44, 579, 236, 9, muted);
+        Caption("Add Lag Test to your engine.", 334, 579, 236, 9, muted);
+        Caption("Set FAF to use your engine.", 624, 579, 236, 9, muted);
+        Caption("ACTIVITY LOG", 30, 642, 300, 10, cyan, FontStyle.Bold);
+        log.SetBounds(30, 674, 840, 124); log.Font = new Font("Consolas", 9f);
         log.BackColor = Color.FromArgb(6, 12, 17); log.ForeColor = Color.FromArgb(169, 198, 212); log.BorderStyle = BorderStyle.FixedSingle;
-        Caption("AUTHOR  /  Microchip", 30, 740, 350, 9, muted);
-        Caption("WINDOWS  /  X64", 726, 740, 150, 9, cyan);
+        Caption("AUTHOR  /  Microchip", 30, 810, 350, 9, muted);
+        Caption("WINDOWS  /  X64", 726, 810, 150, 9, cyan);
         foreach (var combo in new[] { versions, engines })
         {
             combo.FlatStyle = FlatStyle.Flat; combo.BackColor = Color.FromArgb(8, 18, 26); combo.ForeColor = ForeColor;
@@ -366,21 +402,21 @@ internal sealed class BuilderForm : Form
             };
         }
         data.BackColor = Color.FromArgb(8, 18, 26); data.ForeColor = ForeColor; data.BorderStyle = BorderStyle.FixedSingle;
-        foreach (var button in new[] { install, lag, connect, refresh, browseEngine, browseData }) button.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+        foreach (var button in new[] { install, lag, connect, refresh, browseEngine, browseData, applyThreading }) button.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
     }
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
         using (var fill = new LinearGradientBrush(new Rectangle(0, 0, Width, 112), Color.FromArgb(30, 48, 61), Color.FromArgb(8, 14, 20), 0f)) e.Graphics.FillRectangle(fill, 0, 0, Width, 112);
         using (var accent = new Pen(Color.FromArgb(114, 215, 230), 2)) e.Graphics.DrawLine(accent, 30, 112, 155, 112);
-        foreach (var rect in new[] { new Rectangle(24, 126, 852, 260), new Rectangle(24, 402, 272, 148), new Rectangle(314, 402, 272, 148), new Rectangle(604, 402, 272, 148) })
+        foreach (var rect in new[] { new Rectangle(24, 126, 852, 330), new Rectangle(24, 472, 272, 148), new Rectangle(314, 472, 272, 148), new Rectangle(604, 472, 272, 148) })
         {
             int cut = 9;
             var points = new[] { new Point(rect.Left + cut, rect.Top), new Point(rect.Right - cut, rect.Top), new Point(rect.Right, rect.Top + cut), new Point(rect.Right, rect.Bottom - cut), new Point(rect.Right - cut, rect.Bottom), new Point(rect.Left + cut, rect.Bottom), new Point(rect.Left, rect.Bottom - cut), new Point(rect.Left, rect.Top + cut) };
             using (var fill = new SolidBrush(Color.FromArgb(17, 28, 38))) e.Graphics.FillPolygon(fill, points);
             using (var border = new Pen(Color.FromArgb(52, 78, 94))) e.Graphics.DrawPolygon(border, points);
         }
-        using (var border = new Pen(Color.FromArgb(52, 78, 94))) e.Graphics.DrawLine(border, 30, 733, 870, 733);
+        using (var border = new Pen(Color.FromArgb(52, 78, 94))) e.Graphics.DrawLine(border, 30, 803, 870, 803);
     }
     void Progress(string text)
     {
@@ -409,13 +445,21 @@ internal sealed class BuilderForm : Form
                 if (revision.Length >= 8) installedInfo.Text = "Installed version: " + revision.Substring(0, 8);
             }
             catch { }
-        UpdateButtons();
+        LoadThreading(); UpdateButtons();
+    }
+    void LoadThreading()
+    {
+        try {
+            int[] saved = Engine == null ? new[] { 0, Setup.MaximumWorkers } : Setup.Threading(Engine);
+            parallel.Checked = saved[0] != 0; workers.Value = saved[1];
+        } catch (Exception error) { Progress("Could not read threading settings: " + error.Message); }
     }
     void UpdateButtons()
     {
         install.Text = Engine == null ? "Install faf-re" : "Update / install version";
         install.Enabled = !busy && versions.SelectedItem != null;
-        lag.Enabled = connect.Enabled = !busy && Engine != null;
+        lag.Enabled = connect.Enabled = applyThreading.Enabled = !busy && Engine != null;
+        parallel.Enabled = !busy; workers.Enabled = !busy && parallel.Checked;
         versions.Enabled = refresh.Enabled = engines.Enabled = browseEngine.Enabled = browseData.Enabled = data.Enabled = closed.Enabled = !busy;
     }
     async Task LoadVersions()
@@ -429,6 +473,7 @@ internal sealed class BuilderForm : Form
     {
         if (!closed.Checked) { MessageBox.Show(this, "Close the FAF client and game, then tick the confirmation box."); return; }
         string target = Engine, root = data.Text;
+        bool enableWorkers = parallel.Checked; int workerCount = (int)workers.Value;
         var version = versions.SelectedItem as VersionChoice;
         if (action == "Build" && version == null) return;
         if (action == "Build" && (!File.Exists(Path.Combine(root, "fa_path.lua")) || !File.Exists(Path.Combine(root, "bin", "init_faf.lua")))) { MessageBox.Show(this, "Select your FAF data folder. Launch a normal FAF game once before setup."); return; }
@@ -436,6 +481,7 @@ internal sealed class BuilderForm : Form
         try
         {
             string backup = await Task.Run(() => {
+                if (action == "Threading") return Setup.SetThreading(target, enableWorkers, workerCount);
                 if (action == "Connect") return Setup.Connect(target, Setup.Prefs);
                 if (action == "Lag") { Setup.RunWorker("Runtime", null, Progress); return Setup.InstallHooks(target); }
                 Progress("Downloading/building " + version.Label + ". FAF launch settings will remain unchanged.");
@@ -444,7 +490,7 @@ internal sealed class BuilderForm : Form
             });
             Progress("Completed. Backup: " + backup);
             Detect(action == "Build" ? (target ?? Path.Combine(root, "bin_x64")) : target);
-            MessageBox.Show(this, action == "Connect" ? "FAF client connected to faf-re. Open FAF to play." : "All installed, ready to go.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, action == "Threading" ? "Simulation threading saved. Takes effect when you next open the game lobby." : action == "Connect" ? "FAF client connected to faf-re. Open FAF to play." : "All installed, ready to go.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception error) { Progress("ERROR: " + error.Message); MessageBox.Show(this, error.Message, "Operation failed", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { busy = false; UpdateButtons(); }

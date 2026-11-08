@@ -48,6 +48,22 @@ internal static class BuilderTests
             Assert(File.ReadAllText(Path.Combine(engine, "init_faf.lua")) == "-- local init", "Initialization scripts");
             foreach (string name in Setup.Hooks)
                 Assert(File.ReadAllBytes(Path.Combine(engine, "fafengine", "lua", "ui", "lobby", name)).SequenceEqual(Setup.Resource(name)), "Lag Test payload");
+            Assert(Setup.Threading(engine)[0] == 0 && Setup.Threading(engine)[1] == Setup.MaximumWorkers, "Default threading selection");
+            int chosenWorkers = Math.Min(2, Setup.MaximumWorkers);
+            Setup.SetThreading(engine, true, chosenWorkers);
+            string lobbyPath = Path.Combine(engine, "fafengine", "lua", "ui", "lobby", "lobby.lua");
+            Assert(File.ReadAllText(lobbyPath).Contains("local microchipSimWorkers = " + chosenWorkers), "Enabled worker count not applied");
+            Assert(Setup.Threading(engine)[0] == 1 && Setup.Threading(engine)[1] == chosenWorkers, "Threading selection not persisted");
+            Setup.InstallHooks(engine);
+            Assert(File.ReadAllText(lobbyPath).Contains("local microchipSimWorkers = " + chosenWorkers), "Hook update lost threading setting");
+            Setup.InstallBuild(data, output, new string('a', 40), false);
+            Assert(File.ReadAllText(lobbyPath).Contains("local microchipSimWorkers = " + chosenWorkers), "Engine update lost threading setting");
+            Setup.SetThreading(engine, false, chosenWorkers);
+            Assert(File.ReadAllText(lobbyPath).Contains("local microchipSimWorkers = 0"), "Threading disable not applied");
+            Assert(Setup.Threading(engine)[0] == 0 && Setup.Threading(engine)[1] == chosenWorkers, "Disabled selection lost worker count");
+            try { Setup.SetThreading(engine, true, Setup.MaximumWorkers + 1); throw new Exception("Accepted excessive worker count"); }
+            catch (ArgumentOutOfRangeException) { }
+            Assert(File.ReadAllText(prefs) == original, "Threading changed FAF client settings");
             byte[] before = File.ReadAllBytes(Path.Combine(engine, "main_x64.exe"));
             Setup.InstallHooks(engine);
             Assert(File.ReadAllBytes(Path.Combine(engine, "main_x64.exe")).SequenceEqual(before), "Hook install replaced engine");
