@@ -59,11 +59,17 @@ Copy-Item "C:\ProgramData\FAForever\bin\*.lua" `
     <h2>4. Configure the FAF client</h2>
     <p>Open <strong>☰ → Settings → Forged Alliance Forever</strong>. Scroll down to the executable settings.</p>
     <h3>Command Line Format for Executable</h3>
-    <div class="command"><button type="button" class="copy">Copy</button><pre><code>"C:\ProgramData\FAForever\bin_x64\main_x64.exe" /con lua_AllowPrecompiledChunks=1</code></pre></div>
+    <div class="command"><button type="button" class="copy">Copy</button><pre><code>"C:\ProgramData\FAForever\bin_x64\main_x64.exe" /con lua_AllowPrecompiledChunks=1;ren_GpuSelectBrackets=0</code></pre></div>
     <h3>Execution directory</h3>
     <div class="command"><button type="button" class="copy">Copy</button><pre><code>C:\ProgramData\FAForever\bin_x64</code></pre></div>
     <table><tbody><tr><th scope="row">Game Location</th><td>Keep this pointing to the original Steam/game installation.</td></tr><tr><th scope="row">Relative Game Paths</th><td>Leave disabled.</td></tr><tr><th scope="row">Maps and Mods Location</th><td>Keep your existing FAF vault location.</td></tr></tbody></table>
-    <div class="note"><strong>Compiled-Lua mods:</strong> the option above enables mods such as EconomyMiddle and RFA. It also permits compiled Lua from other loaded maps and mods. If you do not need this compatibility setting, use only the quoted executable path.</div>
+    <div class="note"><strong>Compiled-Lua mods:</strong> <code>lua_AllowPrecompiledChunks=1</code> enables mods such as EconomyMiddle and RFA. It also permits compiled Lua from other loaded maps and mods. If you do not need compiled-Lua compatibility, remove <code>lua_AllowPrecompiledChunks=1;</code> while keeping the selection-bracket setting.</div>
+    <h3>Restore the selected-unit rings / brackets</h3>
+    <p>If the selection indicator around a unit is missing on the battlefield, set <code>ren_GpuSelectBrackets=0</code> as shown in the command above. This disables GPU-instanced selection brackets and uses the engine’s fallback drawing path.</p>
+    <p>For an existing setup, replace <strong>Command Line Format for Executable</strong> with the full command above. Both settings belong in one <code>/con</code> argument, separated by a semicolon.</p>
+    <p>If you also use a standalone desktop shortcut, right-click it → <strong>Properties</strong> and set <strong>Target</strong> to:</p>
+    <div class="command"><button type="button" class="copy">Copy</button><pre><code>"C:\ProgramData\FAForever\bin_x64\main_x64.exe" /init init_faf.lua /nobugreport /con lua_AllowPrecompiledChunks=1;ren_GpuSelectBrackets=0</code></pre></div>
+    <p>Set the shortcut’s <strong>Start in</strong> field to <code>C:\ProgramData\FAForever\bin_x64</code>. Close and relaunch the game, then select a unit to check that its battlefield selection indicator is visible. This setting affects selection rings / brackets, not the unit portrait in the bottom panel.</p>
     <p>Close Settings. Changes apply to the next game launched; an already running game keeps its existing engine. Exit the FAF client normally when finished so it can save its preferences.</p>
   </section>
 
