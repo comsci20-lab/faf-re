@@ -806,6 +806,8 @@ namespace moho
      */
     DWORD PerformNextEvent();
 
+    void RecordNetworkWaitDemand(bool active, bool waiting);
+
     // ---- diagnostics-only readouts (crash report section; no behaviour) ----
     [[nodiscard]] int32_t DiagDispatchBeat() const { return mDispatchBeat; }
     [[nodiscard]] int32_t DiagNextIssueBeat() const { return mNextIssueBeat; }

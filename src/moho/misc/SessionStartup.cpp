@@ -1270,6 +1270,7 @@ namespace moho
     CClientManagerImpl* const clientManager = activeDriver->GetClientManager();
     IClient* const localClient = clientManager->GetLocalClient();
     const std::size_t clientCount = clientManager->NumberOfClients();
+    const auto waitMetrics = clientManager->GetNetworkWaitMetrics();
 
     for (std::size_t clientIndex = 0; clientIndex < clientCount; ++clientIndex) {
       auto* const client = static_cast<CClientBase*>(clientManager->GetClient(static_cast<int>(clientIndex)));
@@ -1305,6 +1306,13 @@ namespace moho
       LuaPlus::LuaObject diagnostics{};
       diagnostics.AssignNewTable(state, 0, 0);
       diagnostics.SetInteger("version", 1);
+      if (clientIndex < waitMetrics.size()) {
+        const auto& waits = waitMetrics[clientIndex];
+        diagnostics.SetInteger("waitVersion", 1);
+        diagnostics.SetNumber("waitObservedSeconds", waits.observedSeconds);
+        diagnostics.SetNumber("waitPercent", waits.observedSeconds > 0 ? waits.waitingMs / (waits.observedSeconds * 10.0) : 0);
+        diagnostics.SetNumber("longestWaitMs", waits.longestMs);
+      }
       diagnostics.SetNumber("dispatched", dispatched);
       diagnostics.SetInteger("available", static_cast<int32_t>(available - dispatched));
       if (static_cast<IClient*>(client) == localClient) {

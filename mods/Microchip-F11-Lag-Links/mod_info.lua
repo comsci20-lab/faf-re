@@ -1,7 +1,7 @@
 name = 'Microchip F11 Lag Links'
 uid = 'c1a64e93-148b-4ac3-9152-308879f11401'
-version = 2
-description = 'Shows suspected delayed player-to-player command links in F11. Full pair diagnostics require the Microchip faf-re engine bridge; classic FAF shows local ping and quiet warnings only.'
+version = 3
+description = 'Ranks peers by measured local waiting time, longest wait and ping in F11. Accurate timing requires the included faf-re engine; classic engines show unavailable wait metrics.'
 author = 'Microchip'
 exclusive = false
 ui_only = true

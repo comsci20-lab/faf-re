@@ -73,21 +73,74 @@ class F11Tests(unittest.TestCase):
         self.assertIn('waits for Bob', self.update(c, 4)[0][1])
         self.assertIsNone(self.update(c, 1)[0][1])
 
-    def test_hook_keeps_original_snapshot_untouched(self):
+    def test_ranking_uses_measured_waits_not_ping(self):
         c = self.clients(bridge=False)
-        self.lua.globals().snapshot = c
-        self.lua.globals().core = self.core
-        self.lua.execute('''
-            function import() return core end
+        c[2]['ping'], c[3]['ping'] = 20, 350
+        for i, percent, longest in ((2, 18, 420), (3, 6, 180)):
+            c[i]['fafReNetwork'] = self.lua.table_from({'waitVersion': 1, 'waitObservedSeconds': 30,
+                'waitPercent': percent, 'longestWaitMs': longest})
+        ranked = self.core.Ranked(c)
+        self.assertEqual([ranked[i]['id'] for i in (1, 2)], [2, 3])
+        c[3]['fafReNetwork']['waitPercent'] = 18
+        c[3]['fafReNetwork']['longestWaitMs'] = 600
+        self.assertEqual(self.core.Ranked(c)[1]['id'], 3)
+        c[3]['connected'] = False
+        self.assertEqual(self.core.Ranked(c)[1]['id'], 2)
+
+    def test_unavailable_waits_are_not_displayed_as_zero(self):
+        c = self.clients(bridge=False)
+        self.assertFalse(self.core.Ranked(c)[1]['measured'])
+        c[3]['fafReNetwork'] = self.lua.table_from({'waitVersion': 1, 'waitObservedSeconds': 30,
+            'waitPercent': 0, 'longestWaitMs': 0})
+        ranked = self.core.Ranked(c)
+        self.assertEqual(ranked[1]['id'], 3)
+        self.assertTrue(ranked[1]['measured'])
+        c[3]['fafReNetwork']['waitPercent'] = float('nan')
+        self.assertFalse(self.core.Ranked(c)[2]['measured'])
+
+    def test_table_keeps_snapshot_untouched_and_closes_cleanly(self):
+        c = self.clients(bridge=False)
+        g = self.lua.globals(); g.snapshot = c; g.core = self.core
+        self.lua.execute("""
+            texts = {}; buttons = {}
+            function bound(value)
+                return setmetatable({value=value or 0, Set=function(self,v) self.value=v end},
+                    {__call=function(self) return self.value end})
+            end
+            function control()
+                local c={Width=bound(1600), Height=bound(860), Depth=bound(0)}
+                c.SetText=function(self,t) self.text=t end
+                c.SetColor=function() end; c.Show=function() end; c.Hide=function() end
+                c.Destroy=function() destroyed=true end; c.GetTopmostDepth=function() return 20 end
+                return c
+            end
+            ui={bodyFont='body', UIFile=function(p) return p end, GetNetworkBool=function() return true,true end,
+                CreateWorldCover=control, CreateDialogBrackets=control,
+                CreateSCXMenuPanelBorder=function() return {tm=control(),bm=control()} end}
+            ui.CreateText=function(parent,text) local c=control(); c.text=text; table.insert(texts,c); return c end
+            ui.CreateButtonStd=function() local c=control(); table.insert(buttons,c); return c end
+            function import(path)
+                if string.find(path,'analysis.lua',1,true) then return core end
+                if string.find(path,'uiutil.lua',1,true) then return ui end
+                if string.find(path,'layouthelpers.lua',1,true) then return setmetatable({}, {__index=function() return function() end end}) end
+                if string.find(path,'bitmap.lua',1,true) then return {Bitmap=control} end
+                return {FastInterval=function() fast=true end, ResetInterval=function() reset=true end}
+            end
             function GetSessionClients() return snapshot end
             function GetSystemTimeSeconds() return 10 end
-            function CloseWindow() closeCalled=true end
-        ''')
+            function SessionIsMultiplayer() return true end
+            function GetFrame() return control() end
+            function ConExecute() end; function AddInputCapture() end; function RemoveInputCapture() end
+            function ForkThread(fn) return coroutine.create(fn) end; function KillThread() killed=true end
+        """)
         self.lua.execute((MOD / 'hook/lua/ui/game/connectivity.lua').read_text(encoding='utf-8-sig'))
-        shown = self.lua.globals().GetSessionClients()
-        self.assertIn('local links only', shown[1]['name'])
+        g.CreateUI(); g.PingUpdate()
         self.assertEqual(c[1]['name'], 'Alice')
-        self.lua.globals().CloseWindow()
-        self.assertTrue(self.lua.globals().closeCalled)
+        text = [v['text'] for _, v in g.texts.items()]
+        self.assertIn('Time waiting', text)
+        self.assertIn('Current ping', text)
+        self.assertIn('Wait timing unavailable: requires the updated faf-re engine.', text)
+        g.CloseWindow()
+        self.assertTrue(g.reset and g.killed and g.destroyed)
 
 if __name__ == '__main__': unittest.main()

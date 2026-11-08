@@ -37,7 +37,8 @@ function New()
                 '" local=' .. tostring(client['local'] == true) .. ' connected=' .. tostring(client.connected == true) ..
                 ' maxsp=' .. Number(client.maxSP) .. ' ping_ms=' .. Number(client.ping) .. ' quiet_ms=' .. Number(client.quiet) ..
                 ' dispatched=' .. Number(data.dispatched) .. ' available=' .. Number(data.available) ..
-                ' actual_rate=' .. Number(data.actualRate) .. ' requested_rate=' .. Number(data.requestedRate) ..
+                ' wait_pct=' .. Number(data.waitPercent) .. ' longest_wait_ms=' .. Number(data.longestWaitMs) ..
+                ' observed_seconds=' .. Number(data.waitObservedSeconds) .. ' actual_rate=' .. Number(data.actualRate) .. ' requested_rate=' .. Number(data.requestedRate) ..
                 ' bottleneck="' .. Text(data.bottleneck) .. '" buffers=[' .. table.concat(buffers, ',') .. ']')
         end
         return lines

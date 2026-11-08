@@ -1,64 +1,46 @@
-# Microchip F11 Lag Links
+# Microchip F11 Lag Links - version 3
 
-Author: **Microchip**. UI-only; other players do not need to install it.
-Version 2 fixes Lua 5.0 syntax compatibility, checked during real-client tests.
+The UI-only mod replaces the contents of the game's Connectivity window with a table in the existing metallic game frame. Press F11 to open or close it.
 
-## Install
+## Table and ranking
 
-1. Finish your match and close the game.
-2. Copy `Microchip-F11-Lag-Links` from the package into your Forged Alliance
-   **Mods** folder (normally `Documents/My Games/Gas Powered Games/Supreme Commander
-   Forged Alliance/Mods`). Keep `mod_info.lua` directly inside that mod folder.
-3. For full player-to-player diagnostics, back up your current faf-re
-   `bin_x64/main_x64.exe`, then replace it with the included
-   `engine-update/main_x64.exe`. This is the previously working 26 October
-   faf-re baseline plus a read-only diagnostics bridge. Keep the existing
-   initialization scripts, shader libraries and `fafengine` directory.
-4. Enable **Microchip F11 Lag Links** in FAF's UI mod manager and launch a new game.
-5. Press **F11**. Each player's existing row now includes any detected warning.
+Remote players are ranked **worst waiting percentage first**, then longest wait, with names as a stable tie-breaker. Ping does not determine the ranking. Your own row is separate and unranked. Disconnected peers are listed last.
 
-The packaged engine is x64 faf-re, not the classic FAF engine. Do not replace
-classic FAF's `ForgedAlliance.exe`. Existing FAF launch settings continue to
-work because the faf-re executable name stays the same. Installing a stock
-upstream engine again removes the added bridge.
+- **Time waiting:** percentage of observed active gameplay, within the trailing 30 wall-clock seconds, during which your engine needed its next simulation update but that peer's commands or confirmations were missing.
+- **Longest wait:** longest continuous such interval inside that window, in milliseconds. A continuing wait is clipped to the 30-second window.
+- **Current ping:** the existing RTT measurement between your PC and that peer, in milliseconds.
+- **Zero:** required remote data was ready when needed. Normal command lead/buffering is not counted, and the code does not subtract a fixed 500 ms from ping.
 
-## Reading the rows
+Shared waits are attributed to each missing peer, so percentages can overlap. Pauses and pre-game readiness are excluded. The UI says when it is still collecting its first 30 seconds of history. Older engines show `--` and a timing-unavailable notice, never an invented zero. Ping remains usable there.
 
-- `Alice [waits for Bob?]`: for at least 1.5 seconds, Alice's reported incoming
-  command buffer from Bob has been empty/behind, while another incoming source
-  has at least five more simulation beats buffered. The direction is **Bob to
-  Alice**. The worst buffer is shown first; `+1` means an additional suspected
-  incoming source. Only the worst source's name is shown to fit the F11 row.
-- `[high ping to you]`: that peer's measured RTT to your own machine is at least
-  400 ms. This alone does not identify a remote pair or prove it slows the game.
-- `[no packets to you]`: your connection has received no packets from that peer
-  for at least three seconds. Disconnected and stale rows are excluded from
-  remote-pair comparisons.
-- Your row says `[local links only]` on classic FAF or an older faf-re engine:
-  those engines do not expose the full acknowledgement matrix to UI mods.
-  No remote-pair result is invented in that mode.
+Waits identify whose data your client is missing, not whether internet routing, packet delivery, the remote CPU, or endpoint scheduling caused the delay. They do not measure other players' waiting on you. Existing sustained comparative-buffer warnings such as `[waits for Bob?]` remain on the secondary line; those are separate suspected-link diagnostics, not the source of the measured percentages.
 
-The question mark is deliberate. These are **suspected data-delivery delays**
-from existing F11 acknowledgements, not measured packet loss, proof of a faulty
-route, or proof of which player is responsible. A source CPU stall, endpoint
-scheduling, a pause, or delayed peer reports can resemble a connection problem.
-Several players waiting for the same source may be a source/simulation issue.
-Uniformly low buffers are not classified as a bad pair. At least three active
-clients are needed for comparative pair warnings. Packet RTTs for remote pairs
-are not exposed, so the mod does not display invented remote ping numbers.
+Longest-wait display colours use provisional thresholds: below 100 ms green, below 250 ms yellow, below 500 ms orange, otherwise red. Waiting-percentage colours use below 1%, below 5%, below 15%, and 15% or greater respectively. These are display choices, not official FAF ratings.
 
-The mod reads only existing snapshots while F11 is open. It sends no additional
-messages, changes no simulation commands, and does not change disconnect/eject
-logic. Names are annotated only inside F11. Closing F11 clears its history.
+## Installation
 
-## Remove
+1. Close the game.
+2. Copy `Microchip-F11-Lag-Links` to the normal FAF UI Mods folder.
+3. For measured waits, back up `FAForever/bin_x64/main_x64.exe` and replace it with the included `engine-update/main_x64.exe`. This is the working e4cc5d8b engine base plus passive Microchip diagnostics. Preserve your existing init scripts, shader libraries and `fafengine` folder. Classic peers need no update. Do not replace classic `ForgedAlliance.exe`.
+4. Enable **Microchip F11 Lag Links** in your UI mod manager and launch a new game.
+5. Open F11. No rebuild is needed for other players.
 
-Disable the UI mod. To remove the engine bridge too, close the game and restore
-your backed-up `main_x64.exe`.
+The included executable is x64 faf-re. Reinstalling a stock upstream engine removes this custom measurement API; the mod will then display unavailable timing. Existing builder choices and the local checksum toggle are separate features.
 
-## Verification
+## How it is measured
 
-Seven automated tests cover warning persistence/recovery, worst-source selection, uniformly slow buffers,
-classic-engine fallback, stale peers, roster/clock changes, and preserving the
-original snapshot and F11 close behavior. The engine bridge compiles with the
-existing x64 build. Live multiplayer validation is still required.
+The render/session loop records when a next update is actually demanded and no sync packet is ready. The driver identifies that demanded beat, excludes paused/non-network sessions, and the client manager attributes only missing remote data/ACK readiness. If that beat has already been dispatched for CPU processing, no network wait is charged. Local command-issuance shortages are not charged to remote peers.
+
+The client manager updates intervals as delivery/readiness changes. A passive sidecar keeps a rolling 30-second timeline outside the ABI-sensitive engine object. UI reads do not create or end waits. The Lua snapshot exposes `fafReNetwork.waitVersion`, `waitObservedSeconds`, `waitPercent`, and `longestWaitMs`. The window refreshes twice a second; engine timing is independent of that refresh. Timing starts at observed frame demand and ends at engine readiness processing, so it has frame/event scheduling resolution rather than packet-capture precision.
+
+No new network packets, simulation commands, or remote mods are required. The instrumentation does not change simulation state, protocol, pacing, checksum settings or CPU affinity.
+
+## Validation
+
+- Engine network suite: 269 checks, zero failures, including demand gating, timely delivery, pause exclusion, overlapping waits, continuous longest waits, expiry and clock reset.
+- Lua tests cover ranking by wait rather than ping, valid zero versus unavailable data, window lifecycle, the existing suspected-link logic, and passive recording.
+- Real classic + x64 direct test completed at about 9.85 ticks/second on the x64 client.
+- A private loopback relay test injected 800 ms one-way delay for 20 seconds. The remote classic peer's observed wait peaked at 23.379%, with a longest observed interval of 552.245 ms. After recovery and history expiry the sample returned to 0% and 0 ms. The run reported no crash or desync.
+- Actual game UI creation/update/close is checked separately with private preferences. Tests do not contact a public FAF lobby.
+
+The local tests are short and share one PC. They validate this implementation's behaviour, not every internet or mod combination.

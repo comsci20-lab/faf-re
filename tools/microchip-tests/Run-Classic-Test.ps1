@@ -11,13 +11,14 @@ param(
     [ValidateSet('auto','d3d9','d3d11','d3d12')][string]$X64Renderer = 'auto',
     [ValidateRange(1,10)][int]$JoinDelaySeconds = 2,
     [switch]$Pause,
+    [string]$X64Exe,
     [string]$FafRoot = "$env:ProgramData\FAForever",
     [string]$RunPath
 )
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $classic = Join-Path $FafRoot 'bin/ForgedAlliance.exe'
-$rebuilt = Join-Path $FafRoot 'bin_x64/main_x64.exe'
+$rebuilt = if($X64Exe){[IO.Path]::GetFullPath($X64Exe)}else{Join-Path $FafRoot 'bin_x64/main_x64.exe'}
 $harness = Join-Path $repo 'tools/bin/mpemu.exe'
 foreach($file in @($classic,$rebuilt,$harness)) { if(-not (Test-Path -LiteralPath $file)){throw "Required file missing: $file"} }
 if(-not $GenerateOnly -and (Get-Process -Name ForgedAlliance,main_x64,main,mpemu -ErrorAction SilentlyContinue)) { throw 'Close your current game or previous test before starting a local test.' }

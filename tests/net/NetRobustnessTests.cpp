@@ -1,3 +1,6 @@
+#include <thread>
+#include <chrono>
+#include "moho/net/NetworkWaitTracker.h"
 // Robustness tests for the code that parses what other players send: the Lua
 // byte-stream decoder, message framing, the command-stream decoder, client
 // control messages and the lobby. Each test feeds malformed input straight to
@@ -1345,7 +1348,57 @@ namespace
     CHECK(tried > 0 && refused == tried);
   }
 
+  void TestNetworkWaitDemand()
+  {
+    auto* f = new ClientFixture;
+    auto* manager = f->manager;
+    manager->mWeAreReady = manager->mEveryoneIsReady = true;
+    manager->mDispatchedBeat = manager->mAvailableBeat = 1;
+    manager->mLocalClient->mQueuedBeat = 10;
+    f->remote->mQueuedBeat = 1;
+    manager->RecordNetworkWaitDemand(true, false, 2); // missing early data is not a stall
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    CHECK(manager->GetNetworkWaitMetrics()[1].waitingMs == 0);
+    manager->RecordNetworkWaitDemand(true, true, 2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    CHECK(manager->GetNetworkWaitMetrics()[1].waitingMs > 0);
+    CHECK(manager->GetNetworkWaitMetrics()[0].waitingMs == 0);
+    manager->mAvailableBeat = 2; // delivery ends the stall without a UI poll
+    manager->RefreshNetworkWaitDiagnostics();
+    const double completed = manager->GetNetworkWaitMetrics()[1].waitingMs;
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    CHECK(manager->GetNetworkWaitMetrics()[1].waitingMs == completed);
+    manager->RecordNetworkWaitDemand(false, false, 2);
+    const double active = manager->GetNetworkWaitMetrics()[1].observedSeconds;
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    CHECK(manager->GetNetworkWaitMetrics()[1].observedSeconds == active);
+  }
+
+  void TestNetworkWaitWindow()
+  {
+    moho::NetworkWaitTracker tracker;
+    tracker.Observe(0, true, 0);
+    CHECK(tracker.Read(1, 1).waitingMs == 0);
+    tracker.Observe(1, true, 2);
+    tracker.Observe(1.2, true, 6); // overlapping wait; peer 1 stays blocked
+    tracker.Observe(1.5, true, 0);
+    auto a = tracker.Read(2, 1), b = tracker.Read(2, 2);
+    CHECK(std::abs(a.waitingMs - 500) < 0.001);
+    CHECK(std::abs(a.longestMs - 500) < 0.001);
+    CHECK(std::abs(b.waitingMs - 300) < 0.001);
+    tracker.Observe(2, false, 0); // pause excluded from denominator
+    tracker.Observe(12, true, 0);
+    CHECK(std::abs(tracker.Read(13, 1).observedSeconds - 3) < 0.001);
+    CHECK(tracker.Read(43, 1).waitingMs == 0);
+    tracker.Observe(43, true, 2);
+    CHECK(std::abs(tracker.Read(74, 1).longestMs - 30000) < 0.001);
+    tracker.Observe(1, true, 0); // new clock/session cannot inherit stale waits
+    CHECK(tracker.Read(2, 1).waitingMs == 0);
+  }
+
   const TestCase kTests[] = {
+    {"network waits: demand, timely delivery and pause", &TestNetworkWaitDemand},
+    {"network waits: rolling intervals, overlap, pauses and expiry", &TestNetworkWaitWindow},
     {"lua: valid values", &TestLuaValidValues},
     {"files: the mounted file system stays inside its mounts", &TestVfsStaysInsideMounts},
     {"files: game Lua states read only the game's files", &TestLuaFilesComeFromTheGame},

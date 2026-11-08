@@ -8899,6 +8899,12 @@ namespace moho
       DoBeat(msvc8::auto_ptr<SSyncData>(packet));
     }
 
+    // Observe real display demand; early network buffering and CPU-only work are not peer waits.
+    if (simDriver != nullptr) {
+      static_cast<CSimDriver*>(simDriver)->RecordNetworkWaitDemand(
+          mGameTick > 0 && !mReplayIsPaused, !mReplayIsPaused && mGameTick < targetTick && !simDriver->HasSyncData());
+    }
+
     if (sEngineStat_Sync_Count == nullptr) {
       sEngineStat_Sync_Count = GetEngineStats()->GetItem("Sync_Count", true);
       (void)sEngineStat_Sync_Count->Release(0);

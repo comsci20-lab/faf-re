@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <chrono>
+#include <unordered_map>
 
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/utils/Global.h"
@@ -28,6 +30,11 @@
 using namespace moho;
 namespace
 {
+  struct WaitState { NetworkWaitTracker history; bool active = false; bool waiting = false; int target = 0; };
+  struct WaitStore { std::mutex mutex; std::unordered_map<const CClientManagerImpl*, WaitState> sessions; };
+  WaitStore& WaitDiagnostics() { static auto* store = new WaitStore; return *store; }
+  double WaitClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
   float GetBottleneckUiTimestampMs(const CClientManagerImpl& manager)
   {
     // Low-dword float pun over Timer::mTime (binary reads only 4 of the 8 bytes).
@@ -667,6 +674,7 @@ void CMarshaller::WriteCells(CMessageStream& stream, const gpg::core::FastVector
  */
 CClientManagerImpl::~CClientManagerImpl()
 {
+  { auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex); store.sessions.erase(this); }
   for (CClientBase*& client : mClients) {
     delete client;
     client = nullptr;
@@ -988,9 +996,50 @@ bool CClientManagerImpl::EveryoneResponsiveSince(const int beat)
   return true;
 }
 
-/**
- * Address: 0x0053EA30 (FUN_0053EA30)
- */
+// Engine addition: passive timing only, outside the ABI-sensitive object.
+void CClientManagerImpl::RecordNetworkWaitDemand(bool active, bool waiting, int targetBeat)
+{
+  std::scoped_lock lock(mLock);
+  { auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex);
+    auto& state = store.sessions[this]; state.active = active; state.waiting = waiting; state.target = targetBeat; }
+  RefreshNetworkWaitDiagnostics();
+}
+
+void CClientManagerImpl::RefreshNetworkWaitDiagnostics()
+{
+  std::scoped_lock lock(mLock);
+  auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex);
+  auto found = store.sessions.find(this); if (found == store.sessions.end()) return;
+  auto& state = found->second;
+  const bool active = state.active && mWeAreReady && mEveryoneIsReady && mDispatchedBeat > 0 && mClients.size() <= 64;
+  std::uint64_t missing = 0;
+  // Only the demanded beat, never speculative lead or normal schedule time.
+  if (active && state.waiting && state.target > mAvailableBeat && state.target > mDispatchedBeat
+      && mLocalClient && mLocalClient->mQueuedBeat >= static_cast<unsigned>(state.target)) {
+    for (std::size_t i = 0; i < mClients.size(); ++i) {
+      auto* peer = mClients[i];
+      if (peer && peer != mLocalClient && !peer->mEjected && !peer->mEjectPending
+          && (peer->mQueuedBeat < static_cast<unsigned>(state.target) || !peer->IsReadyForBeat(state.target)))
+        missing |= std::uint64_t{1} << i;
+    }
+  }
+  state.history.Observe(WaitClock(), active, missing);
+}
+
+std::vector<NetworkWaitMetrics> CClientManagerImpl::GetNetworkWaitMetrics()
+{
+  std::scoped_lock lock(mLock);
+  auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex);
+  std::vector<NetworkWaitMetrics> result(mClients.size());
+  const auto found = store.sessions.find(this);
+  if (found != store.sessions.end()) {
+    const double now = WaitClock();
+    for (unsigned i = 0; i < result.size(); ++i) result[i] = found->second.history.Read(now, i);
+  }
+  return result;
+}
+
+/** Address: 0x0053EA30 (FUN_0053EA30). */
 void CClientManagerImpl::DoBeat()
 {
   std::scoped_lock lock(mLock);
@@ -1042,6 +1091,7 @@ void CClientManagerImpl::DoBeat()
     ProcessClients(message);
   }
 
+  RefreshNetworkWaitDiagnostics();
   const SClientBottleneckInfo bottleneckInfo = GetBottleneckInfo();
   const float currentUiBottleneckTimeMs = GetBottleneckUiTimestampMs(*this);
   if (((bottleneckInfo.mType == SClientBottleneckInfo::Nothing) ||

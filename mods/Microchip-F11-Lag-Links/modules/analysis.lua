@@ -72,4 +72,30 @@ function New()
     end
     return tracker
 end
-return {New = New}
+local function Finite(value)
+    return type(value) == 'number' and value == value and math.abs(value) < 1000000000
+end
+function Ranked(clients)
+    local rows = {}
+    for id, client in pairs(clients or {}) do
+        if not client['local'] then
+            local data = type(client.fafReNetwork) == 'table' and client.fafReNetwork or {}
+            local valid = data.waitVersion == 1 and Finite(data.waitObservedSeconds) and data.waitObservedSeconds > 0
+                and Finite(data.waitPercent) and data.waitPercent >= 0 and data.waitPercent <= 100.001
+                and Finite(data.longestWaitMs) and data.longestWaitMs >= 0 and data.longestWaitMs <= 30000.001
+            table.insert(rows, {id = id, client = client, measured = valid and client.connected,
+                percent = valid and data.waitPercent or 0, longest = valid and data.longestWaitMs or 0})
+        end
+    end
+    table.sort(rows, function(a, b)
+        if not not a.client.connected ~= not not b.client.connected then return not not a.client.connected end
+        if not not a.measured ~= not not b.measured then return not not a.measured end
+        if a.measured and a.percent ~= b.percent then return a.percent > b.percent end
+        if a.measured and a.longest ~= b.longest then return a.longest > b.longest end
+        local an, bn = tostring(a.client.name or ''), tostring(b.client.name or '')
+        if an ~= bn then return an < bn end
+        return tostring(a.id) < tostring(b.id)
+    end)
+    return rows
+end
+return {New = New, Ranked = Ranked}
