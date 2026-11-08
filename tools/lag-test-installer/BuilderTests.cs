@@ -32,6 +32,7 @@ internal static class BuilderTests
             File.WriteAllText(prefs, original);
             Assert(Setup.Detect(prefs, new[] { engine }).Count == 0, "Unexpected engine detection");
             FakeEngine(custom);
+            Assert(!Setup.LagTestInstalled(custom) && !Setup.LagTestCurrent(custom), "Detected missing Lag Test as installed");
             Setup.Connect(custom, prefs);
             Assert(Setup.Detect(prefs, new[] { engine }).Single() == custom, "Configured engine detection");
             var configured = Setup.ReadSettings(prefs);
@@ -64,6 +65,13 @@ internal static class BuilderTests
             try { Setup.SetThreading(engine, true, Setup.MaximumWorkers + 1); throw new Exception("Accepted excessive worker count"); }
             catch (ArgumentOutOfRangeException) { }
             Assert(File.ReadAllText(prefs) == original, "Threading changed FAF client settings");
+            Assert(Setup.LagTestInstalled(engine) && Setup.LagTestCurrent(engine), "Current Lag Test not detected with custom worker setting");
+            string scorePath = Path.Combine(engine, "fafengine", "lua", "ui", "lobby", "connectionscore.lua");
+            File.WriteAllText(scorePath, "-- old version");
+            Assert(Setup.LagTestInstalled(engine) && !Setup.LagTestCurrent(engine), "Outdated Lag Test not detected");
+            File.Delete(scorePath);
+            Assert(!Setup.LagTestInstalled(engine) && !Setup.LagTestCurrent(engine), "Incomplete Lag Test not detected");
+            Setup.InstallHooks(engine);
             byte[] before = File.ReadAllBytes(Path.Combine(engine, "main_x64.exe"));
             Setup.InstallHooks(engine);
             Assert(File.ReadAllBytes(Path.Combine(engine, "main_x64.exe")).SequenceEqual(before), "Hook install replaced engine");
@@ -92,6 +100,26 @@ internal static class BuilderTests
             Assert(File.ReadAllText(enginePath) == "rollback sentinel" && File.ReadAllText(prefs) == oldPrefs, "Rollback did not preserve files");
             Assert(File.Exists(Path.Combine(backup, "restore-map.json")), "Backup manifest missing");
             Assert(Directory.GetAccessControl(backup).AreAccessRulesProtected, "Backup inherited public permissions");
+            string coreEngine = Path.Combine(root, "All cores engine"); FakeEngine(coreEngine);
+            string coreInit = Path.Combine(coreEngine, "init_faf.lua");
+            string affinityInit = "local success, processAffinityMask, systemAffinityMask = GetProcessAffinityMask()\nif success then\n    if systemAffinityMask >= 16777215 then\n        processAffinityMask = 16777212\n    elseif (systemAffinityMask >= 63) then\n        processAffinityMask = systemAffinityMask - 3\n    end\n    if processAffinityMask ~= systemAffinityMask then SetProcessAffinityMask(processAffinityMask) end\nend\n";
+            File.WriteAllText(coreInit, affinityInit);
+            Setup.SetThreading(coreEngine, true, chosenWorkers, true);
+            Assert(Setup.Threading(coreEngine)[2] == 1 && File.ReadAllText(coreInit).Contains("elseif false then -- Microchip all cores:"), "All-core startup guard missing");
+            string appliedInit = File.ReadAllText(coreInit);
+            Setup.SetThreading(coreEngine, true, chosenWorkers, true);
+            Assert(File.ReadAllText(coreInit) == appliedInit, "Repeated all-core apply changed the startup script");
+            File.WriteAllText(Path.Combine(data, "bin", "init_faf.lua"), affinityInit);
+            File.WriteAllBytes(Path.Combine(output, "dxil.dll"), new byte[] { 4, 5, 6 });
+            Setup.InstallBuild(data, output, new string('d', 40), false, coreEngine);
+            Assert(File.ReadAllText(coreInit) == appliedInit, "Engine update lost all-core setting");
+            Setup.SetThreading(coreEngine, true, chosenWorkers, false);
+            Assert(File.ReadAllText(coreInit) == affinityInit && Setup.Threading(coreEngine)[2] == 0, "Disabling all-core option did not restore original startup rule");
+            File.WriteAllText(coreInit, "-- unfamiliar startup");
+            string oldCoreSettings = File.ReadAllText(Path.Combine(coreEngine, "microchip-threading.json"));
+            try { Setup.SetThreading(coreEngine, true, chosenWorkers, true); throw new Exception("Accepted unfamiliar affinity startup"); }
+            catch (IOException) { }
+            Assert(File.ReadAllText(coreInit) == "-- unfamiliar startup" && File.ReadAllText(Path.Combine(coreEngine, "microchip-threading.json")) == oldCoreSettings, "Unsupported startup changed installed files");
             Assert(Setup.Quote(@"C:\path with spaces\") == "\"C:\\path with spaces\\\\\"", "Argument quoting");
             return 0;
         }
