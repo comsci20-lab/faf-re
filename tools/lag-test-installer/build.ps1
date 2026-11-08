@@ -9,6 +9,7 @@ foreach ($name in @('lobby.lua', 'connectiontest.lua', 'connectionscore.lua')) {
     $arguments += "/resource:$root/data/fafengine/lua/ui/lobby/$name,$name"
 }
 $arguments += "/resource:$root/data/fafengine/lua/options/options.lua,options.lua"
+$arguments += "/win32icon:$PSScriptRoot/assets/builder.ico"
 & $compiler @arguments (Join-Path $PSScriptRoot 'Installer.cs') (Join-Path $PSScriptRoot 'BuilderTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Builder compilation failed.' }
 & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File (Join-Path $PSScriptRoot 'Test-Worker.ps1')

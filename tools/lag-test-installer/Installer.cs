@@ -327,6 +327,7 @@ internal sealed class BuilderForm : Form
     internal BuilderForm()
     {
         Text = "Microchip faf-re builder"; ClientSize = new Size(900, 838);
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         AutoScaleMode = AutoScaleMode.Dpi; Font = new Font("Segoe UI", 10f);
         BackColor = Color.FromArgb(8, 14, 20); ForeColor = Color.FromArgb(218, 231, 238);
         DoubleBuffered = true;
