@@ -6,9 +6,19 @@ from pathlib import Path
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['RAYON_NUM_THREADS'] = '1'
-import ctranslate2
-import sentencepiece
-from lingua import Language, LanguageDetectorBuilder
+try:
+    import ctranslate2
+    import sentencepiece
+    from lingua import Language, LanguageDetectorBuilder
+except Exception:
+    # Startup exceptions happen before any chat is read. Keep that diagnostic only.
+    import traceback
+    try:
+        (Path(__file__).resolve().parent / 'startup-error.txt').write_text(
+            traceback.format_exc(), encoding='utf-8')
+    except OSError:
+        pass
+    raise
 
 HOME = Path(__file__).resolve().parent
 LANGUAGES = {'ru': Language.RUSSIAN, 'de': Language.GERMAN,

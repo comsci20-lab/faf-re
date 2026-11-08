@@ -8,6 +8,7 @@
 #include <vector>
 #include "moho/lua/CScrLuaBinder.h"
 #include "moho/lua/CScrLuaObjectFactory.h"
+#include "gpg/core/utils/Logging.h"
 
 namespace {
   struct Request { unsigned id; std::string text; };
@@ -54,12 +55,14 @@ namespace {
     bool Start() {
       wchar_t local[32768];
       const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", local, 32768);
-      if (!count || count >= 32768) return false;
+      if (!count || count >= 32768) { gpg::Logf("OfflineTranslation: LOCALAPPDATA unavailable (%lu)", GetLastError()); return false; }
       const std::wstring home = std::wstring(local) + L"\\Microchip\\faf-translator";
       const std::wstring exe = home + L"\\python\\Scripts\\python.exe";
       const std::wstring script = home + L"\\worker.py";
       if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES ||
-          GetFileAttributesW(script.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+          GetFileAttributesW(script.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        gpg::Logf("OfflineTranslation: runtime files unavailable (%lu)", GetLastError()); return false;
+      }
       SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
       HANDLE childInput = nullptr, childOutput = nullptr;
       if (!CreatePipe(&childInput, &input, &sa, 0)) return false;
@@ -90,12 +93,14 @@ namespace {
       bool launched = configured && CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE,
         CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS | EXTENDED_STARTUPINFO_PRESENT,
         nullptr, home.c_str(), &startup.StartupInfo, &info);
+      const DWORD launchError = launched ? 0 : GetLastError();
       if (initialized) DeleteProcThreadAttributeList(startup.lpAttributeList);
       CloseHandle(childInput); CloseHandle(childOutput);
       if (error != INVALID_HANDLE_VALUE) CloseHandle(error);
-      if (!launched) { Close(); return false; }
+      if (!launched) { gpg::Logf("OfflineTranslation: worker launch failed (%lu)", launchError); Close(); return false; }
       process = info.hProcess;
       CloseHandle(info.hThread);
+      gpg::Logf("OfflineTranslation: local worker started");
       return true;
     }
     Result Translate(const Request& request) {
@@ -130,6 +135,9 @@ namespace {
         }
         break;
       }
+      DWORD exitCode = 0;
+      GetExitCodeProcess(process, &exitCode);
+      gpg::Logf("OfflineTranslation: worker response failed (exit=%lu, pipe=%lu)", exitCode, GetLastError());
       Close(); result.language = "unavailable"; return result;
     }
     void Run() {

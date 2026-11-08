@@ -35,7 +35,7 @@ function Translate(text, display)
                     if result.language == 'unavailable' then
                         if not warned then
                             warned = true
-                            pcall(item.display, '[Offline translation unavailable: check the local language packs.]')
+                            pcall(item.display, '[Offline translator could not start or respond. Original chat is unaffected.]')
                         end
                     elseif result.text and result.text ~= '' then
                         pcall(item.display, '[English / ' .. string.upper(result.language) .. '] ' .. result.text)
