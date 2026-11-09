@@ -22,6 +22,9 @@ $files = @{
     'fafengine/lua/ui/lobby/lobby.lua' = "$repo/data/fafengine/lua/ui/lobby/lobby.lua"
 }
 $encoding = New-Object Text.UTF8Encoding($false)
+$runtimeConfig = Join-Path $EngineDirectory 'offline-translator.ini'
+if (Test-Path -LiteralPath $runtimeConfig) { Copy-Item -LiteralPath $runtimeConfig -Destination (Join-Path $backup 'offline-translator.ini') }
+[IO.File]::WriteAllText($runtimeConfig, "[runtime]`r`nhome=$translatorHome`r`n", [Text.Encoding]::Unicode)
 foreach ($relative in $files.Keys) {
     $target = Join-Path $EngineDirectory $relative
     $saved = Join-Path $backup $relative

@@ -54,11 +54,29 @@ namespace {
     }
     bool Start() {
       wchar_t local[32768];
-      const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", local, 32768);
+      // Prefer the installer-recorded location rather than depending on the launcher environment.
+      wchar_t module[32768];
+      const DWORD moduleLength = GetModuleFileNameW(nullptr, module, 32768);
+      std::wstring home;
+      if (moduleLength && moduleLength < 32768) {
+        const std::wstring executable(module, moduleLength);
+        const auto slash = executable.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) {
+          const auto config = executable.substr(0, slash + 1) + L"offline-translator.ini";
+          const DWORD length = GetPrivateProfileStringW(L"runtime", L"home", L"", local, 32768, config.c_str());
+          if (length && length < 32767) home.assign(local, length);
+        }
+      }
+      const DWORD count = home.empty() ? GetEnvironmentVariableW(L"LOCALAPPDATA", local, 32768) : 0;
+      if (home.empty()) {
       if (!count || count >= 32768) { gpg::Logf("OfflineTranslation: LOCALAPPDATA unavailable (%lu)", GetLastError()); return false; }
-      const std::wstring home = std::wstring(local) + L"\\Microchip\\faf-translator";
+      home = std::wstring(local, count) + L"\\Microchip\\faf-translator";
+      }
       const std::wstring exe = home + L"\\python\\Scripts\\python.exe";
       const std::wstring script = home + L"\\worker.py";
+      char diagnosticPath[32768];
+      if (WideCharToMultiByte(CP_UTF8, 0, exe.c_str(), -1, diagnosticPath, sizeof(diagnosticPath), nullptr, nullptr))
+        gpg::Logf("OfflineTranslation: runtime path=%s", diagnosticPath);
       if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES ||
           GetFileAttributesW(script.c_str()) == INVALID_FILE_ATTRIBUTES) {
         gpg::Logf("OfflineTranslation: runtime files unavailable (%lu)", GetLastError()); return false;

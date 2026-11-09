@@ -4,7 +4,7 @@ import unittest
 from lupa.lua51 import LuaRuntime
 
 ROOT = Path(__file__).resolve().parents[2]
-MOD = ROOT / 'mods/Microchip-F11-Lag-Links'
+MOD = ROOT / 'mods/Microchip-F11-Lag-Connectivity-Screen'
 
 class F11Tests(unittest.TestCase):
     def setUp(self):
@@ -137,8 +137,9 @@ class F11Tests(unittest.TestCase):
         g.CreateUI(); g.PingUpdate()
         self.assertEqual(c[1]['name'], 'Alice')
         text = [v['text'] for _, v in g.texts.items()]
-        self.assertIn('Time waiting', text)
-        self.assertIn('Current ping', text)
+        self.assertIn('Wait 30s', text)
+        self.assertIn('Wait game', text)
+        self.assertIn('Ping', text)
         self.assertIn('Wait timing unavailable: requires the updated faf-re engine.', text)
         g.CloseWindow()
         self.assertTrue(g.reset and g.killed and g.destroyed)

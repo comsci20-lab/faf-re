@@ -1,4 +1,4 @@
-# Microchip F11 Lag Links - version 3
+# Microchip F11 Lag Connectivity Screen - version 3
 
 The UI-only mod replaces the contents of the game's Connectivity window with a table in the existing metallic game frame. Press F11 to open or close it.
 
@@ -20,9 +20,9 @@ Longest-wait display colours use provisional thresholds: below 100 ms green, bel
 ## Installation
 
 1. Close the game.
-2. Copy `Microchip-F11-Lag-Links` to the normal FAF UI Mods folder.
+2. Copy `Microchip-F11-Lag-Connectivity-Screen` to the normal FAF UI Mods folder.
 3. For measured waits, back up `FAForever/bin_x64/main_x64.exe` and replace it with the included `engine-update/main_x64.exe`. This is the working e4cc5d8b engine base plus passive Microchip diagnostics. Preserve your existing init scripts, shader libraries and `fafengine` folder. Classic peers need no update. Do not replace classic `ForgedAlliance.exe`.
-4. Enable **Microchip F11 Lag Links** in your UI mod manager and launch a new game.
+4. Enable **Microchip F11 Lag Connectivity Screen** in your UI mod manager and launch a new game.
 5. Open F11. No rebuild is needed for other players.
 
 The included executable is x64 faf-re. Reinstalling a stock upstream engine removes this custom measurement API; the mod will then display unavailable timing. Existing builder choices and the local checksum toggle are separate features.

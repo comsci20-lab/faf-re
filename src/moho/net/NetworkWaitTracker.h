@@ -8,6 +8,8 @@ struct NetworkWaitMetrics {
     double observedSeconds = 0;
     double waitingMs = 0;
     double longestMs = 0;
+    double gameSeconds = 0;     // whole-game active seconds
+    double gameWaitPercent = 0; // whole-game share waiting on this peer
 };
 // Passive wall-clock intervals. Shared waits overlap; pauses are excluded.
 class NetworkWaitTracker {

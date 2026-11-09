@@ -12,6 +12,9 @@ class ChatTests(unittest.TestCase):
         self.lua.execute('''
             entries = {}; requests = {}; callbacks = {}; resets = 0
             MicrochipQueueTranslation = function() end
+            GetFocusArmy = function() return 1 end
+            GetSessionClients = function() return {{name='Me', ['local']=true}} end
+            OnReceive = function(sender, message) AppendEntry(message) end
             table.copy = function(t) local n={} for k,v in pairs(t) do n[k]=v end return n end
             AppendEntry = function(e) table.insert(entries, e) end
             translator = {
@@ -38,6 +41,19 @@ class ChatTests(unittest.TestCase):
         self.lua.execute("AppendEntry{ArmyID=0,Text='system'}; AppendEntry{ArmyID=2,Text='camera',Camera={}}")
         self.assertEqual(len(self.lua.globals().requests), 0)
         self.assertEqual(len(self.lua.globals().entries), 2)
+
+    def test_own_message_not_translated_or_repeated(self):
+        self.lua.execute("OnReceive('Me', {ArmyID=1,Name='Me:',Text='bonjour',Id='own'})")
+        self.assertEqual(len(self.lua.globals().entries), 1)
+        self.assertEqual(len(self.lua.globals().requests), 0)
+
+    def test_remote_observer_with_own_army_fallback_still_translates(self):
+        self.lua.execute("OnReceive('Other', {ArmyID=1,Name='Other:',Text='bonjour',Id='other'})")
+        self.assertEqual(len(self.lua.globals().requests), 1)
+
+    def test_own_private_echo_not_translated(self):
+        self.lua.execute("AppendEntry{ArmyID=1,Name='To Ally:',Text='bonjour'}")
+        self.assertEqual(len(self.lua.globals().requests), 0)
 
 
 if __name__ == '__main__':

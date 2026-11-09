@@ -1,5 +1,5 @@
 -- UI-only replacement of the Connectivity contents; no commands or packets sent.
-local LagLinks = import('/mods/Microchip-F11-Lag-Links/modules/analysis.lua')
+local LagLinks = import('/mods/Microchip-F11-Lag-Connectivity-Screen/modules/analysis.lua')
 local UIUtil = import('/lua/ui/uiutil.lua')
 local Layout = import('/lua/maui/layouthelpers.lua')
 local Bitmap = import('/lua/maui/bitmap.lua').Bitmap
@@ -7,6 +7,9 @@ local SessionClients = import('/lua/ui/override/sessionclients.lua')
 local group, worker, rows, localRow, notice
 local tracker = LagLinks.New()
 local getClients = GetSessionClients
+-- Optional: player names follow Microchip Team Colour Bands when that mod is enabled.
+local Bands = rawget(_G, 'exists') and exists('/mods/Microchip-Team-Colour-Bands/modules/bands.lua')
+    and import('/mods/Microchip-Team-Colour-Bands/modules/bands.lua') or nil
 local function Text(parent, value, size, x, y)
     local text = UIUtil.CreateText(parent, value, size, UIUtil.bodyFont)
     Layout.AtLeftTopIn(text, parent, x, y)
@@ -38,11 +41,15 @@ function PingUpdate()
             slot.name:SetText(tostring(index) .. '  ' .. string.sub(tostring(client.name or 'Player'), 1, 25))
             slot.note:SetText(labels[item.id] or '')
             slot.note:SetColor('ffffaa66')
-            slot.name:SetColor(client.connected and 'ffffffff' or 'ffff5555')
+            local band = Bands and Bands.ColourForName(client.name)
+            slot.name:SetColor(client.connected and (band or 'ffffffff') or 'ffff5555')
             slot.percent:SetText(item.measured and string.format('%.1f%%', item.percent) or '--')
             slot.longest:SetText(item.measured and string.format('%.0f ms', item.longest) or '--')
             slot.percent:SetColor(item.measured and (item.percent < 1 and 'ff66ff66' or item.percent < 5 and 'ffffff66' or item.percent < 15 and 'ffffaa33' or 'ffff5555') or 'ffaaaaaa')
             slot.longest:SetColor(item.measured and WaitColor(item.longest) or 'ffaaaaaa')
+            local g = item.gamePercent
+            slot.game:SetText(g and string.format('%.1f%%', g) or '--')
+            slot.game:SetColor(g and (g < 1 and 'ff66ff66' or g < 5 and 'ffffff66' or g < 15 and 'ffffaa33' or 'ffff5555') or 'ffaaaaaa')
             local ping = client.ping
             local hasPing = client.connected and type(ping) == 'number' and ping == ping and ping >= 0 and ping < 1000000
             slot.ping:SetText(hasPing and string.format('%.0f ms', ping) or '--')
@@ -83,18 +90,20 @@ function CreateUI()
     group.brackets = UIUtil.CreateDialogBrackets(group, 106, 110, 110, 108, true)
     local title = UIUtil.CreateText(group.border.tm, '<LOC _Connectivity>', 20)
     Layout.AtTopIn(title, group.border.tm, 12); Layout.AtHorizontalCenterIn(title, group)
-    Text(group, 'Waiting for player commands | Last 30 seconds', 14, 10, 4)
+    Text(group, 'Waiting for player commands', 14, 10, 4)
     Text(group, 'Player', 15, 10, 30)
-    Text(group, 'Time waiting', 15, 300, 30)
-    Text(group, 'Longest wait', 15, 445, 30)
-    Text(group, 'Current ping', 15, 595, 30)
+    Text(group, 'Wait 30s', 15, 260, 30)
+    Text(group, 'Wait game', 15, 365, 30)
+    Text(group, 'Longest 30s', 15, 475, 30)
+    Text(group, 'Ping', 15, 615, 30)
     rows = {}
     for i = 1, count do
         local bg = Bitmap(group, UIUtil.UIFile('/scx_menu/panel-brd/conn-bg.dds'))
         bg.Width:Set(740); bg.Height:Set(rowHeight)
         Layout.AtLeftTopIn(bg, group, 0, 55 + (i - 1) * rowHeight)
         rows[i] = {bg = bg, name = Text(bg, '', 17, 10, 2), note = Text(bg, '', 12, 10, 24),
-            percent = Text(bg, '', 17, 300, 2), longest = Text(bg, '', 17, 445, 2), ping = Text(bg, '', 17, 595, 2)}
+            percent = Text(bg, '', 17, 260, 2), game = Text(bg, '', 17, 365, 2),
+            longest = Text(bg, '', 17, 475, 2), ping = Text(bg, '', 17, 615, 2)}
     end
     if count == 0 then Text(group, 'No remote players connected.', 16, 10, 60) end
     localRow = Text(group, 'You - Local player', 15, 10, 60 + visible * rowHeight)

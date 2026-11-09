@@ -84,7 +84,9 @@ function Ranked(clients)
                 and Finite(data.waitPercent) and data.waitPercent >= 0 and data.waitPercent <= 100.001
                 and Finite(data.longestWaitMs) and data.longestWaitMs >= 0 and data.longestWaitMs <= 30000.001
             table.insert(rows, {id = id, client = client, measured = valid and client.connected,
-                percent = valid and data.waitPercent or 0, longest = valid and data.longestWaitMs or 0})
+                percent = valid and data.waitPercent or 0, longest = valid and data.longestWaitMs or 0,
+                gamePercent = Finite(data.gameWaitPercent) and Finite(data.gameWaitSeconds) and data.gameWaitSeconds > 0
+                    and data.gameWaitPercent >= 0 and data.gameWaitPercent <= 100.001 and data.gameWaitPercent or nil})
         end
     end
     table.sort(rows, function(a, b)

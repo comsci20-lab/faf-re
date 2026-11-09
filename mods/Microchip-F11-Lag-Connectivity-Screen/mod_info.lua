@@ -1,4 +1,4 @@
-name = 'Microchip F11 Lag Links'
+name = 'Microchip F11 Lag Connectivity Screen'
 uid = 'c1a64e93-148b-4ac3-9152-308879f11401'
 version = 3
 description = 'Ranks peers by measured local waiting time, longest wait and ping in F11. Accurate timing requires the included faf-re engine; classic engines show unavailable wait metrics.'

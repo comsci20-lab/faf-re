@@ -39,7 +39,7 @@ end
 local originalAddChatText = AddChatText
 function AddChatText(text, playerID, scrollToBottom)
     originalAddChatText(text, playerID, scrollToBottom)
-    if not playerID then return end
+    if not playerID or not connection or tonumber(playerID) == tonumber(connection:GetLocalPlayerID()) then return end
     local currentConnection = connection
     import('/fafengine/lua/ui/translation.lua').Translate(text, function(english)
         if currentConnection and connection == currentConnection then

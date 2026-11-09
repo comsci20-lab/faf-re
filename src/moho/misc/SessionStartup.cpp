@@ -1313,6 +1313,8 @@ namespace moho
         diagnostics.SetNumber("waitObservedSeconds", waits.observedSeconds);
         diagnostics.SetNumber("waitPercent", waits.observedSeconds > 0 ? waits.waitingMs / (waits.observedSeconds * 10.0) : 0);
         diagnostics.SetNumber("longestWaitMs", waits.longestMs);
+        diagnostics.SetNumber("gameWaitSeconds", waits.gameSeconds);
+        diagnostics.SetNumber("gameWaitPercent", waits.gameWaitPercent);
       }
       diagnostics.SetNumber("dispatched", dispatched);
       diagnostics.SetInteger("available", static_cast<int32_t>(available - dispatched));

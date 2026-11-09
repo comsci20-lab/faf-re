@@ -14,7 +14,12 @@
 #include <cstring>
 #include <mutex>
 #include <chrono>
+#include <cstdio>
+#include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
+#include <windows.h>
 
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/utils/Global.h"
@@ -30,10 +35,76 @@
 using namespace moho;
 namespace
 {
-  struct WaitState { NetworkWaitTracker history; bool active = false; bool waiting = false; int target = 0; };
+  // Whole-game totals for the per-game CSV (one row per game, rewritten each minute).
+  struct GameWaitTotals {
+    std::string id, started;
+    double lastTime = 0, lastWrite = 0, activeSeconds = 0;
+    bool lastActive = false; std::uint64_t lastMissing = 0;
+    double peerSeconds[64]{}; std::string names[64];
+  };
+  struct WaitState { NetworkWaitTracker history; bool active = false; bool waiting = false; int target = 0; GameWaitTotals game; };
   struct WaitStore { std::mutex mutex; std::unordered_map<const CClientManagerImpl*, WaitState> sessions; };
   WaitStore& WaitDiagnostics() { static auto* store = new WaitStore; return *store; }
   double WaitClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+  std::string LocalTimeText()
+  {
+    SYSTEMTIME t; GetLocalTime(&t); char text[32];
+    std::snprintf(text, sizeof(text), "%04u-%02u-%02u %02u:%02u:%02u", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+    return text;
+  }
+
+  std::string CsvField(const std::string& value)
+  {
+    std::string out = "\"";
+    for (char c : value) { if (c == '"') out += '"'; if (c != '\r' && c != '\n') out += c; }
+    return out + "\"";
+  }
+
+  // %LOCALAPPDATA%\Microchip\faf-lag\game-waits.csv; replaces this game's row, keeps all others.
+  void WriteGameWaitRow(const GameWaitTotals& game, bool ended)
+  {
+    if (game.activeSeconds <= 0 || game.id.empty()) return;
+    char local[MAX_PATH]; const DWORD count = GetEnvironmentVariableA("LOCALAPPDATA", local, MAX_PATH);
+    if (!count || count >= MAX_PATH) return;
+    std::string dir = std::string(local) + "\\Microchip"; CreateDirectoryA(dir.c_str(), nullptr);
+    dir += "\\faf-lag"; CreateDirectoryA(dir.c_str(), nullptr);
+    const std::string path = dir + "\\game-waits.csv", temp = path + ".tmp";
+    const char* header = "game_id,started,last_updated,status,minutes_played,worst_player,worst_wait_percent,all_players_wait_percent";
+    std::vector<std::string> lines;
+    if (FILE* in = std::fopen(path.c_str(), "rb")) {
+      std::string line; int c;
+      while ((c = std::fgetc(in)) != EOF || !line.empty()) {
+        if (c == '\n' || c == EOF) {
+          if (!line.empty() && line.back() == '\r') line.pop_back();
+          if (!line.empty() && line.rfind("game_id,", 0) != 0 && line.rfind(CsvField(game.id) + ",", 0) != 0) lines.push_back(line);
+          line.clear(); if (c == EOF) break;
+        } else line += static_cast<char>(c);
+      }
+      std::fclose(in);
+    }
+    std::vector<std::pair<double, std::string>> peers;
+    for (int i = 0; i < 64; ++i)
+      if (!game.names[i].empty()) peers.push_back({game.peerSeconds[i] * 100.0 / game.activeSeconds, game.names[i]});
+    std::sort(peers.begin(), peers.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::string all; char number[64];
+    for (const auto& peer : peers) {
+      std::snprintf(number, sizeof(number), " %.2f%%", peer.first);
+      all += (all.empty() ? "" : "; ") + peer.second + number;
+    }
+    std::snprintf(number, sizeof(number), "%.1f", game.activeSeconds / 60.0);
+    std::string row = CsvField(game.id) + "," + CsvField(game.started) + "," + CsvField(LocalTimeText()) + ","
+      + (ended ? "ended" : "in progress") + "," + number + ",";
+    if (!peers.empty()) { std::snprintf(number, sizeof(number), "%.2f", peers.front().first); row += CsvField(peers.front().second) + "," + number + ","; }
+    else row += ",,";
+    lines.push_back(row + CsvField(all));
+    FILE* out = std::fopen(temp.c_str(), "wb"); if (!out) return;
+    std::fprintf(out, "%s\r\n", header);
+    for (const auto& line : lines) std::fprintf(out, "%s\r\n", line.c_str());
+    const bool written = std::fclose(out) == 0;
+    if (written) MoveFileExA(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+    else DeleteFileA(temp.c_str());
+  }
 
   float GetBottleneckUiTimestampMs(const CClientManagerImpl& manager)
   {
@@ -674,7 +745,9 @@ void CMarshaller::WriteCells(CMessageStream& stream, const gpg::core::FastVector
  */
 CClientManagerImpl::~CClientManagerImpl()
 {
-  { auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex); store.sessions.erase(this); }
+  { auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex);
+    auto found = store.sessions.find(this);
+    if (found != store.sessions.end()) { WriteGameWaitRow(found->second.game, true); store.sessions.erase(found); } }
   for (CClientBase*& client : mClients) {
     delete client;
     client = nullptr;
@@ -1023,7 +1096,27 @@ void CClientManagerImpl::RefreshNetworkWaitDiagnostics()
         missing |= std::uint64_t{1} << i;
     }
   }
-  state.history.Observe(WaitClock(), active, missing);
+  const double now = WaitClock();
+  state.history.Observe(now, active, missing);
+
+  auto& game = state.game;
+  if (game.lastTime > 0 && game.lastActive) {
+    const double seconds = (std::max)(0.0, (std::min)(now - game.lastTime, 5.0));
+    game.activeSeconds += seconds;
+    for (int i = 0; i < 64; ++i) if (game.lastMissing & (std::uint64_t{1} << i)) game.peerSeconds[i] += seconds;
+  }
+  game.lastTime = now; game.lastActive = active; game.lastMissing = missing;
+  if (active) {
+    if (game.id.empty()) {
+      SYSTEMTIME t; GetLocalTime(&t); char id[48];
+      std::snprintf(id, sizeof(id), "%04u%02u%02u-%02u%02u%02u-%lu", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, GetCurrentProcessId());
+      game.id = id; game.started = LocalTimeText(); game.lastWrite = now;
+    }
+    for (std::size_t i = 0; i < mClients.size() && i < 64; ++i)
+      if (mClients[i] && mClients[i] != mLocalClient && game.names[i].empty())
+        game.names[i] = mClients[i]->GetNickname().c_str();
+    if (now - game.lastWrite >= 60.0) { game.lastWrite = now; WriteGameWaitRow(game, false); }
+  }
 }
 
 std::vector<NetworkWaitMetrics> CClientManagerImpl::GetNetworkWaitMetrics()
@@ -1034,7 +1127,12 @@ std::vector<NetworkWaitMetrics> CClientManagerImpl::GetNetworkWaitMetrics()
   const auto found = store.sessions.find(this);
   if (found != store.sessions.end()) {
     const double now = WaitClock();
-    for (unsigned i = 0; i < result.size(); ++i) result[i] = found->second.history.Read(now, i);
+    const auto& game = found->second.game;
+    for (unsigned i = 0; i < result.size(); ++i) {
+      result[i] = found->second.history.Read(now, i);
+      result[i].gameSeconds = game.activeSeconds;
+      if (i < 64 && game.activeSeconds > 0) result[i].gameWaitPercent = game.peerSeconds[i] * 100.0 / game.activeSeconds;
+    }
   }
   return result;
 }
