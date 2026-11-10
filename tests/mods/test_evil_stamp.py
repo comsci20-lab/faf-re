@@ -23,7 +23,7 @@ class StampTests(unittest.TestCase):
     def test_husky_geometry_and_unknown_design(self):
         self.lua.execute("""
             local p=Project(function(x,y) return {x,0,y} end,{500,400},2,{0,0,1000,800},{1000,800},'husky')
-            assert(table.getn(p)==9)
+            assert(table.getn(p)==13)
             local count=0
             for _,stroke in ipairs(p) do count=count+table.getn(stroke.CoordinatesX) end
             assert(count<128)
