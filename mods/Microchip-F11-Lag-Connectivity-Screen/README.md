@@ -45,3 +45,5 @@ No new network packets, simulation commands, or remote mods are required. The in
 - Actual game UI creation/update/close is checked separately with private preferences. Tests do not contact a public FAF lobby.
 
 The local tests are short and share one PC. They validate this implementation's behaviour, not every internet or mod combination.
+
+Average wait is the whole-game total waiting time divided by the number of waiting episodes for that peer, including an ongoing episode. Pauses are excluded. Overlapping waits can count for multiple peers and do not identify the original cause of a stall. Older engines without episode counters show `--`.

@@ -50,6 +50,8 @@ function PingUpdate()
             local g = item.gamePercent
             slot.game:SetText(g and string.format('%.1f%%', g) or '--')
             slot.game:SetColor(g and (g < 1 and 'ff66ff66' or g < 5 and 'ffffff66' or g < 15 and 'ffffaa33' or 'ffff5555') or 'ffaaaaaa')
+            slot.average:SetText(item.averageWaitMs and string.format('%.0f ms', item.averageWaitMs) or '--')
+            slot.average:SetColor(item.averageWaitMs and 'ffffffff' or 'ffaaaaaa')
             slot.total:SetText(LagLinks.FormatWaitDuration(item.totalWaitSeconds))
             slot.total:SetColor(item.totalWaitSeconds and 'ffffffff' or 'ffaaaaaa')
             local ping = client.ping
@@ -85,7 +87,7 @@ function CreateUI()
     SessionClients.FastInterval()
     ConExecute('ren_shownetworkstats true')
     group = Bitmap(GetFrame(0), UIUtil.UIFile('/scx_menu/panel-brd/panel_brd_m.dds'))
-    group.Width:Set(850); group.Height:Set(height)
+    group.Width:Set(930); group.Height:Set(height)
     group.Depth:Set(GetFrame(0):GetTopmostDepth() + 10)
     group.wc = UIUtil.CreateWorldCover(group)
     group.border = UIUtil.CreateSCXMenuPanelBorder(group)
@@ -97,16 +99,17 @@ function CreateUI()
     Text(group, 'Wait 30s', 15, 250, 30)
     Text(group, 'Wait game', 15, 345, 30)
     Text(group, 'Total wait', 15, 445, 30)
-    Text(group, 'Longest 30s', 15, 570, 30)
-    Text(group, 'Ping', 15, 715, 30)
+    Text(group, 'Avg wait', 15, 555, 30)
+    Text(group, 'Longest 30s', 15, 665, 30)
+    Text(group, 'Ping', 15, 810, 30)
     rows = {}
     for i = 1, count do
         local bg = Bitmap(group, UIUtil.UIFile('/scx_menu/panel-brd/conn-bg.dds'))
-        bg.Width:Set(850); bg.Height:Set(rowHeight)
+        bg.Width:Set(930); bg.Height:Set(rowHeight)
         Layout.AtLeftTopIn(bg, group, 0, 55 + (i - 1) * rowHeight)
         rows[i] = {bg = bg, name = Text(bg, '', 17, 10, 2), note = Text(bg, '', 12, 10, 24),
             percent = Text(bg, '', 17, 250, 2), game = Text(bg, '', 17, 345, 2),
-            total = Text(bg, '', 17, 445, 2), longest = Text(bg, '', 17, 570, 2), ping = Text(bg, '', 17, 715, 2)}
+            total = Text(bg, '', 17, 445, 2), average = Text(bg, '', 17, 555, 2), longest = Text(bg, '', 17, 665, 2), ping = Text(bg, '', 17, 810, 2)}
     end
     if count == 0 then Text(group, 'No remote players connected.', 16, 10, 60) end
     localRow = Text(group, 'You - Local player', 15, 10, 60 + visible * rowHeight)

@@ -142,6 +142,7 @@ class F11Tests(unittest.TestCase):
         self.assertIn('Wait 30s', text)
         self.assertIn('Wait game', text)
         self.assertIn('Total wait', text)
+        self.assertIn('Avg wait', text)
         self.assertIn('30.0s', text)
         self.assertIn('Ping', text)
         self.assertIn('Wait timing unavailable: requires the updated faf-re engine.', text)
@@ -159,6 +160,23 @@ class F11Tests(unittest.TestCase):
         c[2]['fafReNetwork']['gameWaitPercent'] = 0
         row = next(row for _, row in self.core.Ranked(c).items() if row['id'] == 2)
         self.assertEqual(row['totalWaitSeconds'], 0)
+
+    def test_average_wait_engine_metrics_and_unavailable(self):
+        c = self.clients(bridge=False)
+        data = self.lua.table_from({'gameWaitSeconds': 600, 'gameWaitPercent': 12.5,
+                                    'gameWaitEpisodes': 150, 'gameAverageWaitMs': 500})
+        c[2]['fafReNetwork'] = data
+        def average():
+            return next(row for _, row in self.core.Ranked(c).items() if row['id'] == 2)['averageWaitMs']
+        self.assertEqual(average(), 500)
+        for invalid in (None, -1, float('nan'), float('inf')):
+            data['gameAverageWaitMs'] = invalid
+            self.assertIsNone(average())
+        data['gameAverageWaitMs'] = 0
+        data['gameWaitEpisodes'] = 0
+        self.assertEqual(average(), 0)
+        data['gameWaitEpisodes'] = None
+        self.assertIsNone(average())
 
     def test_total_wait_duration_formatting(self):
         fmt = self.core.FormatWaitDuration

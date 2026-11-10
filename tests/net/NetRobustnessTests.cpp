@@ -1358,14 +1358,24 @@ namespace
     EXPECT_TRUE(std::abs(a.waitingMs - 500) < 0.001);
     EXPECT_TRUE(std::abs(a.longestMs - 500) < 0.001);
     EXPECT_TRUE(std::abs(b.waitingMs - 300) < 0.001);
+    EXPECT_TRUE(a.gameWaitEpisodes == 1 && b.gameWaitEpisodes == 1);
+    tracker.Observe(1.5, true, 2); // zero-length episode must not count
+    tracker.Observe(1.5, true, 0);
     tracker.Observe(2, false, 0); // pause excluded from denominator
     tracker.Observe(12, true, 0);
     EXPECT_TRUE(std::abs(tracker.Read(13, 1).observedSeconds - 3) < 0.001);
     EXPECT_TRUE(tracker.Read(43, 1).waitingMs == 0);
     tracker.Observe(43, true, 2);
     EXPECT_TRUE(std::abs(tracker.Read(74, 1).longestMs - 30000) < 0.001);
+    tracker.Observe(74, true, 2);
+    EXPECT_TRUE(tracker.Read(74, 1).gameWaitEpisodes == 2); // survives rolling history expiry
+    tracker.Observe(74, false, 0);
+    tracker.Observe(80, true, 2);
+    tracker.Observe(81, true, 0);
+    EXPECT_TRUE(tracker.Read(81, 1).gameWaitEpisodes == 3);
     tracker.Observe(1, true, 0); // new clock/session cannot inherit stale waits
     EXPECT_TRUE(tracker.Read(2, 1).waitingMs == 0);
+    EXPECT_TRUE(tracker.Read(2, 1).gameWaitEpisodes == 0);
   }
 
 } // namespace

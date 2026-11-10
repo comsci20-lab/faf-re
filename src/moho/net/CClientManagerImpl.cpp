@@ -1229,6 +1229,8 @@ std::vector<NetworkWaitMetrics> CClientManagerImpl::GetNetworkWaitMetrics()
       result[i] = found->second.history.Read(now, i);
       result[i].gameSeconds = game.activeSeconds;
       if (i < 64 && game.activeSeconds > 0) result[i].gameWaitPercent = game.peerSeconds[i] * 100.0 / game.activeSeconds;
+      if (i < 64 && result[i].gameWaitEpisodes > 0)
+        result[i].gameAverageWaitMs = game.peerSeconds[i] * 1000.0 / result[i].gameWaitEpisodes;
     }
   }
   return result;

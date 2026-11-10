@@ -923,6 +923,8 @@ namespace moho
         diagnostics.SetNumber("longestWaitMs", waits.longestMs);
         diagnostics.SetNumber("gameWaitSeconds", waits.gameSeconds);
         diagnostics.SetNumber("gameWaitPercent", waits.gameWaitPercent);
+        diagnostics.SetNumber("gameWaitEpisodes", static_cast<double>(waits.gameWaitEpisodes));
+        diagnostics.SetNumber("gameAverageWaitMs", waits.gameAverageWaitMs);
       }
       diagnostics.SetNumber("dispatched", dispatched);
       diagnostics.SetInteger("available", static_cast<int32_t>(available - dispatched));

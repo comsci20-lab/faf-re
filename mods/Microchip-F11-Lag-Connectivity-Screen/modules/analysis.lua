@@ -97,6 +97,8 @@ function Ranked(clients)
                 gamePercent = gameValid and data.gameWaitPercent or nil,
                 -- gameWaitSeconds is active match duration, not the peer's wait total.
                 -- Recover the cumulative counter from its unrounded engine percentage.
+                averageWaitMs = gameValid and Finite(data.gameAverageWaitMs) and data.gameAverageWaitMs >= 0
+                    and Finite(data.gameWaitEpisodes) and data.gameWaitEpisodes >= 0 and data.gameAverageWaitMs or nil,
                 totalWaitSeconds = gameValid and data.gameWaitSeconds * math.min(100, data.gameWaitPercent) / 100 or nil})
         end
     end
