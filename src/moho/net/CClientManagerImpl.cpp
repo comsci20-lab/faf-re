@@ -66,7 +66,7 @@ namespace
   }
 
   // %LOCALAPPDATA%\Microchip\faf-lag\game-waits.csv; replaces this game's row, keeps all others.
-  void WriteGameWaitRow(const GameWaitTotals& game, bool ended)
+  void WriteGameWaitRow(const GameWaitTotals& game, const NetworkWaitTracker& history, bool ended)
   {
     if (game.activeSeconds <= 0 || game.id.empty()) return;
     char local[MAX_PATH]; const DWORD count = GetEnvironmentVariableA("LOCALAPPDATA", local, MAX_PATH);
@@ -74,13 +74,16 @@ namespace
     std::string dir = std::string(local) + "\\Microchip"; CreateDirectoryA(dir.c_str(), nullptr);
     dir += "\\faf-lag"; CreateDirectoryA(dir.c_str(), nullptr);
     const std::string path = dir + "\\game-waits.csv", temp = path + ".tmp";
-    const char* header = "game_id,started,last_updated,status,minutes_played,worst_player,worst_wait_percent,all_players_wait_percent";
+    const char* header = "game_id,started,last_updated,status,minutes_played,worst_player,worst_wait_percent,all_players_wait_percent,all_players_total_wait_seconds,all_players_wait_episodes,all_players_average_wait_ms";
+    bool legacy = false;
     std::vector<std::string> lines;
     if (FILE* in = std::fopen(path.c_str(), "rb")) {
       std::string line; int c;
       while ((c = std::fgetc(in)) != EOF || !line.empty()) {
         if (c == '\n' || c == EOF) {
           if (!line.empty() && line.back() == '\r') line.pop_back();
+          if (line.rfind("game_id,", 0) == 0) legacy = line.find("all_players_total_wait_seconds") == std::string::npos;
+          if (legacy && !line.empty() && line.rfind("game_id,", 0) != 0) line += ",,,";
           if (!line.empty() && line.rfind("game_id,", 0) != 0 && line.rfind(CsvField(game.id) + ",", 0) != 0) lines.push_back(line);
           line.clear(); if (c == EOF) break;
         } else line += static_cast<char>(c);
@@ -101,7 +104,18 @@ namespace
       + (ended ? "ended" : "in progress") + "," + number + ",";
     if (!peers.empty()) { std::snprintf(number, sizeof(number), "%.2f", peers.front().first); row += CsvField(peers.front().second) + "," + number + ","; }
     else row += ",,";
-    lines.push_back(row + CsvField(all));
+    std::string totals, episodes, averages;
+    for (unsigned i = 0; i < 64; ++i) {
+      if (game.names[i].empty()) continue;
+      const auto count = history.Read(game.lastTime, i).gameWaitEpisodes;
+      const std::string prefix = (totals.empty() ? "" : "; ") + game.names[i] + " ";
+      std::snprintf(number, sizeof(number), "%.6f", game.peerSeconds[i]);
+      totals += prefix + number;
+      episodes += prefix + std::to_string(count);
+      std::snprintf(number, sizeof(number), "%.6f", count ? game.peerSeconds[i] * 1000.0 / count : 0.0);
+      averages += prefix + number;
+    }
+    lines.push_back(row + CsvField(all) + "," + CsvField(totals) + "," + CsvField(episodes) + "," + CsvField(averages));
     FILE* out = std::fopen(temp.c_str(), "wb"); if (!out) return;
     std::fprintf(out, "%s\r\n", header);
     for (const auto& line : lines) std::fprintf(out, "%s\r\n", line.c_str());
@@ -831,7 +845,7 @@ CClientManagerImpl::~CClientManagerImpl()
 {
   { auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex);
     auto found = store.sessions.find(this);
-    if (found != store.sessions.end()) { WriteGameWaitRow(found->second.game, true); store.sessions.erase(found); } }
+    if (found != store.sessions.end()) { WriteGameWaitRow(found->second.game, found->second.history, true); store.sessions.erase(found); } }
   // It holds client pointers, and deleting a client can still route a message.
   mRejoinFeed.reset();
 
@@ -1212,7 +1226,7 @@ void CClientManagerImpl::RefreshNetworkWaitDiagnostics()
     for (std::size_t i = 0; i < mClients.size() && i < 64; ++i)
       if (mClients[i] && mClients[i] != mLocalClient && game.names[i].empty())
         game.names[i] = mClients[i]->GetNickname().c_str();
-    if (now - game.lastWrite >= 60.0) { game.lastWrite = now; WriteGameWaitRow(game, false); }
+    if (now - game.lastWrite >= 60.0) { game.lastWrite = now; WriteGameWaitRow(game, state.history, false); }
   }
 }
 

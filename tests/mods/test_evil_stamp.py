@@ -49,6 +49,11 @@ class StampTests(unittest.TestCase):
         self.lua.execute((MOD/'hook/lua/keymap/keymapper.lua').read_text(encoding='utf-8-sig'))
         self.lua.execute("local m=GetCurrentKeyMap(); assert(m['Ctrl-Shift-L']=='microchip_evil_stamp' and m['Shift-Ctrl-L']==nil and m.A=='attack'); assert(original['Shift-Ctrl-L']=='factory')")
 
+    def test_shortcut_registered_when_ui_opens(self):
+        self.lua.execute("function CreateUI(replay) created=replay end; function IN_AddKeyMapTable(t) bindings=t end")
+        self.lua.execute((MOD/'hook/lua/ui/game/gamemain.lua').read_text(encoding='utf-8-sig'))
+        self.lua.execute("CreateUI(true); assert(created==true); assert(string.find(bindings['Ctrl-Shift-L'].action,'stamp.lua',1,true))")
+
     def test_normal_painting_adapter_and_cooldown(self):
         self.lua.execute('''
             drawing={Project=Project}
