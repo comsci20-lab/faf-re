@@ -1,1 +1,1 @@
-keyDescriptions.microchip_evil_stamp = 'Draw evil Microchip at cursor'
+keyDescriptions.microchip_evil_stamp = 'Draw MC microchip at cursor'

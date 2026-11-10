@@ -14,17 +14,17 @@ class StampTests(unittest.TestCase):
 
     def test_approved_geometry_within_normal_limits(self):
         self.lua.execute('''
-            assert(table.getn(Paths)==4)
+            assert(table.getn(Paths)==3)
             local count=0
             for _,path in ipairs(Paths) do assert(table.getn(path)<=128); count=count+table.getn(path) end
-            assert(count==81 and table.getn(Paths[1])==61)
+            assert(count==50 and table.getn(Paths[1])==41)
         ''')
 
     def test_screen_to_ground_projection_preserves_shape(self):
         self.lua.execute('''
             local p=Project(function(x,y) return {x,13,y} end,{500,400},2,{0,0,1000,800},{1000,800})
-            assert(table.getn(p)==4 and table.getn(p[1].CoordinatesX)==61)
-            assert(p[1].CoordinatesX[1]==420 and p[1].CoordinatesZ[1]==348 and p[1].CoordinatesY[1]==13)
+            assert(table.getn(p)==3 and table.getn(p[1].CoordinatesX)==41)
+            assert(p[1].CoordinatesX[1]==420 and p[1].CoordinatesZ[1]==320 and p[1].CoordinatesY[1]==13)
         ''')
 
     def test_rejects_partial_and_out_of_map_drawings(self):
@@ -87,10 +87,10 @@ class StampTests(unittest.TestCase):
         self.lua.execute((MOD/'modules/stamp.lua').read_text(encoding='utf-8-sig'))
         self.lua.execute('''
             assert(Stamp()==false and shared==0)
-            enabled=true; assert(Stamp()==true and shared==4 and destroyed==4)
-            assert(Stamp()==false and shared==4)
-            now=106; assert(Stamp()==true and shared==8)
-            now=1; assert(Stamp()==true and shared==12)
+            enabled=true; assert(Stamp()==true and shared==3 and destroyed==3)
+            assert(Stamp()==false and shared==3)
+            now=106; assert(Stamp()==true and shared==6)
+            now=1; assert(Stamp()==true and shared==9)
         ''')
 
 
