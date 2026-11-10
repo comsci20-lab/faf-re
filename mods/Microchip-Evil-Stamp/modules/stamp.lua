@@ -29,7 +29,7 @@ function Stamp()
 
     local info=SessionGetScenarioInfo()
     local size=info and info.size
-    local samples,reason=Drawing.Project(function(x,y) return view:UnProject({x,y}) end,
+    local samples,reason=Drawing.Project(function(x,y) return UnProject(view,{x,y}) end,
         mouse,L.ScaleNumber(2),{view.Left(),view.Top(),view.Right(),view.Bottom()},size)
     if not samples then return Feedback(reason) end
     local armies=GetArmiesTable().armiesTable or {}

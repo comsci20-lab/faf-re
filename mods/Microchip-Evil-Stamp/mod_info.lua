@@ -1,6 +1,6 @@
 name = 'Microchip Evil Stamp'
 uid = 'a46b0cf3-2081-44c6-973c-f5e3acd2a917'
-version = 3
+version = 4
 description = 'Ctrl+Shift+L stamps the evil Microchip at the cursor using normal FAF painting. Four strokes, 81 points; no drawing-limit changes. Uses your normal painting colour and fade.'
 author = 'Microchip'
 exclusive = false

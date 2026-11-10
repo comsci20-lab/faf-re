@@ -62,7 +62,7 @@ class StampTests(unittest.TestCase):
             now=100; shared=0; destroyed=0; enabled=false
             view={Depth=function() return 1 end,IsHidden=function() return false end,HitTest=function() return true end,
                   Left=function() return 0 end,Top=function() return 0 end,Right=function() return 1000 end,Bottom=function() return 800 end,
-                  UnProject=function(self,p) return {p[1],0,p[2]} end}
+                  }
             view.PaintingCanvas={IsEnabledByGameOptions=function() return enabled end,
                 Adapter={SharePaintingBrushStroke=function(self,s) shared=shared+1; assert(table.getn(s.points.CoordinatesX)<=128) end}}
             function import(path)
@@ -75,6 +75,7 @@ class StampTests(unittest.TestCase):
                 if string.find(path,'commandmode') then return {InCommandMode=function() return false end} end
                 error(path)
             end
+            function UnProject(v,p) assert(v==view); return {p[1],0,p[2]} end
             function CurrentTime() return now end
             function GetMouseScreenPos() return {500,400} end
             function IsDestroyed() return false end
