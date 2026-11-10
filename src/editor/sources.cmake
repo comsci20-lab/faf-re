@@ -1,0 +1,45 @@
+# The map editor's own sources (src/editor/CMakeLists.txt). Paths are relative to src/editor.
+
+set(FAF_EDITOR_SOURCES
+  EdMain.cpp
+  EdApp.cpp
+  EdLog.cpp
+  EdMemMap.cpp
+  EdMemTrace.cpp
+  EdPlay.cpp
+  EdShell.cpp
+  EdTools.cpp
+  doc/EdDocument.cpp
+  doc/EdMapFile.cpp
+  doc/EdNewMap.cpp
+  doc/EdSaveFile.cpp
+  doc/EdUnits.cpp
+  doc/EdPackage.cpp
+  doc/EdWaterPreset.cpp
+  doc/EdJson.cpp
+  doc/EdLighting.cpp
+  doc/EdMarkerPreset.cpp
+  doc/EdUnitPreset.cpp
+  doc/EdLayerPreset.cpp
+  doc/EdPropPaint.cpp
+  doc/EdSkybox.cpp
+  doc/EdImageChunks.cpp
+  tools/EdWaves.cpp
+  tools/EdTerrainTypes.cpp
+  tools/EdViewAids.cpp
+  doc/EdRoundTrip.cpp
+  tools/EdHeightBrush.cpp
+  tools/EdHeightFile.cpp
+  tools/EdMaskBrush.cpp
+  tools/EdMarkers.cpp
+  tools/EdDecalShape.cpp
+  tools/EdDecals.cpp
+  tools/EdChecks.cpp
+  tools/EdPathing.cpp
+  tools/EdTextureLibrary.cpp
+  tools/EdSymmetryCheck.cpp
+  undo/EdHeightHistory.cpp
+  view/EdMapScene.cpp
+  ui/EdImGuiRenderer.cpp
+  ui/EdInfoPanels.cpp
+)

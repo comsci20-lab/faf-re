@@ -31,18 +31,23 @@ class RecorderTests(unittest.TestCase):
         self.assertNotIn('\n', lines[2])
         self.assertIn('maxsp=-', lines[2])
 
-    def hook(self, enabled, replay=False):
+    def hook(self, enabled, replay=False, faf_timeline=True):
         g = self.lua.globals()
         g.core = self.core
         g.enabled = enabled
+        g.fafTimeline = faf_timeline
         self.lua.execute('''
-            created = 0; logs = {}; killed = 0
+            created = 0; logs = {}; killed = 0; timelines = 0
             function CreateUI(replay) created=created+1; receivedReplay=replay; return 42 end
             function GetPreference(key, default) return enabled end
             function SessionIsMultiplayer() return true end
+            function DiskGetFileInfo() return fafTimeline end
             function ForkThread(fn) thread=coroutine.create(fn); return thread end
             function KillThread() killed=killed+1 end
-            function import() return core end
+            function import(path)
+                if string.find(path, 'replay_timeline') then return {Create=function() timelines=timelines+1 end} end
+                return core
+            end
             function LOG(text) table.insert(logs,text) end
             function WARN(text) error(text) end
             function GetSystemTimeSeconds() return 10 end
@@ -59,6 +64,13 @@ class RecorderTests(unittest.TestCase):
         self.assertIsNone(self.hook(False).thread)
         self.setUp()
         self.assertIsNone(self.hook(True, replay=True).thread)
+
+    def test_replay_timeline_coexists_without_duplicate_creation(self):
+        for supplied_by_faf in (False, True):
+            self.setUp()
+            g = self.hook(True, replay=True, faf_timeline=supplied_by_faf)
+            self.assertEqual(g.timelines, 0 if supplied_by_faf else 1)
+            self.assertIsNone(g.thread)
 
     def test_opt_in_sampler_runs_at_bounded_interval_and_stops_at_session_end(self):
         g = self.hook(True)

@@ -145,11 +145,14 @@ class ConnectionTests(unittest.TestCase):
                 commands = {}
                 function ConExecute(value) assert(not created); table.insert(commands, value) end
                 function LOG() end
+                function WARN(text) error(text) end
+                function UpdateGame() end
+                function TryLaunch() end
                 function ReallyCreateLobby() created = true end
                 function CreateUI() end
                 function import(path)
                     return {CreateLobbyComm=function() end, CreateButtonStd=function() end,
-                        CreateScreenGroup=function() end}
+                        CreateScreenGroup=function() end, Reset=function() end}
                 end
             """)
             configured = source if workers is None else source.replace(
