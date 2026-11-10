@@ -12,7 +12,7 @@ local listeners = {}
 
 function Settings()
     local s = Prefs.GetFromCurrentProfile('microchip_team_colour_bands') or {}
-    if s.autoEnable == nil then s.autoEnable = false end
+    if s.autoEnable == nil then s.autoEnable = true end
     if s.keepBlue == nil then s.keepBlue = true end
     if s.order ~= 'name' then s.order = 'slot' end
     return s
