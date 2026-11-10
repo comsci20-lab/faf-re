@@ -75,6 +75,13 @@ end
 local function Finite(value)
     return type(value) == 'number' and value == value and math.abs(value) < 1000000000
 end
+function FormatWaitDuration(seconds)
+    if not Finite(seconds) or seconds < 0 then return '--' end
+    local tenths = math.floor(seconds * 10 + 0.5)
+    if tenths < 600 then return string.format('%.1fs', tenths / 10) end
+    if tenths < 36000 then return string.format('%d:%04.1f', math.floor(tenths / 600), math.mod(tenths, 600) / 10) end
+    return string.format('%d:%02d:%02d', math.floor(tenths / 36000), math.floor(math.mod(tenths, 36000) / 600), math.floor(math.mod(tenths, 600) / 10))
+end
 function Ranked(clients)
     local rows = {}
     for id, client in pairs(clients or {}) do
@@ -83,10 +90,14 @@ function Ranked(clients)
             local valid = data.waitVersion == 1 and Finite(data.waitObservedSeconds) and data.waitObservedSeconds > 0
                 and Finite(data.waitPercent) and data.waitPercent >= 0 and data.waitPercent <= 100.001
                 and Finite(data.longestWaitMs) and data.longestWaitMs >= 0 and data.longestWaitMs <= 30000.001
+            local gameValid = Finite(data.gameWaitPercent) and Finite(data.gameWaitSeconds) and data.gameWaitSeconds > 0
+                and data.gameWaitPercent >= 0 and data.gameWaitPercent <= 100.001
             table.insert(rows, {id = id, client = client, measured = valid and client.connected,
                 percent = valid and data.waitPercent or 0, longest = valid and data.longestWaitMs or 0,
-                gamePercent = Finite(data.gameWaitPercent) and Finite(data.gameWaitSeconds) and data.gameWaitSeconds > 0
-                    and data.gameWaitPercent >= 0 and data.gameWaitPercent <= 100.001 and data.gameWaitPercent or nil})
+                gamePercent = gameValid and data.gameWaitPercent or nil,
+                -- gameWaitSeconds is active match duration, not the peer's wait total.
+                -- Recover the cumulative counter from its unrounded engine percentage.
+                totalWaitSeconds = gameValid and data.gameWaitSeconds * math.min(100, data.gameWaitPercent) / 100 or nil})
         end
     end
     table.sort(rows, function(a, b)
@@ -100,4 +111,4 @@ function Ranked(clients)
     end)
     return rows
 end
-return {New = New, Ranked = Ranked}
+return {New = New, Ranked = Ranked, FormatWaitDuration = FormatWaitDuration}

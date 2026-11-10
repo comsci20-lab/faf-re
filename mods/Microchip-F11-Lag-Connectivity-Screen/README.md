@@ -1,4 +1,4 @@
-# Microchip F11 Lag Connectivity Screen - version 3
+# Microchip F11 Lag Connectivity Screen - version 4
 
 The UI-only mod replaces the contents of the game's Connectivity window with a table in the existing metallic game frame. Press F11 to open or close it.
 
@@ -8,6 +8,7 @@ Remote players are ranked **worst waiting percentage first**, then longest wait,
 
 - **Time waiting:** percentage of observed active gameplay, within the trailing 30 wall-clock seconds, during which your engine needed its next simulation update but that peer's commands or confirmations were missing.
 - **Longest wait:** longest continuous such interval inside that window, in milliseconds. A continuing wait is clipped to the 30-second window.
+- **Total wait:** cumulative time waiting on that player over the whole active game. Shows seconds, then minutes:seconds, then hours:minutes:seconds. The engine keeps the counter even while F11 is closed; it starts fresh for each game. Pauses are excluded. Shared waits can count for more than one player.
 - **Current ping:** the existing RTT measurement between your PC and that peer, in milliseconds.
 - **Zero:** required remote data was ready when needed. Normal command lead/buffering is not counted, and the code does not subtract a fixed 500 ms from ping.
 
@@ -21,11 +22,11 @@ Longest-wait display colours use provisional thresholds: below 100 ms green, bel
 
 1. Close the game.
 2. Copy `Microchip-F11-Lag-Connectivity-Screen` to the normal FAF UI Mods folder.
-3. For measured waits, back up `FAForever/bin_x64/main_x64.exe` and replace it with the included `engine-update/main_x64.exe`. This is the working e4cc5d8b engine base plus passive Microchip diagnostics. Preserve your existing init scripts, shader libraries and `fafengine` folder. Classic peers need no update. Do not replace classic `ForgedAlliance.exe`.
+3. Use a Microchip-enabled x64 faf-re engine with passive wait diagnostics. Whole-game totals additionally require `gameWaitSeconds` and `gameWaitPercent`. The current installed custom build already supplies these; version 4 needs no engine change. Classic peers need no update.
 4. Enable **Microchip F11 Lag Connectivity Screen** in your UI mod manager and launch a new game.
 5. Open F11. No rebuild is needed for other players.
 
-The included executable is x64 faf-re. Reinstalling a stock upstream engine removes this custom measurement API; the mod will then display unavailable timing. Existing builder choices and the local checksum toggle are separate features.
+The version 4 ZIP contains the UI mod only. Reinstalling a stock upstream engine removes this custom measurement API; the mod will then display unavailable timing. Existing builder choices and the local checksum toggle are separate features.
 
 ## How it is measured
 

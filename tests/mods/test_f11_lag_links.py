@@ -100,6 +100,8 @@ class F11Tests(unittest.TestCase):
 
     def test_table_keeps_snapshot_untouched_and_closes_cleanly(self):
         c = self.clients(bridge=False)
+        c[2]['fafReNetwork'] = self.lua.table_from({'waitVersion': 1, 'waitObservedSeconds': 30,
+            'waitPercent': 2, 'longestWaitMs': 100, 'gameWaitSeconds': 120, 'gameWaitPercent': 25})
         g = self.lua.globals(); g.snapshot = c; g.core = self.core
         self.lua.execute("""
             texts = {}; buttons = {}
@@ -139,9 +141,33 @@ class F11Tests(unittest.TestCase):
         text = [v['text'] for _, v in g.texts.items()]
         self.assertIn('Wait 30s', text)
         self.assertIn('Wait game', text)
+        self.assertIn('Total wait', text)
+        self.assertIn('30.0s', text)
         self.assertIn('Ping', text)
         self.assertIn('Wait timing unavailable: requires the updated faf-re engine.', text)
         g.CloseWindow()
         self.assertTrue(g.reset and g.killed and g.destroyed)
+
+    def test_total_wait_uses_whole_game_not_rolling_window(self):
+        c = self.clients(bridge=False)
+        c[2]['fafReNetwork'] = self.lua.table_from({'gameWaitSeconds': 600, 'gameWaitPercent': 12.5})
+        row = next(row for _, row in self.core.Ranked(c).items() if row['id'] == 2)
+        self.assertEqual(row['totalWaitSeconds'], 75)
+        self.tracker = self.core.New()  # opening/closing the UI cannot reset the engine counter
+        row = next(row for _, row in self.core.Ranked(c).items() if row['id'] == 2)
+        self.assertEqual(row['totalWaitSeconds'], 75)
+        c[2]['fafReNetwork']['gameWaitPercent'] = 0
+        row = next(row for _, row in self.core.Ranked(c).items() if row['id'] == 2)
+        self.assertEqual(row['totalWaitSeconds'], 0)
+
+    def test_total_wait_duration_formatting(self):
+        fmt = self.core.FormatWaitDuration
+        self.assertEqual(fmt(0), '0.0s')
+        self.assertEqual(fmt(12.34), '12.3s')
+        self.assertEqual(fmt(59.99), '1:00.0')
+        self.assertEqual(fmt(75), '1:15.0')
+        self.assertEqual(fmt(3723), '1:02:03')
+        for invalid in (None, -1, float('nan'), float('inf')):
+            self.assertEqual(fmt(invalid), '--')
 
 if __name__ == '__main__': unittest.main()
