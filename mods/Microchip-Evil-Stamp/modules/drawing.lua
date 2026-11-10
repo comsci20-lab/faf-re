@@ -7,7 +7,7 @@ Paths = {
 }
 
 local function Finite(n)
-    return type(n)=='number' and n==n and n>-math.huge and n<math.huge
+    return type(n)=='number' and n==n and n-n==0
 end
 
 -- Validate the whole stamp before publishing anything. No partial drawings or limit bypass.

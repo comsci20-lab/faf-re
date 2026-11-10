@@ -9,6 +9,7 @@ MOD=ROOT/'mods/Microchip-Evil-Stamp'
 class StampTests(unittest.TestCase):
     def setUp(self):
         self.lua=LuaRuntime(unpack_returned_tuples=True)
+        self.lua.execute('math.huge=nil')
         self.lua.execute((MOD/'modules/drawing.lua').read_text(encoding='utf-8-sig'))
 
     def test_approved_geometry_within_normal_limits(self):
@@ -30,6 +31,7 @@ class StampTests(unittest.TestCase):
         self.lua.execute('''
             assert(Project(function(x,y) return {x,0,y} end,{2,400},2,{0,0,1000,800},{1000,800})==nil)
             assert(Project(function() return {2000,0,2000} end,{500,400},2,{0,0,1000,800},{1000,800})==nil)
+            assert(Project(function() return {1/0,0,10} end,{500,400},2,{0,0,1000,800},{1000,800})==nil)
             assert(Project(function() return {0/0,0,10} end,{500,400},2,{0,0,1000,800},{1000,800})==nil)
         ''')
 
