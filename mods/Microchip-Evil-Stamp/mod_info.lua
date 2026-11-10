@@ -1,7 +1,8 @@
-name = 'Microchip MC Stamp'
+name = 'Microchip Logo Stamps'
 uid = 'a46b0cf3-2081-44c6-973c-f5e3acd2a917'
-version = 5
-description = 'Ctrl+Shift+L stamps an MC microchip at the cursor using normal FAF painting. Three strokes, 50 points; no drawing-limit changes. Uses your normal painting colour and fade.'
+version = 6
+description = 'Ctrl+Shift+L opens a picker for MC Chip or Drunk Husky. Uses normal FAF painting limits, colour and fade.'
+
 author = 'Microchip'
 exclusive = false
 ui_only = true

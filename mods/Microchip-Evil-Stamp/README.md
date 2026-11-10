@@ -1,18 +1,19 @@
-# Microchip MC Stamp
+# Microchip Logo Stamps
 
-Enable the UI mod, move your cursor over the battlefield, and press **Ctrl+Shift+L**.
-It stamps the approved MC microchip using FAF's normal painting system.
+Enable the UI mod, hover over the battlefield, and press **Ctrl+Shift+L**.
+Choose **MC Chip** or **Drunk Husky**, or Cancel / Escape without drawing.
+The stamp appears at the terrain position captured when you opened the menu.
+No drawing is sent until you choose a logo.
 
-- Three strokes, 50 points total; longest stroke 41 points, below the normal 128-point cap.
-- Painting must be enabled in the game's Interface options.
-- Uses the normal player painting colour, visibility and fade time. Other players need no mod.
-- Five-second cooldown prevents repeated stamps from a held key.
-- A stamp that would cross the viewport/map edge is rejected before any stroke is sent.
-- Does not change drawing limits, simulation code or keymap preferences.
+MC Chip is the square processor with MC lettering and three pins per side.
+Drunk Husky is a simplified line drawing with pointed ears, sleepy eyes, a
+crooked smile, an armoured collar and a beer mug, inspired by Husky's avatar.
+Both designs use fewer than 128 points total and normal FAF painting.
+Painting must be enabled in Interface options. Uses your player colour and
+normal fade/visibility. Five-second cooldown; drawings crossing the viewport
+or map edge are rejected. Other players need no mod.
 
-While enabled, Ctrl+Shift+L replaces the usual "select nearest land factory" action.
-The keymap is overlaid only while the mod is loaded. If you save or customise keybindings
-in FAF's options, those user edits still apply normally.
-
-Install by copying the **Microchip-Evil-Stamp** folder to your FAF Mods folder and
-enabling **Microchip MC Stamp** in UI Mod Manager. Author: Microchip.
+The mod retains its existing folder and UID so it replaces the previous stamp.
+Ctrl+Shift+L temporarily overrides select-nearest-land-factory while enabled.
+No automatic startup drawing, simulation changes or drawing-limit changes.
+Author: Microchip.

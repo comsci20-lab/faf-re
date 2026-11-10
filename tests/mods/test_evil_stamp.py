@@ -20,6 +20,16 @@ class StampTests(unittest.TestCase):
             assert(count==50 and table.getn(Paths[1])==41)
         ''')
 
+    def test_husky_geometry_and_unknown_design(self):
+        self.lua.execute("""
+            local p=Project(function(x,y) return {x,0,y} end,{500,400},2,{0,0,1000,800},{1000,800},'husky')
+            assert(table.getn(p)==9)
+            local count=0
+            for _,stroke in ipairs(p) do count=count+table.getn(stroke.CoordinatesX) end
+            assert(count<128)
+            assert(Project(function(x,y) return {x,0,y} end,{500,400},2,{0,0,1000,800},nil,'unknown')==nil)
+        """)
+
     def test_screen_to_ground_projection_preserves_shape(self):
         self.lua.execute('''
             local p=Project(function(x,y) return {x,13,y} end,{500,400},2,{0,0,1000,800},{1000,800})
@@ -54,7 +64,39 @@ class StampTests(unittest.TestCase):
     def test_shortcut_registered_when_ui_opens(self):
         self.lua.execute("function CreateUI(replay) created=replay end; function IN_AddKeyMapTable(t) bindings=t end")
         self.lua.execute((MOD/'hook/lua/ui/game/gamemain.lua').read_text(encoding='utf-8-sig'))
-        self.lua.execute("CreateUI(true); assert(created==true); assert(string.find(bindings['Ctrl-Shift-L'].action,'stamp.lua',1,true))")
+        self.lua.execute("CreateUI(true); assert(created==true); assert(string.find(bindings['Ctrl-Shift-L'].action,'picker.lua',1,true))")
+
+    def test_picker_waits_for_selection_and_cancel_sends_nothing(self):
+        self.lua.execute("""
+            published=0; prepared=0; buttons={}; captured=false
+            function control()
+                return {Width={Set=function() end},Height={Set=function() end},Depth={Set=function() end},
+                    GetTopmostDepth=function() return 0 end,Destroy=function(self) self.dead=true end,
+                    Disable=function() end}
+            end
+            function GetFrame() return control() end
+            function GetMouseScreenPos() return {500,400} end
+            function IsDestroyed(c) return c.dead end
+            function AddInputCapture() captured=true end
+            function RemoveInputCapture() captured=false end
+            function import(path)
+                if string.find(path,'stamp.lua',1,true) then return {
+                    Prepare=function(id,mouse) prepared=prepared+1; assert(mouse[1]==500); return {id=id} end,
+                    Publish=function(d) published=published+1; chosen=d.id end} end
+                if string.find(path,'uiutil',1,true) then return {bodyFont='body',VK_ESCAPE=27,UIFile=function(p) return p end,
+                    CreateWorldCover=control,CreateSCXMenuPanelBorder=control,CreateText=control,
+                    CreateButtonStd=function(parent,path,label) local b=control(); buttons[label]=b; return b end} end
+                if string.find(path,'bitmap',1,true) then return {Bitmap=control} end
+                return setmetatable({}, {__index=function() return function() end end})
+            end
+        """)
+        self.lua.execute((MOD/'modules/picker.lua').read_text(encoding='utf-8-sig'))
+        self.lua.execute("""
+            Toggle(); assert(prepared==2 and published==0 and captured)
+            buttons['Drunk Husky'].OnClick(); assert(published==1 and chosen=='husky' and not captured)
+            Toggle(); buttons.Cancel.OnClick(); assert(published==1 and not captured)
+            Toggle(); Toggle(); assert(published==1 and not captured)
+        """)
 
     def test_normal_painting_adapter_and_cooldown(self):
         self.lua.execute('''
