@@ -82,7 +82,7 @@ class StampTests(unittest.TestCase):
             function SessionGetScenarioInfo() return {size={1000,800}} end
             function GetFocusArmy() return 1 end
             function GetArmiesTable() return {armiesTable={{color='ffffffff'}}} end
-            function print() end
+            function LOG() end
         ''')
         self.lua.execute((MOD/'modules/stamp.lua').read_text(encoding='utf-8-sig'))
         self.lua.execute('''

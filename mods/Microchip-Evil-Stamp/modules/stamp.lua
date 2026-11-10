@@ -5,7 +5,7 @@ local CreateStroke = import('/lua/ui/game/painting/BrushStroke.lua').CreateBrush
 local lastStamp = -100
 
 local function Feedback(text)
-    print('Microchip Evil Stamp: '..text)
+    LOG('Microchip Evil Stamp: '..text)
     return false
 end
 
