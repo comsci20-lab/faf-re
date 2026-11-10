@@ -8,97 +8,126 @@ local Slider = import('/lua/maui/slider.lua').IntegerSlider
 local Combo = import('/lua/ui/controls/combo.lua').Combo
 local Popup = import('/lua/ui/controls/popups/popup.lua').Popup
 local window = false
-local lime, white, grey = 'ffd9ed73','ffe4e5dc','ff9aab9e'
-
+local lime, white, grey = 'ffe1f280','ffe8e9db','ffa7b198'
+local texturePath='/mods/Microchip-Eco-Sharing/textures/'
+local rowsPerPage=6
+local function Texture(name) return texturePath..name..'.dds' end
 local function Copy(t)
     if type(t) ~= 'table' then return t end
     local n={}; for k,v in pairs(t) do n[k]=Copy(v) end; return n
+end
+local function Art(parent,name,x,y,w,h)
+    local b=Bitmap(parent,Texture(name))
+    b.Width:Set(L.ScaleNumber(w)); b.Height:Set(L.ScaleNumber(h)); L.AtLeftTopIn(b,parent,x,y)
+    return b
 end
 local function Box(parent,x,y,w,h,colour)
     local b=Bitmap(parent); b:SetSolidColor(colour)
     b.Width:Set(L.ScaleNumber(w)); b.Height:Set(L.ScaleNumber(h)); L.AtLeftTopIn(b,parent,x,y)
     return b
 end
-local function Text(parent,text,size,x,y,colour)
-    local t=UI.CreateText(parent,text,size,UI.bodyFont)
-    t:SetColor(colour or white); L.AtLeftTopIn(t,parent,x,y); t:DisableHitTest(); return t
+local function Text(parent,text,size,x,y,colour,heading)
+    local t=UI.CreateText(parent,text,size,heading and UI.titleFont or UI.bodyFont)
+    t:SetColor(colour or white); t:SetDropShadow(true)
+    L.AtLeftTopIn(t,parent,x,y); t:DisableHitTest(); return t
 end
-local function Button(parent,text,x,y,w,click,height)
-    height=height or 27
-    local b=Box(parent,x,y,w,height,'ff434a32')
-    Box(b,1,1,w-2,height-2,'ff171d19'):DisableHitTest()
-    local label=Text(b,text,13,0,0,lime); L.AtCenterIn(label,b)
+local function Button(parent,text,x,y,w,click,height,primary)
+    height=height or 38
+    local normal=primary and 'button-apply' or 'button-up'
+    local b=Art(parent,normal,x,y,w,height)
+    if text=='^' or text=='v' or text=='X' then
+        local icon=Art(b,text=='^' and 'up' or text=='v' and 'down' or 'close',0,0,height-8,height-8)
+        icon:DisableHitTest(); L.AtCenterIn(icon,b)
+    else
+        local label=Text(b,text,math.min(18,height-10),0,0,primary and 'fff2ffd4' or white,true)
+        L.AtCenterIn(label,b)
+    end
     b.HandleEvent=function(self,event)
-        if event.Type=='MouseEnter' then self:SetSolidColor('ffc5d963')
-        elseif event.Type=='MouseExit' then self:SetSolidColor('ff434a32')
-        elseif event.Type=='ButtonPress' then click(); return true end
+        if event.Type=='MouseEnter' then self:SetTexture(Texture('button-over'))
+        elseif event.Type=='MouseExit' then self:SetTexture(Texture(normal))
+        elseif event.Type=='ButtonPress' then self:SetTexture(Texture('button-down')); click(); return true
+        elseif event.Type=='ButtonRelease' then self:SetTexture(Texture('button-over')) end
         return false
     end
     return b
 end
 local function Tick(parent,x,y,checked,change)
-    local b=Box(parent,x,y,23,23,'ff667148')
-    local inside=Box(b,2,2,19,19,'ff141b14'); inside:DisableHitTest()
-    local label=Text(b,checked and 'X' or '',16,5,0,lime)
+    local b=Art(parent,checked and 'check-on' or 'check-off',x,y,30,30)
     b.HandleEvent=function(self,event)
         if event.Type=='ButtonPress' then
-            checked=not checked; label:SetText(checked and 'X' or ''); change(checked); return true
+            checked=not checked; self:SetTexture(Texture(checked and 'check-on' or 'check-off'))
+            change(checked); return true
         end
         return false
     end
     return b
 end
+local function ComboTextures()
+    local result={button={},list={}}
+    for _,part in ipairs({'left','mid','right'}) do
+        result.button[part]={}
+        for _,state in ipairs({'up','down','over','dis'}) do result.button[part][state]=Texture('combo-'..part..'-'..state) end
+    end
+    for _,part in ipairs({'ul','um','ur','l','m','r','ll','lm','lr'}) do result.list[part]=Texture('list-'..part) end
+    return result
+end
 
 function Toggle()
     if window then window:Close(); return end
     local content=Group(GetFrame(0))
-    content.Width:Set(L.ScaleNumber(780)); content.Height:Set(L.ScaleNumber(540))
-    local background=Box(content,0,0,780,540,'f0161c18'); background:DisableHitTest()
+    content.Width:Set(L.ScaleNumber(940)); content.Height:Set(L.ScaleNumber(660))
+    Art(content,'frame',0,0,940,660):DisableHitTest()
     local draft=Copy(Sharing.Settings())
     local popup=Popup(GetFrame(0),content); window=popup
     local closed=popup.OnClosed
     popup.OnClosed=function(self) window=false; closed(self) end
-    Text(content,'Microchip Eco Sharing',24,12,3,lime)
-    Text(content,'Share surplus with selected allies when their resource storage is empty.',13,12,37)
-    Button(content,'X',735,4,30,function() popup:Close() end)
-    Tick(content,14,66,draft.enabled,function(on) draft.enabled=on end)
-    Text(content,'Enable automatic sharing',14,47,67,lime)
-    Text(content,'Reserve thresholds',17,14,105,lime)
+    Art(content,'logo',36,29,78,68):DisableHitTest()
+    Text(content,'Microchip Eco Sharing',29,126,33,lime,true)
+    Text(content,'Share surplus above your reserves when a selected ally runs empty.',15,127,77)
+    Button(content,'X',866,34,38,function() popup:Close() end,38)
 
+    Art(content,'reserves',30,122,880,148):DisableHitTest()
+    Text(content,'Reserve Thresholds',18,49,125,lime,true)
     local function Reserve(resource,y)
         local key=string.lower(resource)..'Reserve'
-        Text(content,resource..' reserve',14,16,y+3)
-        local value=Text(content,tostring(draft[key])..'%',16,675,y+2,lime)
-        local slider=Slider(content,false,0,100,1,
-            UI.UIFile('/game/slider-btn/slider-'..string.lower(resource)..'_btn_up.dds'),
-            UI.UIFile('/game/slider-btn/slider-'..string.lower(resource)..'_btn_up.dds'),
-            UI.UIFile('/game/slider-btn/slider-'..string.lower(resource)..'_btn_up.dds'))
-        slider.Width:Set(L.ScaleNumber(450)); slider.Height:Set(L.ScaleNumber(28))
-        L.AtLeftTopIn(slider,content,190,y)
-        slider._background:SetSolidColor('ff47513b')
-        slider._background.Width:Set(slider.Width)
-        slider._background.Height:Set(L.ScaleNumber(7))
+        Art(content,string.lower(resource),48,y-3,28,30):DisableHitTest()
+        Text(content,resource..' reserve',18,87,y)
+        local display=Art(content,'button-up',796,y-6,88,35); display:DisableHitTest()
+        local value=Text(content,tostring(draft[key])..'%',20,0,0,lime,true); L.AtCenterIn(value,display)
+        local slider=Slider(content,false,0,100,1,Texture('thumb-up'),Texture('thumb-over'),Texture('thumb-down'))
+        slider.Width:Set(L.ScaleNumber(492)); slider.Height:Set(L.ScaleNumber(34))
+        L.AtLeftTopIn(slider,content,273,y-6)
+        slider._background:SetSolidColor('ff4a5534')
+        slider._background.Width:Set(slider.Width); slider._background.Height:Set(L.ScaleNumber(7))
         L.AtVerticalCenterIn(slider._background,slider)
+        local fill=Box(slider,2,0,1,3,'ffd6ec61'); fill:DisableHitTest()
+        fill.Width:Set(function() return math.max(0,(slider.Width()-L.ScaleNumber(4))*slider:GetValue()/100) end)
+        L.AtVerticalCenterIn(fill,slider)
+        fill.Depth:Set(function() return slider._background.Depth()+1 end)
+        slider._thumb.Depth:Set(function() return fill.Depth()+1 end)
         slider:SetValue(draft[key])
         slider.OnValueChanged=function(self,n)
             draft[key]=math.max(0,math.min(100,math.floor(n+0.5))); value:SetText(tostring(draft[key])..'%')
         end
     end
-    Reserve('Energy',134); Reserve('Mass',173)
-    Text(content,'Share to allies',17,15,216,lime)
-    Text(content,'When multiple allies are empty',17,416,216,lime)
-    Box(content,12,244,378,231,'ff323d2b'):DisableHitTest()
-    Box(content,13,245,376,229,'ff131a16'):DisableHitTest()
-    Text(content,'Ally',13,23,251); Text(content,'Energy',12,258,251,lime); Text(content,'Mass',12,324,251)
+    Reserve('Energy',168); Reserve('Mass',218)
 
-    Text(content,'Sharing mode:',14,415,249)
-    local combo=Combo(content,14,2,false)
-    combo.Width:Set(L.ScaleNumber(180)); L.AtLeftTopIn(combo,content,568,244)
+    Art(content,'allies',30,286,425,282):DisableHitTest()
+    Art(content,'priority',475,286,435,282):DisableHitTest()
+    Text(content,'Share To Allies',18,49,289,lime,true)
+    Text(content,'When Multiple Allies Are Empty',17,494,289,lime,true)
+    Text(content,'Ally',15,49,326)
+    Art(content,'energy',292,322,17,20):DisableHitTest(); Text(content,'Energy',14,314,325)
+    Art(content,'mass',373,322,17,20):DisableHitTest(); Text(content,'Mass',14,394,325)
+    Text(content,'Sharing mode:',16,495,327)
+    local combo=Combo(content,17,2,false,ComboTextures())
+    combo.Width:Set(L.ScaleNumber(204)); L.AtLeftTopIn(combo,content,681,318)
     combo:AddItems({'Equal','Rank'},draft.mode=='Rank' and 2 or 1)
-    local explanation=Text(content,'',12,417,280,grey)
-    local priorityHeading=Text(content,'',13,417,307,lime)
-    local rowGroup, priorityGroup, page = false,false,1
-    local pageText=Text(content,'',12,142,481,grey)
+    combo:SetTitleTextColor(lime)
+    local explanation=Text(content,'',13,495,366,grey)
+    local priorityHeading=Text(content,'',14,495,398,lime,true)
+    local rowGroup,priorityGroup,page=false,false,1
+    local pageText=Text(content,'',12,169,545,grey)
     local refresh
     local function Move(name,delta)
         local list=Allocate.Ordered(Sharing.Allies(),draft.order)
@@ -106,8 +135,7 @@ function Toggle()
             if ally.name==name then
                 local target=i+delta
                 if target<1 or target>table.getn(list) then return end
-                list[i],list[target]=list[target],list[i]
-                break
+                list[i],list[target]=list[target],list[i]; break
             end
         end
         draft.order={}; for _,ally in ipairs(list) do table.insert(draft.order,ally.name) end
@@ -119,48 +147,49 @@ function Toggle()
         rowGroup=Group(content); L.FillParent(rowGroup,content)
         priorityGroup=Group(content); L.FillParent(priorityGroup,content)
         local allies=Sharing.Allies(); local count=table.getn(allies)
-        page=math.max(1,math.min(page,math.max(1,math.ceil(count/7))))
-        local first=(page-1)*7+1
-        for row=1,7 do
+        page=math.max(1,math.min(page,math.max(1,math.ceil(count/rowsPerPage))))
+        local first=(page-1)*rowsPerPage+1
+        for row=1,rowsPerPage do
             local ally=allies[first+row-1]
             if ally then
-                local y=278+(row-1)*27
-                local chip=Box(rowGroup,24,y+3,13,17,ally.colour); chip:DisableHitTest()
+                local y=352+(row-1)*29
+                Box(rowGroup,49,y+6,17,18,ally.colour):DisableHitTest()
                 local name=ally.name
-                Text(rowGroup,string.sub(name,1,24),13,43,y+3)
+                Text(rowGroup,string.sub(name,1,23),16,77,y+4)
                 draft.targets[name]=draft.targets[name] or {}
                 for column,key in ipairs({'ENERGY','MASS'}) do
-                    Tick(rowGroup,268+(column-1)*62,y,draft.targets[name][key],function(on) draft.targets[name][key]=on end)
+                    Tick(rowGroup,313+(column-1)*81,y-1,draft.targets[name][key],function(on) draft.targets[name][key]=on end)
                 end
             end
         end
-        if count==0 then Text(rowGroup,'No active allies available.',13,23,292,grey) end
-        explanation:SetText(draft.mode=='Rank' and 'Rank fills higher-priority allies first.' or 'Equal divides surplus equally, up to storage limits.')
-        local overridden=table.getn(draft.order)>0
-        priorityHeading:SetText(overridden and 'Priority: manual override' or 'Priority: highest FAF rating first')
+        if count==0 then Text(rowGroup,'No active allies available.',15,49,367,grey) end
+        explanation:SetText(draft.mode=='Rank' and 'Rank fills higher-priority allies first.' or 'Equal shares surplus equally, up to storage limits.')
+        priorityHeading:SetText(table.getn(draft.order)>0 and 'Priority: manual override' or 'Priority: highest FAF rating')
         local ordered=Allocate.Ordered(allies,draft.order)
-        for row=1,7 do
+        for row=1,rowsPerPage do
             local ally=ordered[first+row-1]
             if ally then
-                local y=331+(row-1)*20
+                local y=423+(row-1)*23
                 local name=ally.name
                 local rating=ally.rating and tostring(math.floor(ally.rating+0.5)) or 'unrated'
-                Text(priorityGroup,tostring(first+row-1)..'. '..string.sub(name,1,19)..' ('..rating..')',12,417,y)
-                Button(priorityGroup,'^',696,y-3,23,function() Move(name,-1) end,18)
-                Button(priorityGroup,'v',723,y-3,23,function() Move(name,1) end,18)
+                Text(priorityGroup,tostring(first+row-1)..'.',14,495,y)
+                Box(priorityGroup,517,y+4,12,13,ally.colour):DisableHitTest()
+                Text(priorityGroup,string.sub(name,1,20),14,539,y)
+                Text(priorityGroup,rating,12,740,y+1,grey)
+                Button(priorityGroup,'^',825,y-2,28,function() Move(name,-1) end,22)
+                Button(priorityGroup,'v',863,y-2,28,function() Move(name,1) end,22)
             end
         end
-        pageText:SetText(count>0 and ('Allies '..first..'-'..math.min(first+6,count)..' of '..count) or '')
+        pageText:SetText(count>0 and ('Allies '..first..'-'..math.min(first+rowsPerPage-1,count)..' of '..count) or '')
     end
     combo.OnClick=function(self,index) draft.mode=index==2 and 'Rank' or 'Equal'; refresh() end
-    Button(content,'<',20,477,34,function() page=page-1; refresh() end)
-    Button(content,'>',338,477,34,function() page=page+1; refresh() end)
-    Button(content,'Reset to rank',416,477,150,function() draft.order={}; refresh() end)
-    Button(content,'Apply',578,503,82,function()
-        Sharing.Save(Copy(draft)); popup:Close()
-    end)
-    Button(content,'Close',672,503,82,function() popup:Close() end)
-    local status=Text(content,Sharing.Status(),12,14,508,grey)
-    status:SetText(string.sub(Sharing.Status(),1,68))
+    Button(content,'<',48,539,34,function() page=page-1; refresh() end,24)
+    Button(content,'>',404,539,34,function() page=page+1; refresh() end,24)
+    Tick(content,42,570,draft.enabled,function(on) draft.enabled=on end)
+    Text(content,'Enable automatic sharing',16,83,575,lime)
+    Text(content,string.sub(Sharing.Status(),1,66),12,390,577,grey)
+    Button(content,'Reset to rank',40,604,190,function() draft.order={}; refresh() end,30)
+    Button(content,'Apply',650,604,118,function() Sharing.Save(Copy(draft)); popup:Close() end,30,true)
+    Button(content,'Close',786,604,118,function() popup:Close() end,30)
     refresh()
 end
