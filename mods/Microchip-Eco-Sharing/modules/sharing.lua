@@ -2,6 +2,7 @@ local Prefs = import('/lua/user/prefs.lua')
 local Allocate = import('/mods/Microchip-Eco-Sharing/modules/allocation.lua')
 local settings, scores, lastSent = false, {}, {}
 local initialized, owner, lastTick = false, false, -1
+local lastRoundTick, lastRoundTime = false, false
 local status = 'Automatic sharing is off'
 
 function Settings()
@@ -21,6 +22,27 @@ end
 
 function Status() return status end
 
+function SelectionCount(value)
+    local count = 0
+    for _, ally in ipairs(Allies()) do
+        local selected = value.targets[ally.name] or {}
+        if selected.MASS or selected.ENERGY then count = count + 1 end
+    end
+    return count
+end
+
+local function Announce(focus, mass, energy, recipients)
+    local army = GetArmiesTable().armiesTable[focus]
+    local destination = table.getn(recipients) == 1 and recipients[1] or (table.getn(recipients) .. ' allies')
+    -- Fractions are processed asynchronously; the normal FAF receipt reports exact amounts received.
+    local message = string.format('[Auto-share] Sending about %d mass and %d energy to %s.', mass, energy, destination)
+    local ok, problem = pcall(function()
+        local chat = import('/lua/ui/game/chat/ChatController.lua')
+        SessionSendChatMessage(chat.FindClients(), {from=army.nickname, to='allies', Chat=true, text=message})
+    end)
+    if not ok then WARN('Microchip Eco Sharing chat: ' .. tostring(problem)) end
+end
+
 function Allies()
     local result, focus = {}, GetFocusArmy()
     if focus < 1 or IsObserver() then return result end
@@ -38,16 +60,29 @@ end
 
 local function Receive(data)
     local tick, focus = GameTick(), GetFocusArmy()
-    if tick < lastTick or owner ~= focus then scores={}; lastSent={} end
+    if tick < lastTick or owner ~= focus then
+        scores={}; lastSent={}; lastRoundTick=false; lastRoundTime=false
+    end
     lastTick=tick; owner=focus
     if SessionIsReplay() or IsObserver() or focus < 1 then return end
     -- This table is the same allied economy information the normal scoreboard displays.
     for id, row in pairs(data or {}) do scores[id]={data=row,tick=tick} end
     local current = Settings()
     if not current.enabled then status='Automatic sharing is off'; return end
+    if SelectionCount(current) == 0 then
+        status='Choose Energy or Mass for at least one ally in ECO.'
+        return
+    end
+    local now = GetSystemTimeSeconds()
+    -- One sharing round can include several allies, but rounds never run faster than
+    -- three real seconds OR three simulation seconds, including at faster game speeds.
+    if lastRoundTick and (tick - lastRoundTick < 30 or now - lastRoundTime < 3) then
+        status='Waiting for the three-second sharing interval'
+        return
+    end
     local allies = Allies()
     local plan = Allocate.Plan(current,GetEconomyTotals(),allies,scores,tick,lastSent)
-    local sent = false
+    local sent, mass, energy, recipients = false, 0, 0, {}
     for _, gift in ipairs(plan) do
         -- Recheck alliance and authority immediately before normal UI callbacks.
         if GetFocusArmy() ~= focus or IsObserver() then break end
@@ -57,10 +92,17 @@ local function Receive(data)
             if gift.Mass>0 then lastSent[gift.id].MASS=tick end
             if gift.Energy>0 then lastSent[gift.id].ENERGY=tick end
             status='Shared surplus with '..gift.name
+            mass=mass+(gift.MassAmount or 0); energy=energy+(gift.EnergyAmount or 0)
+            table.insert(recipients, gift.name)
             sent=true
         end
     end
-    if not sent then status='Watching selected allies; sharing only above your reserves' end
+    if sent then
+        lastRoundTick=tick; lastRoundTime=now
+        Announce(focus, mass, energy, recipients)
+    else
+        status='Waiting for surplus above reserves and empty selected allies'
+    end
 end
 
 function Initialize()
@@ -73,4 +115,5 @@ end
 function Stop()
     if initialized then RemoveOnSyncHashedCallback('Score','MicrochipEcoSharing') end
     initialized=false; settings=false; scores={}; lastSent={}; owner=false; lastTick=-1
+    lastRoundTick=false; lastRoundTime=false
 end

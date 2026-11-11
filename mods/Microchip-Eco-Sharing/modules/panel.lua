@@ -156,11 +156,16 @@ function Toggle()
     Button(content,'<',20,477,34,function() page=page-1; refresh() end)
     Button(content,'>',338,477,34,function() page=page+1; refresh() end)
     Button(content,'Reset to rank',416,477,150,function() draft.order={}; refresh() end)
+    local status=Text(content,Sharing.Status(),12,14,508,grey)
     Button(content,'Apply',578,503,82,function()
+        if draft.enabled and Sharing.SelectionCount(draft)==0 then
+            status:SetText('Tick Energy or Mass for an ally before applying.')
+            status:SetColor('ffffc06a')
+            return
+        end
         Sharing.Save(Copy(draft)); popup:Close()
     end)
     Button(content,'Close',672,503,82,function() popup:Close() end)
-    local status=Text(content,Sharing.Status(),12,14,508,grey)
     status:SetText(string.sub(Sharing.Status(),1,68))
     refresh()
 end

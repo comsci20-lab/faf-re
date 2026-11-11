@@ -17,7 +17,14 @@ Closing the panel without Apply leaves the active settings unchanged.
 It uses the same visible allied storage information as the scoreboard and the
 normal `GiveResourcesToPlayer` callback. It does not read hidden enemy economies
 or install simulation code. Receivers with missing/stale data are skipped.
-There is a five-second cooldown per recipient/resource; pauses, observers and
+Tick **Energy** and/or **Mass** beside at least one ally: enabling sharing alone
+does not select recipients. Apply stays open with a warning if none are selected.
+
+Sharing rounds happen no faster than every three real seconds and three game
+seconds, even at faster game speeds. Each round can send to several allies.
+One allies-chat message announces the approximate total being sent and the
+recipient (or recipient count). Normal FAF receipts report exact amounts received.
+There is also a three-game-second cooldown per recipient/resource; pauses, observers and
 replays do not trigger transfers. Empty means at most one stored resource unit.
 Reserves are checked against the latest available economy data; normal spending
 and other transfers can still change storage before a queued gift is processed.

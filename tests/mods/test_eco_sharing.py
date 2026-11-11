@@ -73,21 +73,37 @@ class AllocationTests(unittest.TestCase):
             last={}; allies[2].rating=nil; assert(run()[1].name=='Low')
         ''')
 
+    def test_game_lua_without_math_huge_can_allocate_and_sort_unrated_allies(self):
+        self.lua.execute('''
+            math.huge=nil; allies[1].rating=nil
+            local p=run(); assert(table.getn(p)==2 and p[1].name=='High')
+        ''')
+
+    def test_nonfinite_storage_is_never_allocated(self):
+        self.lua.execute('''
+            own.stored.MASS=math.huge; own.stored.ENERGY=0/0
+            assert(table.getn(run())==0)
+        ''')
+
 
 class RuntimeTests(unittest.TestCase):
-    def test_sync_registration_authority_and_dispatch(self):
-        lua=LuaRuntime(unpack_returned_tuples=True)
+    def setUp(self):
+        lua=self.lua=LuaRuntime(unpack_returned_tuples=True)
         lua.execute((MOD/'modules/allocation.lua').read_text(encoding='utf-8-sig'))
         lua.execute('''
             allocate={Defaults=Defaults,Plan=Plan}
             allocate.Ordered=Ordered
             saved=Defaults(); saved.enabled=true; saved.mode='Rank'; saved.targets={Ally={MASS=true,ENERGY=true},Enemy={MASS=true,ENERGY=true}}
-            sent={}; replay=false; observer=false; tick=100
+            sent={}; chats={}; replay=false; observer=false; tick=100; now=10
             function import(path) if string.find(path,'allocation') then return allocate end
+                if string.find(path,'ChatController') then return {FindClients=function() return {1,2} end} end
                 return {GetFromCurrentProfile=function() return saved end,SetToCurrentProfile=function(key,v) saved=v end} end
             function AddOnSyncHashedCallback(cb,cat,id) receive=cb; assert(cat=='Score') end
             function RemoveOnSyncHashedCallback() receive=nil end
             function GameTick() return tick end
+            function GetSystemTimeSeconds() return now end
+            function SessionSendChatMessage(clients,message) table.insert(chats,{clients=clients,message=message}) end
+            function WARN(message) warning=message end
             function GetFocusArmy() return 1 end
             function IsObserver() return observer end
             function SessionIsReplay() return replay end
@@ -98,6 +114,95 @@ class RuntimeTests(unittest.TestCase):
             function SimCallback(data) table.insert(sent,data) end
         ''')
         lua.execute((MOD/'modules/sharing.lua').read_text(encoding='utf-8-sig'))
+        lua.execute('''
+            data={[2]={resources={storage={storedMass=0,maxMass=1000,storedEnergy=0,maxEnergy=1000}}}}
+            Initialize()
+        ''')
+
+    def test_enabled_without_selected_resources_is_explained(self):
+        self.lua.execute('saved.targets.Ally={}; receive(data)')
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 0)
+        self.assertIn('Choose Energy or Mass', self.lua.eval('Status()'))
+        self.assertEqual(self.lua.eval('table.getn(chats)'), 0)
+
+    def test_one_allies_chat_message_reports_round_amounts(self):
+        self.lua.execute('receive(data)')
+        self.assertEqual(self.lua.eval('table.getn(chats)'), 1)
+        self.assertEqual(self.lua.eval('chats[1].message.to'), 'allies')
+        self.assertIn('399 mass and 249 energy to Ally', self.lua.eval('chats[1].message.text'))
+
+    def test_rounds_require_three_wall_seconds_and_thirty_game_ticks(self):
+        self.lua.execute('receive(data); tick=130; now=12.99; receive(data)')
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 1)
+        self.lua.execute('tick=130; now=13; receive(data)')
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 2)
+        self.assertEqual(self.lua.eval('table.getn(chats)'), 2)
+        self.lua.execute('tick=159; now=16; receive(data)')
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 2)
+        self.lua.execute('tick=160; now=16; receive(data)')
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 3)
+
+    def test_switching_recipients_cannot_bypass_round_cooldown(self):
+        self.lua.execute('''
+            saved.targets.Ally={MASS=true}; receive(data)
+            function IsAlly(a,b) return b==2 or b==4 end
+            function GetArmiesTable() return {armiesTable={
+                [1]={nickname='Me'},[2]={nickname='Ally'},[4]={nickname='Other'}}} end
+            saved.targets.Ally={}; saved.targets.Other={ENERGY=true}
+            data[4]={resources={storage={storedMass=0,maxMass=1000,storedEnergy=0,maxEnergy=1000}}}
+            tick=110; now=11
+            receive(data)
+        ''')
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 1)
+
+    def test_paused_game_cannot_send_again_when_wall_time_passes(self):
+        self.lua.execute('receive(data); now=20; receive(data)')
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 1)
+
+    def test_chat_failure_does_not_stop_resource_transfers(self):
+        self.lua.execute("SessionSendChatMessage=function() error('chat unavailable') end; receive(data)")
+        self.assertEqual(self.lua.eval('table.getn(sent)'), 1)
+        self.assertIn('chat unavailable', self.lua.eval('warning'))
+
+    def test_real_faf_sim_callback_moves_resources_and_preserves_reserves(self):
+        import zipfile
+        # Exercise the installed callback itself, not a reimplementation of its fractions.
+        archive = Path(r'C:\ProgramData\FAForever\gamedata\lua.nx2')
+        if not archive.is_file():
+            self.skipTest('Installed FAF game data not available')
+        with zipfile.ZipFile(archive) as z:
+            source = z.read('lua/SimUtils.lua').decode('utf-8-sig')
+        callback = source[source.index('function GiveResourcesToPlayer(data)'):]
+        callback = callback[:callback.index('\nend') + 4]
+        self.lua.execute('''
+            function OkayToMessWithArmy(army) return army==1 end
+            function brain(name,mass,energy)
+                local b={Nickname=name,stored={MASS=mass,ENERGY=energy}}
+                function b:IsDefeated() return false end
+                function b:GetEconomyStored(resource) return self.stored[resource] end
+                function b:TakeResource(resource,n)
+                    local taken=math.min(n,self.stored[resource]); self.stored[resource]=self.stored[resource]-taken
+                    return taken
+                end
+                function b:GiveResource(resource,n) self.stored[resource]=math.min(1000,self.stored[resource]+n) end
+                function b:GetArmyStat() return {Value=1000} end
+                function b:SendChatToAllies() end
+                return b
+            end
+            ArmyBrains={[1]=brain('Me',1000,1000),[2]=brain('Ally',0,0)}
+        ''')
+        self.lua.execute(callback)
+        self.lua.execute('''
+            function SimCallback(packet) GiveResourcesToPlayer(packet.Args) end
+            receive(data)
+        ''')
+        self.assertAlmostEqual(self.lua.eval('ArmyBrains[1].stored.MASS'), 601)
+        self.assertAlmostEqual(self.lua.eval('ArmyBrains[1].stored.ENERGY'), 751)
+        self.assertAlmostEqual(self.lua.eval('ArmyBrains[2].stored.MASS'), 399)
+        self.assertAlmostEqual(self.lua.eval('ArmyBrains[2].stored.ENERGY'), 249)
+
+    def test_sync_registration_authority_and_dispatch(self):
+        lua=self.lua
         lua.execute('''
             Initialize()
             local data={[2]={resources={storage={storedMass=0,maxMass=1000,storedEnergy=0,maxEnergy=1000}}},

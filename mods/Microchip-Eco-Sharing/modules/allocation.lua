@@ -4,7 +4,8 @@ function Defaults()
 end
 
 local function Number(value)
-    return type(value) == 'number' and value == value and value > -math.huge and value < math.huge
+    -- The game's Lua 5.0 has no math.huge. NaN and infinities fail this subtraction check.
+    return type(value) == 'number' and value == value and value - value == 0
 end
 
 function Ordered(allies, override)
@@ -18,7 +19,7 @@ function Ordered(allies, override)
             if not bp then return true end
             if ap ~= bp then return ap < bp end
         end
-        local ar, br = a.rating or -math.huge, b.rating or -math.huge
+        local ar, br = a.rating or -1e30, b.rating or -1e30
         if ar ~= br then return ar > br end
         return a.id < b.id
     end)
@@ -46,7 +47,7 @@ function Plan(settings, own, allies, scores, tick, lastSent)
                 local last = lastSent[ally.id] and lastSent[ally.id][key]
                 local current, maximum = storage and storage['stored'..resource], storage and storage['max'..resource]
                 if target[key] and snapshot and tick >= snapshot.tick and tick - snapshot.tick <= 30
-                    and (not last or tick - last >= 50) and Number(current) and Number(maximum)
+                    and (not last or tick - last >= 30) and Number(current) and Number(maximum)
                     and current >= 0 and current <= 1 and maximum > current then
                     table.insert(eligible, {ally=ally, room=maximum-current, amount=0})
                 end
