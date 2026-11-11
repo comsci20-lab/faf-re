@@ -34,6 +34,7 @@
 #include "moho/audio/XAudioError.h"
 #include "moho/audio/XactClock.h"
 #include "moho/audio/RecoverableCue.h"
+#include "moho/audio/AudioOutputSelection.h"
 #include "moho/audio/CSimSoundManager.h"
 #include "moho/app/CWaitHandleSet.h"
 #include "moho/console/CConCommand.h"
@@ -56,6 +57,7 @@ namespace
     {
       const std::lock_guard lock(mMutex);
       mEndpoint = endpoint;
+      mDeviceState = DEVICE_STATE_ACTIVE;
     }
 
     AudioEndpointWatch()
@@ -90,25 +92,32 @@ namespace
       if (!refs) delete this;
       return refs;
     }
-    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR id) override
     {
-      if (flow == eRender && role == eConsole) ++mGeneration;
+      if (flow == eRender && role == eMultimedia) {
+        const std::lock_guard lock(mMutex);
+        if (mEndpoint != (id ? id : L"")) ++mGeneration;
+      }
       return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR id, DWORD) override { DeviceChanged(id); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR id, DWORD state) override { DeviceChanged(id, state); return S_OK; }
     HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR id) override { DeviceChanged(id); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR id) override { DeviceChanged(id, DEVICE_STATE_NOTPRESENT); return S_OK; }
     HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
 
   private:
     std::atomic<ULONG> mRefs{1};
     std::mutex mMutex;
     std::wstring mEndpoint;
+    DWORD mDeviceState = DEVICE_STATE_ACTIVE;
 
-    void DeviceChanged(LPCWSTR id)
+    void DeviceChanged(LPCWSTR id, DWORD state)
     {
       const std::lock_guard lock(mMutex);
-      if (id && mEndpoint == id) ++mGeneration;
+      if (id && mEndpoint == id && state != mDeviceState) {
+        mDeviceState = state;
+        ++mGeneration;
+      }
     }
   };
 
@@ -118,10 +127,13 @@ namespace
     std::set<moho::RecoverableCue*> mCues;
     std::map<std::uint16_t, float> mGlobals;
     std::wstring mEndpoint;
+    std::wstring mRenderer;
     unsigned mGeneration = 0;
     ULONGLONG mNextCheck = 0;
     bool mPending = false;
     bool mRestoreCues = false;
+    bool mBanksPending = false;
+    int mLastWorkError = 0;
 
     ~AudioRecoveryState() { mWatch->Close(); }
   };
@@ -132,19 +144,16 @@ namespace
   bool ReadAudioEndpoint(AudioRecoveryState& state, std::wstring& id)
   {
     if (!state.mWatch->mEnumerator) return false;
-    IMMDevice* device = nullptr;
-    const auto result = state.mWatch->mEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+    moho::AudioOutputDevice selected;
+    const auto result = moho::ReadSelectedAudioOutput(*state.mWatch->mEnumerator, selected);
     if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) { id.clear(); return true; }
     if (FAILED(result)) return false;
-    LPWSTR value = nullptr;
-    const auto idResult = device->GetId(&value);
-    if (SUCCEEDED(idResult)) id = value;
-    CoTaskMemFree(value);
-    device->Release();
-    return SUCCEEDED(idResult);
+    id = std::move(selected.endpointId);
+    return true;
   }
 
-  void RecoverAudioOutput(moho::AudioEngineImpl& impl, bool workFailed);
+  int InitializeSelectedOutput(moho::AudioEngineImpl& impl);
+  void RecoverAudioOutput(moho::AudioEngineImpl& impl, int workResult);
   bool ConfigureAudioOutput(moho::AudioEngineImpl& impl);
 
   // Engine addition (dedicated-server plan WPL.4): sSoundEnabled (CSimSoundManager.h), the
@@ -2236,7 +2245,7 @@ namespace moho
       if (AudioEngineImpl* const impl = configuration->EngineImplAt(index);
           impl != nullptr && impl->mInstance != nullptr) {
         const int workResult = impl->mInstance->DoWork();
-        RecoverAudioOutput(*impl, workResult < 0);
+        RecoverAudioOutput(*impl, workResult);
         configuration = GetSoundConfigurationSingletonB();
       }
     }
@@ -2448,7 +2457,7 @@ namespace moho
 
     // FUN_004D9410 passes SoundConfiguration +0x34, the embedded XACT 2.5
     // parameter object. Typed callback fields grow and align natively on x64.
-    const int initializeResult = mImpl->mInstance->Initialize(&configuration->mRuntimeParams);
+    const int initializeResult = InitializeSelectedOutput(*mImpl);
     if (initializeResult < 0) {
       gpg::Warnf("SND: Error initializing audio engine.\n%s", func_SoundErrorCodeToMsg(initializeResult));
       configuration->mNoSound = 1u;
@@ -2459,11 +2468,6 @@ namespace moho
       configuration->mNoSound = 1u;
       return;
     }
-
-    auto& recovery = sAudioRecovery[mImpl];
-    recovery.mGeneration = recovery.mWatch->mGeneration.load();
-    ReadAudioEndpoint(recovery, recovery.mEndpoint);
-    recovery.mWatch->TrackEndpoint(recovery.mEndpoint);
 
     gpg::Logf("MEM: %i bytes SND", 0);
     func_LoadSoundPath(mImpl, voicePath);
@@ -3044,6 +3048,27 @@ namespace moho
 
 namespace
 {
+  int InitializeSelectedOutput(moho::AudioEngineImpl& impl)
+  {
+    auto& state = sAudioRecovery[&impl];
+    if (!state.mWatch->mEnumerator) return static_cast<int>(0x8AC70017u);
+    const auto generation = state.mWatch->mGeneration.load();
+    moho::AudioOutputDevice selected;
+    const auto result = moho::ReadSelectedAudioOutput(*state.mWatch->mEnumerator, selected);
+    if (FAILED(result)) return result;
+    auto parameters = impl.mConfigs->mRuntimeParams;
+    state.mRenderer = std::move(selected.rendererId);
+    parameters.pRendererID = state.mRenderer.data();
+    const int initialized = impl.mInstance->Initialize(&parameters);
+    if (initialized >= 0) {
+      state.mEndpoint = std::move(selected.endpointId);
+      state.mGeneration = generation;
+      state.mWatch->TrackEndpoint(state.mEndpoint);
+      gpg::Logf("SND: Using Windows multimedia output renderer %ls", state.mRenderer.c_str());
+    }
+    return initialized;
+  }
+
   bool ConfigureAudioOutput(moho::AudioEngineImpl& impl)
   {
     const int result = moho::func_AudioInitialize(impl.mInstance, impl.mAudioHandle);
@@ -3068,12 +3093,17 @@ namespace
     return true;
   }
 
-  void RecoverAudioOutput(moho::AudioEngineImpl& impl, const bool workFailed)
+  void RecoverAudioOutput(moho::AudioEngineImpl& impl, const int workResult)
   {
     const auto found = sAudioRecovery.find(&impl);
     if (found == sAudioRecovery.end()) return;
     auto& state = found->second;
-    state.mPending |= workFailed;
+    state.mPending |= moho::IsAudioOutputLost(workResult);
+    if (workResult < 0 && workResult != state.mLastWorkError) {
+      gpg::Warnf("SND: Audio work returned 0x%08X%s", static_cast<unsigned>(workResult),
+                 moho::IsAudioOutputLost(workResult) ? "; output recovery scheduled" : "; preserving current output");
+    }
+    state.mLastWorkError = workResult < 0 ? workResult : 0;
     const auto now = GetTickCount64();
     if (now < state.mNextCheck) return;
     state.mNextCheck = now + 1000;
@@ -3085,25 +3115,22 @@ namespace
     if (endpoint.empty()) { state.mPending = true; return; }
 
     if (state.mPending) {
-      // Initialize the replacement first. If no output is ready yet, leave the
-      // old instance and its handles intact and retry next second.
-      auto* previous = impl.mInstance;
-      impl.mInstance = nullptr;
-      try {
-        moho::func_RetreiveXACTCOMInterface(&impl);
-      } catch (const moho::XAudioError&) {
-        impl.mInstance = previous;
-        return;
-      }
-      if (!impl.mInstance || impl.mInstance->Initialize(&impl.mConfigs->mRuntimeParams) < 0) {
-        if (impl.mInstance) {
-          impl.mInstance->ShutDown();
-          impl.mInstance->Release();
+      // Give each generation independent streaming handles. Teardown can cancel
+      // pending I/O on the old handles; it must not cancel the new bank's reads.
+      std::vector<std::pair<AudioStreamingWaveBankLoader*, HANDLE>> streams;
+      for (void* entry : impl.mHandles) {
+        if (auto* stream = dynamic_cast<AudioStreamingWaveBankLoader*>(static_cast<AudioWaveBankLoaderBase*>(entry))) {
+          const HANDLE file = ReOpenFile(stream->mFileHandle, GENERIC_READ, FILE_SHARE_READ, FILE_FLAG_OVERLAPPED);
+          if (file == INVALID_HANDLE_VALUE) {
+            const DWORD error = GetLastError();
+            for (const auto& opened : streams) CloseHandle(opened.second);
+            gpg::Warnf("SND: Could not reopen streaming bank for recovery (Windows error %u)", error);
+            return;
+          }
+          streams.emplace_back(stream, file);
         }
-        impl.mInstance = previous;
-        return;
       }
-
+      auto* previous = impl.mInstance;
       for (auto* cue : state.mCues) cue->Detach();
       for (void* entry : impl.mBanks) {
         auto* loader = static_cast<AudioSoundBankLoader*>(entry);
@@ -3116,11 +3143,39 @@ namespace
         loader->mWaveBank = nullptr;
       }
       previous->ShutDown();
-      previous->Release();
+      for (const auto& [stream, file] : streams) {
+        CloseHandle(stream->mFileHandle);
+        stream->mFileHandle = file;
+      }
 
-      bool ready = ConfigureAudioOutput(impl);
+      // Stop the old renderer before initializing its replacement. Some legacy
+      // XACT renderers share backend state across instances.
+      impl.mInstance = nullptr;
+      try {
+        moho::func_RetreiveXACTCOMInterface(&impl);
+      } catch (const moho::XAudioError&) {
+        impl.mInstance = previous;
+        return;
+      }
+      const int initialized = impl.mInstance ? InitializeSelectedOutput(impl) : E_FAIL;
+      if (initialized < 0) {
+        gpg::Warnf("SND: Output initialization failed: 0x%08X; retrying", static_cast<unsigned>(initialized));
+        if (impl.mInstance) { impl.mInstance->ShutDown(); impl.mInstance->Release(); }
+        impl.mInstance = previous;
+        return;
+      }
+      previous->Release();
+      if (!ConfigureAudioOutput(impl)) return;
+      state.mPending = false;
+      state.mBanksPending = true;
+      state.mRestoreCues = true;
+      gpg::Logf("SND: Audio output recovered after device change");
+    }
+    if (state.mBanksPending) {
+      bool ready = true;
       for (void* entry : impl.mHandles) {
         auto* loader = static_cast<AudioWaveBankLoaderBase*>(entry);
+        if (loader->mWaveBank) continue;
         int result = E_FAIL;
         if (auto* streaming = dynamic_cast<AudioStreamingWaveBankLoader*>(loader)) {
           AudioStreamingWaveBankCreateParams params{};
@@ -3133,26 +3188,28 @@ namespace
             0, 0, &loader->mWaveBank);
         }
         ready &= result >= 0;
+        if (result < 0) gpg::Warnf("SND: Wave bank recovery failed: 0x%08X; retrying bank", static_cast<unsigned>(result));
       }
+      // A missing bank retries in place. Never reset an otherwise healthy
+      // renderer and cut every playing sound short for a content/I/O failure.
+      if (!ready) return;
       // Reuse the original buffers and slots: CSndParams caches bank/cue IDs.
       for (void* entry : impl.mBanks) {
         auto* loader = static_cast<AudioSoundBankLoader*>(entry);
-        ready &= impl.mInstance->CreateSoundBank(loader->mBuffer.mBegin,
+        if (loader->mBank) continue;
+        const int result = impl.mInstance->CreateSoundBank(loader->mBuffer.mBegin,
           static_cast<std::int32_t>(loader->mBuffer.mEnd - loader->mBuffer.mBegin),
-          0, 0, &loader->mBank) >= 0;
+          0, 0, &loader->mBank);
+        ready &= result >= 0;
+        if (result < 0) gpg::Warnf("SND: Sound bank recovery failed: 0x%08X; retrying bank", static_cast<unsigned>(result));
       }
       for (const auto& [category, volume] : impl.mCategoryVolumes) impl.mInstance->SetVolume(category, volume);
       for (const auto& category : impl.mPausedCategoryNames) {
         impl.mInstance->Pause(impl.mInstance->GetCategory(category.c_str()), 1);
       }
       for (const auto& [index, value] : state.mGlobals) impl.mInstance->SetGlobalVariable(index, value);
-      state.mPending = !ready;
+      state.mBanksPending = !ready;
       state.mRestoreCues = true;
-      if (!ready) return;
-      state.mEndpoint = std::move(endpoint);
-      state.mWatch->TrackEndpoint(state.mEndpoint);
-      state.mGeneration = generation;
-      gpg::Logf("SND: Audio output recovered after device change");
     }
     if (state.mRestoreCues) {
       impl.mInstance->DoWork(); // streaming banks prepare asynchronously
