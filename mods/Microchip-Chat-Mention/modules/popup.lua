@@ -62,7 +62,6 @@ ShowNext = function()
     Text(panel, message.sender .. '  /  ' .. message.channel, 17, 23, 36)
     for i, line in ipairs(lines) do Text(panel, line, fontSize, 23, 65 + (i - 1) * lineHeight) end
     local countdown = Text(panel, '', 11, width - 96, height - 26, 'ff9fb1c2')
-    Text(panel, 'MICROCHIP CHAT MENTION', 10, 23, height - 26, 'ff8395a9')
     local track = Box(panel, 4, height - 3, width - 4, 3, 'ff263645'); track:DisableHitTest()
     local progress = Box(panel, 4, height - 3, width - 4, 3, 'ff59e0cf'); progress:DisableHitTest()
     local close = Box(panel, width - 37, 9, 28, 28, 'ff1d2b3b')

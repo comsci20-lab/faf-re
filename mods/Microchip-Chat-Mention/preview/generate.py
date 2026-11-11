@@ -100,7 +100,6 @@ def popup(seconds, y=78, second=False, cursor=None, opacity=1):
     text(d,(x+23,y+12),'@  MENTIONED YOU',12,CYAN,True)
     text(d,(x+23,y+36),('Rook' if second else 'Atlas')+'  /  ALLIES',17,bold=True)
     text(d,(x+23,y+67),'MC, air support is ready. Ping your target.' if second else 'Microchip, can you cover the north side?',17)
-    text(d,(x+23,y+121),'MICROCHIP CHAT MENTION',10,'#8395a9')
     text(d,(x+w-96,y+119),f'{seconds}s left',11,MUTED)
     box(d,(x+w-37,y+9,x+w-9,y+37),'#1d2b3b',radius=3)
     d.line((x+w-28,y+18,x+w-18,y+28),fill='#c4d2e0',width=2)
