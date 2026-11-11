@@ -2,6 +2,7 @@ local Prefs = import('/lua/user/prefs.lua')
 local Matching = import('/mods/Microchip-Chat-Mention/modules/matching.lua')
 local settings
 local recent = {}
+local simulationTimer, nextSimulation
 
 function Settings()
     if not settings then settings = Matching.Normalize(Prefs.GetFromCurrentProfile('microchip_chat_mention')) end
@@ -11,6 +12,7 @@ end
 function Save(value)
     settings = Matching.Normalize(value)
     Prefs.SetToCurrentProfile('microchip_chat_mention', settings)
+    nextSimulation = nil
     if not settings.enabled then import('/mods/Microchip-Chat-Mention/modules/popup.lua').Clear() end
 end
 
@@ -40,5 +42,31 @@ function Receive(sender, message, entry)
         sender = sender, text = message.text, matched = matched,
         channel = message.to == 'allies' and 'ALLIES' or (type(message.to) == 'number' and 'PRIVATE' or 'ALL'),
         seconds = config.seconds,
+        sound = config.sound,
+        fontSize = config.fontSize,
     })
+end
+
+function Start()
+    if simulationTimer and not IsDestroyed(simulationTimer) then simulationTimer:Destroy() end
+    nextSimulation = nil
+    simulationTimer = import('/lua/maui/group.lua').Group(GetFrame(0))
+    simulationTimer:DisableHitTest()
+    simulationTimer:SetNeedsFrameUpdate(true)
+    simulationTimer.OnFrame = function()
+        local config = Settings()
+        if not config.enabled or not config.simulation then nextSimulation = nil; return end
+        local now = GetSystemTimeSeconds()
+        if not nextSimulation then nextSimulation = now + 10 end
+        if now < nextSimulation then return end
+        nextSimulation = now + 10
+        local player = PlayerName()
+        if player == '' then player = 'Microchip' end
+        -- Local UI only: never send test messages to the session or simulation.
+        import('/mods/Microchip-Chat-Mention/modules/popup.lua').Push({
+            sender = 'Mention Test', channel = 'LOCAL TEST', seconds = config.seconds,
+            text = player .. ', this is your 10-second mention test.',
+            sound = config.sound, fontSize = config.fontSize,
+        })
+    end
 end

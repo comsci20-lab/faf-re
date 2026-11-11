@@ -3,10 +3,15 @@ function Normalize(value)
     value = type(value) == 'table' and value or {}
     local seconds = tonumber(value.seconds) or 10
     if seconds ~= seconds then seconds = 10 end
+    local fontSize = tonumber(value.fontSize) or 17
+    if fontSize ~= fontSize then fontSize = 17 end
     return {
         enabled = value.enabled ~= false,
         nicknames = type(value.nicknames) == 'string' and string.sub(value.nicknames, 1, 256) or '',
         seconds = math.max(1, math.min(120, math.floor(seconds))),
+        simulation = value.simulation == true,
+        sound = value.sound == true,
+        fontSize = math.max(12, math.min(32, math.floor(fontSize))),
     }
 end
 

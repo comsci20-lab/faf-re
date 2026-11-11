@@ -11,7 +11,7 @@ function Open(parent)
     if window and not IsDestroyed(window) then return window end
     parent = parent or GetFrame(0)
     local panel = Group(parent)
-    panel.Width:Set(L.ScaleNumber(620)); panel.Height:Set(L.ScaleNumber(355))
+    panel.Width:Set(L.ScaleNumber(620)); panel.Height:Set(L.ScaleNumber(468))
     local bg = Bitmap(panel); bg:SetSolidColor('ff0c1520')
     L.FillParent(bg, panel); bg:DisableHitTest()
     local popup = Popup(parent, panel)
@@ -37,7 +37,6 @@ function Open(parent)
         return b
     end
     local config = Mention.Settings()
-    local enabled = config.enabled
     Text('Microchip Chat Mention', 24, 22, 15, 'ff59e0cf')
     Text('Player name is detected automatically. Nicknames are additional matches.', 13, 22, 53)
     Text('Your player name: ' .. (Mention.PlayerName() ~= '' and Mention.PlayerName() or '(available in game)'), 14, 22, 83)
@@ -45,30 +44,52 @@ function Open(parent)
     local names = Input(config.nicknames, 22, 147, 566, 256)
     Text('Display time in seconds (1-120)', 15, 22, 192)
     local seconds = Input(tostring(config.seconds), 395, 187, 85, 3)
-    local toggle
-    toggle = Button(enabled and 'Enabled: On' or 'Enabled: Off', 10, 230, function()
-        enabled = not enabled
-        toggle.label:SetText(enabled and 'Enabled: On' or 'Enabled: Off')
-    end)
-    local status = Text('Case insensitive; whole names only. Default: 10 seconds.', 12, 22, 278, 'ff9fb1c2')
+    Text('Message font size (12-32)', 15, 22, 232)
+    local fontSize = Input(tostring(config.fontSize), 395, 227, 85, 2)
+    local function Check(label, y, initial)
+        local checked = initial
+        local box = Bitmap(panel); box:SetSolidColor('ff263b4b')
+        box.Width:Set(L.ScaleNumber(23)); box.Height:Set(L.ScaleNumber(23))
+        L.AtLeftTopIn(box, panel, 22, y)
+        local mark = UI.CreateText(box, checked and 'X' or '', 17, UI.bodyFont)
+        mark:SetColor('ff59e0cf'); L.AtCenterIn(mark, box); mark:DisableHitTest()
+        Text(label, 15, 57, y + 1)
+        box.HandleEvent = function(self, event)
+            if event.Type == 'ButtonPress' then
+                checked = not checked; mark:SetText(checked and 'X' or ''); return true
+            end
+            return false
+        end
+        return function() return checked end
+    end
+    local enabled = Check('Enable chat mention popups', 274, config.enabled)
+    local simulation = Check('Simulation mode - local test every 10 seconds', 309, config.simulation)
+    local sound = Check('Play notification sound when a message pops up', 344, config.sound)
+    local status = Text('Changes take effect after Save. Test messages are never sent to players.', 12, 22, 385, 'ff9fb1c2')
     local function Draft()
         local value = tonumber(seconds:GetText())
         if not value or value ~= math.floor(value) or value < 1 or value > 120 then
             status:SetText('Enter a whole number of seconds from 1 to 120.'); return nil
         end
-        return {enabled = enabled, seconds = value, nicknames = names:GetText()}
+        local size = tonumber(fontSize:GetText())
+        if not size or size ~= math.floor(size) or size < 12 or size > 32 then
+            status:SetText('Enter a whole font size from 12 to 32.'); return nil
+        end
+        return {enabled = enabled(), seconds = value, nicknames = names:GetText(),
+                fontSize = size, simulation = simulation(), sound = sound()}
     end
-    Button('Test Popup', 204, 230, function()
+    Button('Test Popup', 10, 416, function()
         local draft = Draft()
         if draft then import('/mods/Microchip-Chat-Mention/modules/popup.lua').Push({
             sender = 'Teammate', channel = 'ALLIES', seconds = draft.seconds,
+            fontSize = draft.fontSize, sound = draft.sound,
             text = (Mention.PlayerName() ~= '' and Mention.PlayerName() or 'Microchip') .. ', can you cover the north side?',
         }) end
     end)
-    Button('Save', 204, 303, function()
+    Button('Save', 204, 416, function()
         local draft = Draft()
         if draft then Mention.Save(draft); popup:Close() end
     end)
-    Button('Close', 398, 303, function() popup:Close() end)
+    Button('Close', 398, 416, function() popup:Close() end)
     return popup
 end

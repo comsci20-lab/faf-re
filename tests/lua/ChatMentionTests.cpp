@@ -65,6 +65,11 @@ namespace
     EXPECT_EQ(Num("return Normalize({seconds=999}).seconds"), 120);
     EXPECT_EQ(Num("return Normalize({seconds=0/0}).seconds"), 10);
     EXPECT_FALSE(Bool("return Normalize({enabled=false}).enabled"));
+    EXPECT_EQ(Num("return Normalize({}).fontSize"), 17);
+    EXPECT_EQ(Num("return Normalize({fontSize=99}).fontSize"), 32);
+    EXPECT_EQ(Num("return Normalize({fontSize=2}).fontSize"), 12);
+    EXPECT_FALSE(Bool("return Normalize({}).simulation"));
+    EXPECT_FALSE(Bool("return Normalize({}).sound"));
   }
 
   TEST_F(ChatMention, IncomingMentionUsesSettingsAndDeduplicates)
@@ -144,7 +149,9 @@ namespace
   TEST_F(ChatMention, PopupTimerQueueAndCloseUseRealTime)
   {
     Run(R"(
-      clock, groups, controls = 0, {}, {}
+      clock, groups, controls, soundCount = 0, {}, {}, 0
+      function Sound(value) return value end
+      function PlaySound(value) soundCount=soundCount+1 end
       function property(value)
         local p = {value=value or 0}
         function p:Set(value) self.value=value end
@@ -169,7 +176,7 @@ namespace
       function IsDestroyed(c) return c.destroyed end
       function import(path)
         if string.find(path,'uiutil.lua',1,true) then
-          return {CreateText=function(parent,text) local c=control();c.text=text;return c end}
+          return {CreateText=function(parent,text,size) local c=control();c.text=text;c.fontSize=size;return c end}
         elseif string.find(path,'layouthelpers.lua',1,true) then
           return {ScaleNumber=function(n) return n end, AtHorizontalCenterIn=function() end,
                   AtLeftTopIn=function() end,AtCenterIn=function() end}
@@ -181,15 +188,18 @@ namespace
     )");
     Run(Source("modules/popup.lua"));
     Run(R"(
-      Push({sender='Ally',channel='ALLIES',text='Microchip help',seconds=10})
+      Push({sender='Ally',channel='ALLIES',text='Microchip help',seconds=10,fontSize=24,sound=true})
       Push({sender='Ally',channel='ALLIES',text='Microchip again',seconds=3})
       clock=10.27;groups[1]:OnFrame(0)
     )");
     EXPECT_FALSE(Bool("return groups[1].destroyed or false"));
     EXPECT_EQ(Num("return table.getn(groups)"), 1);
+    EXPECT_EQ(Num("return soundCount"), 1);
+    EXPECT_EQ(Num("for _,c in ipairs(controls) do if c.text=='Microchip help' then return c.fontSize end end"), 24);
     Run("clock=10.29;groups[1]:OnFrame(0);clock=10.49;groups[1]:OnFrame(0)");
     EXPECT_TRUE(Bool("return groups[1].destroyed"));
     EXPECT_EQ(Num("return table.getn(groups)"), 2);
+    EXPECT_EQ(Num("return soundCount"), 1);
     Run(R"(
       for _,c in ipairs(controls) do
         if c.color=='ff1d2b3b' and not c.destroyed then close=c end
@@ -198,5 +208,39 @@ namespace
       clock=clock+0.2;groups[2]:OnFrame(0)
     )");
     EXPECT_TRUE(Bool("return groups[2].destroyed"));
+  }
+
+  TEST_F(ChatMention, SimulationGeneratesOnlyLocalMessagesEveryTenSeconds)
+  {
+    Receiver();
+    Run(R"(
+      local previousImport=import
+      function import(path)
+        if string.find(path,'group.lua',1,true) then
+          return {Group=function()
+            timer={DisableHitTest=function() end,SetNeedsFrameUpdate=function() end,
+                   Destroy=function(self) self.destroyed=true end}
+            return timer
+          end}
+        end
+        return previousImport(path)
+      end
+      function GetFrame() return {} end
+      function IsDestroyed(value) return value.destroyed end
+      function SessionSendChatMessage() error('Test traffic must never reach the network') end
+      Save({simulation=true,sound=true,fontSize=24,seconds=15})
+      Start()
+      clock=0;timer:OnFrame()
+      clock=9.9;timer:OnFrame()
+    )");
+    EXPECT_EQ(Num("return table.getn(pushed)"), 0);
+    Run("clock=10;timer:OnFrame()");
+    EXPECT_EQ(Num("return table.getn(pushed)"), 1);
+    EXPECT_EQ(Str("return pushed[1].channel"), "LOCAL TEST");
+    EXPECT_EQ(Num("return pushed[1].fontSize"), 24);
+    EXPECT_EQ(Num("return pushed[1].seconds"), 15);
+    EXPECT_TRUE(Bool("return pushed[1].sound"));
+    Run("clock=20;timer:OnFrame();Save({simulation=false});clock=40;timer:OnFrame()");
+    EXPECT_EQ(Num("return table.getn(pushed)"), 2);
   }
 }

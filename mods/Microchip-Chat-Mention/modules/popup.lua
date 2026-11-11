@@ -31,6 +31,8 @@ local ShowNext
 ShowNext = function()
     if current or not queue[1] then return end
     local message = table.remove(queue, 1)
+    local fontSize = message.fontSize or 17
+    local lineHeight = fontSize + 7
     local frame = GetFrame(0)
     local width = math.min(640, frame.Width() / L.ScaleNumber(1) - 40)
     local panel = Group(frame)
@@ -39,17 +41,17 @@ ShowNext = function()
     panel.Depth:Set(frame:GetTopmostDepth() + 20)
     L.AtHorizontalCenterIn(panel, frame)
 
-    local measure = Text(panel, '', 17, 24, 66)
+    local measure = Text(panel, '', fontSize, 24, 66)
     local lines = Wrap(message.text, L.ScaleNumber(width - 48), function(text) return measure:GetStringAdvance(text) end)
     measure:Destroy()
-    local height = 102 + table.getn(lines) * 24
+    local height = 102 + table.getn(lines) * lineHeight
     panel.Height:Set(L.ScaleNumber(height))
     local background = Box(panel, 0, 0, width, height, 'f20c1520')
     background.Depth:Set(panel.Depth() - 1); background:DisableHitTest()
     Box(panel, 0, 0, 4, height, 'ff59e0cf'):DisableHitTest()
     Text(panel, '@  MENTIONED YOU', 12, 23, 12, 'ff59e0cf')
     Text(panel, message.sender .. '  /  ' .. message.channel, 17, 23, 36)
-    for i, line in ipairs(lines) do Text(panel, line, 17, 23, 65 + (i - 1) * 24) end
+    for i, line in ipairs(lines) do Text(panel, line, fontSize, 23, 65 + (i - 1) * lineHeight) end
     local countdown = Text(panel, '', 11, width - 96, height - 26, 'ff9fb1c2')
     Text(panel, 'MICROCHIP CHAT MENTION', 10, 23, height - 26, 'ff8395a9')
     local track = Box(panel, 4, height - 3, width - 4, 3, 'ff263645'); track:DisableHitTest()
@@ -80,6 +82,7 @@ ShowNext = function()
         end
     end
     panel.Top:Set(frame.Top() - L.ScaleNumber(height))
+    if message.sound then PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Announcement_Open'})) end
 end
 
 function Push(message)
