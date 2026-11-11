@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <new>
 #include <stdexcept>
 #include <string>
@@ -19,6 +21,7 @@
 #include <mmreg.h>
 #include <mmsystem.h>
 #include <dsound.h>
+#include <mmdeviceapi.h>
 #include <boost/ptr_container/exception.hpp>
 
 #include "gpg/core/algorithms/MD5.h"
@@ -30,6 +33,7 @@
 #include "legacy/containers/String.h"
 #include "moho/audio/XAudioError.h"
 #include "moho/audio/XactClock.h"
+#include "moho/audio/RecoverableCue.h"
 #include "moho/audio/CSimSoundManager.h"
 #include "moho/app/CWaitHandleSet.h"
 #include "moho/console/CConCommand.h"
@@ -38,15 +42,111 @@
 #include "moho/misc/StartupHelpers.h"
 #include "moho/render/camera/VTransform.h"
 
-/**
- * Address: 0x00BC67C0 (FUN_00BC67C0, dynamic initializer for `sSoundConfiguration`)
- * Address: 0x00BF0DB0 (FUN_00BF0DB0, dynamic atexit destructor for `sSoundConfiguration`)
- * Address: 0x004DC230 (FUN_004DC230, boost::scoped_ptr<SoundConfiguration>::swap, emitted for its reset)
- */
-boost::scoped_ptr<moho::SoundConfiguration> moho::sSoundConfiguration;
-
 namespace
 {
+  // FAF addition: Core Audio notifications only mark a generation. XACT is
+  // rebuilt later on the normal audio thread, never inside a COM callback.
+  class AudioEndpointWatch final : public IMMNotificationClient
+  {
+  public:
+    std::atomic<unsigned> mGeneration{0};
+    IMMDeviceEnumerator* mEnumerator = nullptr;
+
+    void TrackEndpoint(const std::wstring& endpoint)
+    {
+      const std::lock_guard lock(mMutex);
+      mEndpoint = endpoint;
+    }
+
+    AudioEndpointWatch()
+    {
+      if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
+                                    IID_PPV_ARGS(&mEnumerator)))) {
+        mEnumerator->RegisterEndpointNotificationCallback(this);
+      }
+    }
+    void Close()
+    {
+      if (mEnumerator) {
+        mEnumerator->UnregisterEndpointNotificationCallback(this);
+        mEnumerator->Release();
+        mEnumerator = nullptr;
+      }
+      Release();
+    }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override
+    {
+      if (!object) return E_POINTER;
+      *object = nullptr;
+      if (iid != __uuidof(IUnknown) && iid != __uuidof(IMMNotificationClient)) return E_NOINTERFACE;
+      *object = static_cast<IMMNotificationClient*>(this);
+      AddRef();
+      return S_OK;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++mRefs; }
+    ULONG STDMETHODCALLTYPE Release() override
+    {
+      const auto refs = --mRefs;
+      if (!refs) delete this;
+      return refs;
+    }
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override
+    {
+      if (flow == eRender && role == eConsole) ++mGeneration;
+      return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR id, DWORD) override { DeviceChanged(id); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR id) override { DeviceChanged(id); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
+
+  private:
+    std::atomic<ULONG> mRefs{1};
+    std::mutex mMutex;
+    std::wstring mEndpoint;
+
+    void DeviceChanged(LPCWSTR id)
+    {
+      const std::lock_guard lock(mMutex);
+      if (id && mEndpoint == id) ++mGeneration;
+    }
+  };
+
+  struct AudioRecoveryState
+  {
+    AudioEndpointWatch* mWatch = new AudioEndpointWatch;
+    std::set<moho::RecoverableCue*> mCues;
+    std::map<std::uint16_t, float> mGlobals;
+    std::wstring mEndpoint;
+    unsigned mGeneration = 0;
+    ULONGLONG mNextCheck = 0;
+    bool mPending = false;
+    bool mRestoreCues = false;
+
+    ~AudioRecoveryState() { mWatch->Close(); }
+  };
+
+  // Sidecar state keeps recovered engine layouts unchanged.
+  std::map<moho::AudioEngineImpl*, AudioRecoveryState> sAudioRecovery;
+
+  bool ReadAudioEndpoint(AudioRecoveryState& state, std::wstring& id)
+  {
+    if (!state.mWatch->mEnumerator) return false;
+    IMMDevice* device = nullptr;
+    const auto result = state.mWatch->mEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+    if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) { id.clear(); return true; }
+    if (FAILED(result)) return false;
+    LPWSTR value = nullptr;
+    const auto idResult = device->GetId(&value);
+    if (SUCCEEDED(idResult)) id = value;
+    CoTaskMemFree(value);
+    device->Release();
+    return SUCCEEDED(idResult);
+  }
+
+  void RecoverAudioOutput(moho::AudioEngineImpl& impl, bool workFailed);
+  bool ConfigureAudioOutput(moho::AudioEngineImpl& impl);
+
   // Engine addition (dedicated-server plan WPL.4): sSoundEnabled (CSimSoundManager.h), the
   // test Sim::Sim made on sSoundConfiguration before it creates its sound manager.
   bool IsSoundEnabled()
@@ -59,6 +159,14 @@ namespace
 
   [[maybe_unused]] const bool gSoundEnabledSet = (moho::sSoundEnabled = &IsSoundEnabled, true);
 } // namespace
+
+/**
+ * Address: 0x00BC67C0 (FUN_00BC67C0, dynamic initializer for `sSoundConfiguration`)
+ * Address: 0x00BF0DB0 (FUN_00BF0DB0, dynamic atexit destructor for `sSoundConfiguration`)
+ * Address: 0x004DC230 (FUN_004DC230, boost::scoped_ptr<SoundConfiguration>::swap, emitted for its reset)
+ */
+// Construct after the recovery sidecar so engines are destroyed before it.
+boost::scoped_ptr<moho::SoundConfiguration> moho::sSoundConfiguration;
 
 namespace
 {
@@ -2127,7 +2235,8 @@ namespace moho
 
       if (AudioEngineImpl* const impl = configuration->EngineImplAt(index);
           impl != nullptr && impl->mInstance != nullptr) {
-        impl->mInstance->DoWork();
+        const int workResult = impl->mInstance->DoWork();
+        RecoverAudioOutput(*impl, workResult < 0);
         configuration = GetSoundConfigurationSingletonB();
       }
     }
@@ -2265,6 +2374,7 @@ namespace moho
     if (engine->mImpl->mInstance->SetGlobalVariable(varIndex, value) < 0) {
       gpg::Warnf("SND: Error setting global variable [index:%i]", varIndex);
     }
+    sAudioRecovery[engine->mImpl].mGlobals[varIndex] = value;
   }
 
   /**
@@ -2345,38 +2455,15 @@ namespace moho
       return;
     }
 
-    const int audio3dResult = func_AudioInitialize(mImpl->mInstance, mImpl->mAudioHandle);
-    if (audio3dResult < 0) {
-      gpg::Warnf("SND: Error initializing 3D audio.\n%s", func_SoundErrorCodeToMsg(audio3dResult));
+    if (!ConfigureAudioOutput(*mImpl)) {
       configuration->mNoSound = 1u;
       return;
     }
 
-    // Deliberate change from retail: retail sized mSettings (mDelayTimes and
-    // mMatrixCoefficients) in AudioEngineImpl using ResolveDstChannelCount from
-    // DirectSound's speaker setting (which on modern Windows reports 9/8 for
-    // 5.1/7.1 Surround and defaults to stereo, 2 floats). X3DAudio is initialized
-    // from XACT's real output channel mask (GetFinalMixFormat). If the output has
-    // 5.1/7.1 channels (6 or 8 floats), X3DAudioCalculate writes past the 2-float
-    // buffer into adjacent heap memory (corrupting AudioEngine instances), and
-    // SetMatrixCoefficients fails with "XACT3DApply failed: Invalid arg".
-    // Size mSettings from the real output channel count from GetFinalMixFormat.
-    WAVEFORMATEXTENSIBLE finalMixFormat{};
-    if (mImpl->mInstance->GetFinalMixFormat(&finalMixFormat) >= 0) {
-      const std::uint32_t realDstChannels = finalMixFormat.Format.nChannels;
-      if (realDstChannels != 0u && realDstChannels != mImpl->mSettings.mDstChannelCount) {
-        delete[] mImpl->mSettings.mDelayTimes;
-        delete[] mImpl->mSettings.mMatrixCoefficients;
-        mImpl->mSettings.mDstChannelCount = realDstChannels;
-        mImpl->mSettings.mDelayTimes = new float[realDstChannels]();
-        mImpl->mSettings.mMatrixCoefficients = new float[realDstChannels * mImpl->mSettings.mSrcChannelCount]();
-      }
-    }
-
-    RegisterNotificationOrWarn(mImpl, 10u);
-    RegisterNotificationOrWarn(mImpl, 11u);
-    RegisterNotificationOrWarn(mImpl, 17u);
-    RegisterNotificationOrWarn(mImpl, 18u);
+    auto& recovery = sAudioRecovery[mImpl];
+    recovery.mGeneration = recovery.mWatch->mGeneration.load();
+    ReadAudioEndpoint(recovery, recovery.mEndpoint);
+    recovery.mWatch->TrackEndpoint(recovery.mEndpoint);
 
     gpg::Logf("MEM: %i bytes SND", 0);
     func_LoadSoundPath(mImpl, voicePath);
@@ -2545,6 +2632,10 @@ namespace moho
    */
   AudioEngineImpl::~AudioEngineImpl()
   {
+    if (const auto found = sAudioRecovery.find(this); found != sAudioRecovery.end()) {
+      for (auto* cue : found->second.mCues) cue->Detach(true);
+      sAudioRecovery.erase(found);
+    }
     // The banks and wave banks go first, while `mInstance` is still alive:
     // every loader's dtor calls `Destroy()` on an `IXACTSoundBank` /
     // `IXACTWaveBank` that the engine instance owns, so shutting the engine
@@ -2616,6 +2707,11 @@ namespace moho
 
     const int result =
       preloadOnly != 0 ? loader->mBank->Prepare(cueId, 0u, 0u, outCue) : loader->mBank->Play(cueId, 0u, 0u, outCue);
+    if ((result >= 0 || result == kXactErrCuePreparedOnly) && outCue != nullptr && *outCue != nullptr) {
+      *outCue = new RecoverableCue(sAudioRecovery[engine->mImpl].mCues, *outCue, bankId, cueId,
+                                 preloadOnly != 0 || result == kXactErrCuePreparedOnly,
+                                 &sAudioRecovery[engine->mImpl].mRestoreCues);
+    }
     if (result >= 0 || result == kXactErrCuePreparedOnly) {
       return result;
     }
@@ -2763,6 +2859,9 @@ namespace moho
     }
 
     mImpl->mInstance->Stop(categoryId, 0);
+    if (::_stricmp(category, kGlobalCategoryName) == 0) {
+      for (auto* cue : sAudioRecovery[mImpl].mCues) cue->Stop(0);
+    }
   }
 
   /**
@@ -2942,3 +3041,126 @@ namespace moho
     return cueState == 0x20;
   }
 } // namespace moho
+
+namespace
+{
+  bool ConfigureAudioOutput(moho::AudioEngineImpl& impl)
+  {
+    const int result = moho::func_AudioInitialize(impl.mInstance, impl.mAudioHandle);
+    if (result < 0) {
+      gpg::Warnf("SND: Error initializing 3D audio.\n%s", moho::func_SoundErrorCodeToMsg(result));
+      return false;
+    }
+    // Deliberate retail divergence: use XACT's actual channel count instead of
+    // DirectSound's speaker setting. A stereo-sized matrix would overflow on
+    // 5.1/7.1 outputs. Recalculate it on reconnect as well as at startup.
+    WAVEFORMATEXTENSIBLE format{};
+    if (impl.mInstance->GetFinalMixFormat(&format) < 0 || format.Format.nChannels == 0) return false;
+    const auto channels = format.Format.nChannels;
+    if (channels != impl.mSettings.mDstChannelCount) {
+      delete[] impl.mSettings.mDelayTimes;
+      delete[] impl.mSettings.mMatrixCoefficients;
+      impl.mSettings.mDstChannelCount = channels;
+      impl.mSettings.mDelayTimes = new float[channels]();
+      impl.mSettings.mMatrixCoefficients = new float[channels * impl.mSettings.mSrcChannelCount]();
+    }
+    for (const auto type : {10u, 11u, 17u, 18u}) moho::RegisterNotificationOrWarn(&impl, type);
+    return true;
+  }
+
+  void RecoverAudioOutput(moho::AudioEngineImpl& impl, const bool workFailed)
+  {
+    const auto found = sAudioRecovery.find(&impl);
+    if (found == sAudioRecovery.end()) return;
+    auto& state = found->second;
+    state.mPending |= workFailed;
+    const auto now = GetTickCount64();
+    if (now < state.mNextCheck) return;
+    state.mNextCheck = now + 1000;
+
+    const auto generation = state.mWatch->mGeneration.load();
+    std::wstring endpoint;
+    if (!ReadAudioEndpoint(state, endpoint)) return;
+    state.mPending |= generation != state.mGeneration || endpoint != state.mEndpoint;
+    if (endpoint.empty()) { state.mPending = true; return; }
+
+    if (state.mPending) {
+      // Initialize the replacement first. If no output is ready yet, leave the
+      // old instance and its handles intact and retry next second.
+      auto* previous = impl.mInstance;
+      impl.mInstance = nullptr;
+      try {
+        moho::func_RetreiveXACTCOMInterface(&impl);
+      } catch (const moho::XAudioError&) {
+        impl.mInstance = previous;
+        return;
+      }
+      if (!impl.mInstance || impl.mInstance->Initialize(&impl.mConfigs->mRuntimeParams) < 0) {
+        if (impl.mInstance) {
+          impl.mInstance->ShutDown();
+          impl.mInstance->Release();
+        }
+        impl.mInstance = previous;
+        return;
+      }
+
+      for (auto* cue : state.mCues) cue->Detach();
+      for (void* entry : impl.mBanks) {
+        auto* loader = static_cast<AudioSoundBankLoader*>(entry);
+        if (loader->mBank) loader->mBank->Destroy();
+        loader->mBank = nullptr;
+      }
+      for (void* entry : impl.mHandles) {
+        auto* loader = static_cast<AudioWaveBankLoaderBase*>(entry);
+        if (loader->mWaveBank) loader->mWaveBank->Destroy();
+        loader->mWaveBank = nullptr;
+      }
+      previous->ShutDown();
+      previous->Release();
+
+      bool ready = ConfigureAudioOutput(impl);
+      for (void* entry : impl.mHandles) {
+        auto* loader = static_cast<AudioWaveBankLoaderBase*>(entry);
+        int result = E_FAIL;
+        if (auto* streaming = dynamic_cast<AudioStreamingWaveBankLoader*>(loader)) {
+          AudioStreamingWaveBankCreateParams params{};
+          params.file = streaming->mFileHandle;
+          params.packetSize = 0x12u;
+          result = impl.mInstance->CreateStreamingWaveBank(&params, &loader->mWaveBank);
+        } else if (auto* memory = dynamic_cast<AudioInMemoryWaveBankLoader*>(loader)) {
+          result = impl.mInstance->CreateInMemoryWaveBank(memory->mMappedBuffer.mBegin,
+            static_cast<std::int32_t>(memory->mMappedBuffer.mEnd - memory->mMappedBuffer.mBegin),
+            0, 0, &loader->mWaveBank);
+        }
+        ready &= result >= 0;
+      }
+      // Reuse the original buffers and slots: CSndParams caches bank/cue IDs.
+      for (void* entry : impl.mBanks) {
+        auto* loader = static_cast<AudioSoundBankLoader*>(entry);
+        ready &= impl.mInstance->CreateSoundBank(loader->mBuffer.mBegin,
+          static_cast<std::int32_t>(loader->mBuffer.mEnd - loader->mBuffer.mBegin),
+          0, 0, &loader->mBank) >= 0;
+      }
+      for (const auto& [category, volume] : impl.mCategoryVolumes) impl.mInstance->SetVolume(category, volume);
+      for (const auto& category : impl.mPausedCategoryNames) {
+        impl.mInstance->Pause(impl.mInstance->GetCategory(category.c_str()), 1);
+      }
+      for (const auto& [index, value] : state.mGlobals) impl.mInstance->SetGlobalVariable(index, value);
+      state.mPending = !ready;
+      state.mRestoreCues = true;
+      if (!ready) return;
+      state.mEndpoint = std::move(endpoint);
+      state.mWatch->TrackEndpoint(state.mEndpoint);
+      state.mGeneration = generation;
+      gpg::Logf("SND: Audio output recovered after device change");
+    }
+    if (state.mRestoreCues) {
+      impl.mInstance->DoWork(); // streaming banks prepare asynchronously
+      state.mRestoreCues = false;
+      for (auto* cue : state.mCues) {
+        auto* loader = FindBankLoader(&impl, cue->Bank());
+        if (!cue->Restore(loader ? loader->mBank : nullptr)) state.mRestoreCues = true;
+      }
+    }
+  }
+} // namespace
