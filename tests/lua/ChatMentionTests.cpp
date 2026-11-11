@@ -185,6 +185,7 @@ namespace
       clock, groups, controls, soundCount = 0, {}, {}, 0
       function Sound(value) return value end
       function PlaySound(value) soundCount=soundCount+1 end
+      function WARN(value) warnings=(warnings or 0)+1 end
       function property(value)
         local p = {value=value or 0}
         function p:Set(value) self.value=value end
@@ -253,6 +254,82 @@ namespace
       clock=clock+0.23;groups[2]:OnFrame(0)
     )");
     EXPECT_TRUE(Bool("return groups[2].destroyed"));
+    Run(R"(
+      Push({sender='Ally',text='old preview',seconds=10,fontSize=17})
+      Push({sender='Ally',text='queued old preview',seconds=10,fontSize=17})
+      Preview({sender='Ally',text='new font preview',seconds=10,fontSize=32})
+    )");
+    EXPECT_TRUE(Bool("return groups[3].destroyed"));
+    EXPECT_EQ(Num("return table.getn(groups)"), 4);
+    EXPECT_EQ(Num("for _,c in ipairs(controls) do if c.text=='new font preview' then return c.fontSize end end"), 32);
+    Run(R"(
+      function PlaySound() error('Audio unavailable') end
+      Preview({sender='Ally',text='silent fallback',seconds=10,fontSize=20,sound=true})
+    )");
+    EXPECT_TRUE(Bool("return groups[4].destroyed"));
+    EXPECT_FALSE(Bool("return groups[5].destroyed or false"));
+    EXPECT_EQ(Num("return warnings"), 1);
+  }
+
+  TEST_F(ChatMention, OptionsFontStepsPreviewImmediatelyAndSavePersistsSize)
+  {
+    Receiver();
+    Run(R"(
+      local mention={Settings=Settings,Save=Save,PlayerName=PlayerName}
+      edits,buttons,previews={}, {}, {}
+      local function property() return {Set=function() end} end
+      local function control()
+        local c={Width=property(),Height=property()}
+        function c:SetSolidColor() end
+        function c:SetColor() end
+        function c:DisableHitTest() end
+        function c:SetFont(face,size) self.fontSize=size end
+        function c:SetText(value)
+          self.text=value
+          if self.OnTextChanged then self:OnTextChanged(value) end
+        end
+        function c:GetText() return self.text end
+        return c
+      end
+      function GetFrame() return {} end
+      function IsDestroyed() return false end
+      function import(path)
+        if path=='/mods/Microchip-Chat-Mention/modules/mentions.lua' then return mention
+        elseif path=='/mods/Microchip-Chat-Mention/modules/popup.lua' then
+          return {Preview=function(value) table.insert(previews,value) end}
+        elseif string.find(path,'uiutil.lua',1,true) then return {
+          CreateText=function(parent,value,size)
+            local c=control();c.text=value;c.fontSize=size
+            if value=='+' then fontPlus=parent end
+            if value=='Aa - message text preview' then sample=c end
+            return c
+          end,
+          SetupEditStd=function() end,
+          CreateButtonWithDropshadow=function(parent,path,label)
+            local c=control();buttons[label]=c;return c
+          end
+        }
+        elseif string.find(path,'layouthelpers.lua',1,true) then
+          return {ScaleNumber=function(n) return n end,AtLeftTopIn=function() end,
+                  AtCenterIn=function() end,FillParent=function() end}
+        elseif string.find(path,'group.lua',1,true) then return {Group=control}
+        elseif string.find(path,'bitmap.lua',1,true) then return {Bitmap=control}
+        elseif string.find(path,'edit.lua',1,true) then
+          return {Edit=function() local c=control();table.insert(edits,c);return c end}
+        else return {Popup=function()
+          return {OnClosed=function() end,Close=function(self) self:OnClosed() end}
+        end} end
+      end
+    )");
+    Run(Source("modules/options.lua"));
+    Run("Open();edits[3]:SetText('28')");
+    EXPECT_EQ(Num("return sample.fontSize"), 28);
+    Run("fontPlus:HandleEvent({Type='ButtonPress'})");
+    EXPECT_EQ(Str("return edits[3]:GetText()"), "29");
+    EXPECT_EQ(Num("return previews[1].fontSize"), 29);
+    Run("buttons['Test Popup']:OnClick();buttons.Save:OnClick()");
+    EXPECT_EQ(Num("return table.getn(previews)"), 2);
+    EXPECT_EQ(Num("return saved.fontSize"), 29);
   }
 
   TEST_F(ChatMention, SimulationGeneratesOnlyLocalMessagesEveryTenSeconds)

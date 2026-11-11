@@ -11,7 +11,7 @@ function Open(parent)
     if window and not IsDestroyed(window) then return window end
     parent = parent or GetFrame(0)
     local panel = Group(parent)
-    panel.Width:Set(L.ScaleNumber(620)); panel.Height:Set(L.ScaleNumber(468))
+    panel.Width:Set(L.ScaleNumber(620)); panel.Height:Set(L.ScaleNumber(514))
     local bg = Bitmap(panel); bg:SetSolidColor('ff0c1520')
     L.FillParent(bg, panel); bg:DisableHitTest()
     local popup = Popup(parent, panel)
@@ -46,6 +46,32 @@ function Open(parent)
     local seconds = Input(tostring(config.seconds), 395, 187, 85, 3)
     Text('Message font size (12-32)', 15, 22, 232)
     local fontSize = Input(tostring(config.fontSize), 395, 227, 85, 2)
+    local sample = Text('Aa - message text preview', config.fontSize, 22, 266, 'ff59e0cf')
+    fontSize.OnTextChanged = function()
+        local size = tonumber(fontSize:GetText())
+        if size and size == math.floor(size) and size >= 12 and size <= 32 then
+            sample:SetFont(UI.bodyFont, size)
+        end
+    end
+    local preview
+    local function FontStep(label, x, delta)
+        local button = Bitmap(panel); button:SetSolidColor('ff263b4b')
+        button.Width:Set(L.ScaleNumber(28)); button.Height:Set(L.ScaleNumber(28))
+        L.AtLeftTopIn(button, panel, x, 227)
+        local mark = UI.CreateText(button, label, 18, UI.bodyFont)
+        mark:SetColor('ff59e0cf'); L.AtCenterIn(mark, button); mark:DisableHitTest()
+        button.HandleEvent = function(self, event)
+            if event.Type == 'ButtonPress' then
+                local size = tonumber(fontSize:GetText()) or config.fontSize
+                fontSize:SetText(tostring(math.max(12, math.min(32, math.floor(size) + delta))))
+                if preview then preview() end
+                return true
+            end
+            return false
+        end
+    end
+    FontStep('-', 351, -1)
+    FontStep('+', 496, 1)
     local function Check(label, y, initial)
         local checked = initial
         local box = Bitmap(panel); box:SetSolidColor('ff263b4b')
@@ -62,10 +88,10 @@ function Open(parent)
         end
         return function() return checked end
     end
-    local enabled = Check('Enable chat mention popups', 274, config.enabled)
-    local simulation = Check('Simulation mode - local test every 10 seconds', 309, config.simulation)
-    local sound = Check('Play notification sound when a message pops up', 344, config.sound)
-    local status = Text('Changes take effect after Save. Test messages are never sent to players.', 12, 22, 385, 'ff9fb1c2')
+    local enabled = Check('Enable chat mention popups', 320, config.enabled)
+    local simulation = Check('Simulation mode - local test every 10 seconds', 355, config.simulation)
+    local sound = Check('Play notification sound when a message pops up', 390, config.sound)
+    local status = Text('Test Popup is immediate. Save to keep changes for incoming messages.', 12, 22, 431, 'ff9fb1c2')
     local function Draft()
         local value = tonumber(seconds:GetText())
         if not value or value ~= math.floor(value) or value < 1 or value > 120 then
@@ -78,18 +104,19 @@ function Open(parent)
         return {enabled = enabled(), seconds = value, nicknames = names:GetText(),
                 fontSize = size, simulation = simulation(), sound = sound()}
     end
-    Button('Test Popup', 10, 416, function()
+    preview = function()
         local draft = Draft()
-        if draft then import('/mods/Microchip-Chat-Mention/modules/popup.lua').Push({
+        if draft then import('/mods/Microchip-Chat-Mention/modules/popup.lua').Preview({
             sender = 'Teammate', channel = 'ALLIES', seconds = draft.seconds,
             fontSize = draft.fontSize, sound = draft.sound,
             text = (Mention.PlayerName() ~= '' and Mention.PlayerName() or 'Microchip') .. ', can you cover the north side?',
         }) end
-    end)
-    Button('Save', 204, 416, function()
+    end
+    Button('Test Popup', 10, 462, preview)
+    Button('Save', 204, 462, function()
         local draft = Draft()
         if draft then Mention.Save(draft); popup:Close() end
     end)
-    Button('Close', 398, 416, function() popup:Close() end)
+    Button('Close', 398, 462, function() popup:Close() end)
     return popup
 end

@@ -106,7 +106,17 @@ ShowNext = function()
     -- distance down from the HUD instead of starting outside the viewport.
     panel.Top:Set(math.max(0, frame.Top()) + L.ScaleNumber(50))
     panel:SetAlpha(0, true)
-    if message.sound then PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Comm_UEF_In'})) end
+    if message.sound then
+        -- An unavailable audio cue must not remove an otherwise valid popup.
+        local ok, problem = pcall(function() PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Comm_UEF_In'})) end)
+        if not ok then WARN('Microchip Chat Mention sound: ' .. tostring(problem)) end
+    end
+end
+
+function Preview(message)
+    -- Tests must show the current draft now, not wait behind earlier previews.
+    Clear()
+    Push(message)
 end
 
 function Push(message)
