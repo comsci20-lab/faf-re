@@ -87,7 +87,7 @@ def backdrop():
 BASE = backdrop()
 
 
-def popup(seconds, y=78, second=False, cursor=None):
+def popup(seconds, y=78, second=False, cursor=None, opacity=1):
     im = BASE.copy()
     d=ImageDraw.Draw(im)
     x,w,h=240,640,150
@@ -110,7 +110,7 @@ def popup(seconds, y=78, second=False, cursor=None):
     if cursor:
         cx,cy=cursor
         d.polygon([(cx,cy),(cx+1,cy+19),(cx+6,cy+14),(cx+10,cy+23),(cx+14,cy+21),(cx+10,cy+12),(cx+18,cy+12)],fill='white',outline='#0a111b')
-    return im.convert('RGB')
+    return Image.blend(BASE, im.convert('RGB'), opacity)
 
 
 frames, durations = [], []
@@ -121,10 +121,17 @@ def add(im, duration):
 
 
 def slide(second=False, out=False):
-    for i in range(1,7):
-        p=i/6
-        amount=1-p*p if out else 1-(1-p)**3
-        add(popup(0 if out else 10,round(-150+228*amount),second),50)
+    count=6 if out else 9
+    for i in range(1,count+1):
+        p=i/count
+        if out:
+            ease=p*p*(3-2*p)
+            y,alpha=78-22*ease,1-ease
+        else:
+            t=p-1
+            ease=1+2.1*t*t*t+1.1*t*t
+            y,alpha=50+28*ease,1-(1-p)**3
+        add(popup(0 if out else 10,round(y),second,opacity=alpha),40)
 
 
 add(BASE,1100)

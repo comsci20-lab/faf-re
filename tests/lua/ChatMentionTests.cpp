@@ -198,6 +198,7 @@ namespace
         function c:DisableHitTest() end
         function c:Destroy() self.destroyed=true end
         function c:SetNeedsFrameUpdate(value) self.updating=value end
+        function c:SetAlpha(value, children) self.alpha=value end
         function c:GetTopmostDepth() return 10 end
         function c:GetStringAdvance(value) return string.len(value)*8 end
         table.insert(controls,c)
@@ -223,13 +224,24 @@ namespace
     Run(R"(
       Push({sender='Ally',channel='ALLIES',text='Microchip help',seconds=10,fontSize=24,sound=true})
       Push({sender='Ally',channel='ALLIES',text='Microchip again',seconds=3})
+    )");
+    EXPECT_EQ(Num("return groups[1].alpha"), 0);
+    Run("clock=0.18;groups[1]:OnFrame(0)");
+    EXPECT_GT(Num("return groups[1].alpha"), 0);
+    EXPECT_LT(Num("return groups[1].alpha"), 1);
+    Run(R"(
       clock=10.27;groups[1]:OnFrame(0)
     )");
     EXPECT_FALSE(Bool("return groups[1].destroyed or false"));
     EXPECT_EQ(Num("return table.getn(groups)"), 1);
     EXPECT_EQ(Num("return soundCount"), 1);
     EXPECT_EQ(Num("for _,c in ipairs(controls) do if c.text=='Microchip help' then return c.fontSize end end"), 24);
-    Run("clock=10.29;groups[1]:OnFrame(0);clock=10.49;groups[1]:OnFrame(0)");
+    EXPECT_EQ(Num("return groups[1].alpha"), 1);
+    Run("clock=10.37;groups[1]:OnFrame(0);clock=10.48;groups[1]:OnFrame(0)");
+    EXPECT_GT(Num("return groups[1].alpha"), 0);
+    EXPECT_LT(Num("return groups[1].alpha"), 1);
+    EXPECT_FALSE(Bool("return groups[1].destroyed or false"));
+    Run("clock=10.60;groups[1]:OnFrame(0)");
     EXPECT_TRUE(Bool("return groups[1].destroyed"));
     EXPECT_EQ(Num("return table.getn(groups)"), 2);
     EXPECT_EQ(Num("return soundCount"), 1);
@@ -238,7 +250,7 @@ namespace
         if c.color=='ff1d2b3b' and not c.destroyed then close=c end
       end
       close:HandleEvent({Type='ButtonPress'})
-      clock=clock+0.2;groups[2]:OnFrame(0)
+      clock=clock+0.23;groups[2]:OnFrame(0)
     )");
     EXPECT_TRUE(Bool("return groups[2].destroyed"));
   }

@@ -4,6 +4,8 @@ UI-only mod for the current FAF ChatController. It watches your actual local pla
 
 The sender and original message slide down below the top HUD. Each popup stays for **10 seconds** by default, with a countdown, shrinking timer bar and corner **X**. The timer uses real time, including while the simulation is paused. Up to five additional mentions queue behind the current popup; a larger burst drops the oldest waiting message.
 
+Opening uses a 0.36-second slide and fade with a gentle settle. Closing uses a 0.22-second upward slide and fade, for both expiry and the X button. The display timer starts after the entrance, and closing during the entrance continues smoothly from the current position.
+
 Enable the mod in the FAF mod manager. Open **UI Mods Options > Microchip Chat Mention** (UI Mod Tools), or press **Ctrl+Shift+M** without UI Mod Tools. Enter comma-separated nicknames and a duration of **1–120 seconds**, then Save. Settings persist in your current player profile. Duration changes apply to future mentions. Test Popup previews the draft duration without saving it.
 
 The options also include **Simulation mode**, which generates a local test mention every 10 real seconds while in game, **Play notification sound**, and **Message font size** (12–32; default 17). Simulation and sound are off by default. Save to apply changes. Simulation messages never leave your computer; turning off mentions clears queued popups and pauses simulation. The sound plays once when each popup opens, including queued and test popups.

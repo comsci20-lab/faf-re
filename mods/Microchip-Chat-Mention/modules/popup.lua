@@ -4,6 +4,15 @@ local Group = import('/lua/maui/group.lua').Group
 local Bitmap = import('/lua/maui/bitmap.lua').Bitmap
 local Wrap = import('/lua/maui/text.lua').WrapText
 local current, queue = nil, {}
+local openingTime, closingTime = 0.36, 0.22
+
+local function Clamp(value) return math.max(0, math.min(1, value)) end
+
+local function OpenEase(value)
+    -- A small, soft overshoot settles the card into place without a hard stop.
+    local t = Clamp(value) - 1
+    return 1 + 2.1 * t * t * t + 1.1 * t * t
+end
 
 local function Box(parent, x, y, width, height, color)
     local control = Bitmap(parent)
@@ -59,8 +68,13 @@ ShowNext = function()
     local close = Box(panel, width - 37, 9, 28, 28, 'ff1d2b3b')
     local cross = Text(close, 'X', 15, 0, 0, 'ffc4d2e0'); L.AtCenterIn(cross, close)
     local born, closing = GetSystemTimeSeconds(), nil
+    local offset, alpha, closeOffset, closeAlpha = -28, 0, -28, 0
+    local function Close(now)
+        if closing then return end
+        closing, closeOffset, closeAlpha = now, offset, alpha
+    end
     close.HandleEvent = function(self, event)
-        if event.Type == 'ButtonPress' then closing = closing or GetSystemTimeSeconds(); return true end
+        if event.Type == 'ButtonPress' then Close(GetSystemTimeSeconds()); return true end
         if event.Type == 'MouseEnter' then self:SetSolidColor('ff3b566d')
         elseif event.Type == 'MouseExit' then self:SetSolidColor('ff1d2b3b') end
         return false
@@ -68,22 +82,32 @@ ShowNext = function()
     panel:SetNeedsFrameUpdate(true)
     panel.OnFrame = function(self, delta)
         local now = GetSystemTimeSeconds()
-        local remaining = math.max(0, message.seconds - math.max(0, now - born - 0.28))
+        local remaining = math.max(0, message.seconds - math.max(0, now - born - openingTime))
         countdown:SetText(tostring(math.ceil(remaining)) .. 's left')
         progress.Width:Set(L.ScaleNumber((width - 4) * remaining / message.seconds))
-        if remaining == 0 then closing = closing or now end
-        local position = math.min(1, (now - born) / 0.28)
-        local offset = (1 - (1 - position) ^ 3)
-        if closing then offset = 1 - math.min(1, (now - closing) / 0.18) ^ 2 end
-        self.Top:Set(frame.Top() + L.ScaleNumber(42 + 36 * offset))
-        if closing and now - closing >= 0.18 then
+        if remaining == 0 then Close(now) end
+        if closing then
+            local t = Clamp((now - closing) / closingTime)
+            local ease = t * t * (3 - 2 * t)
+            offset, alpha = closeOffset - 22 * ease, closeAlpha * (1 - ease)
+        else
+            local t = Clamp((now - born) / openingTime)
+            offset = -28 * (1 - OpenEase(t))
+            -- This engine's Lua uses ^ for XOR; spell out the cubic product.
+            local inverse = 1 - t
+            alpha = 1 - inverse * inverse * inverse
+        end
+        self.Top:Set(math.max(0, frame.Top()) + L.ScaleNumber(78 + offset))
+        self:SetAlpha(alpha, true)
+        if closing and now - closing >= closingTime then
             self:SetNeedsFrameUpdate(false)
             self:Destroy(); current = nil; ShowNext()
         end
     end
     -- Keep the animated control on-screen from its first frame. Slide a short
     -- distance down from the HUD instead of starting outside the viewport.
-    panel.Top:Set(frame.Top() + L.ScaleNumber(42))
+    panel.Top:Set(math.max(0, frame.Top()) + L.ScaleNumber(50))
+    panel:SetAlpha(0, true)
     if message.sound then PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Announcement_Open'})) end
 end
 
