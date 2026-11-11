@@ -1,0 +1,11 @@
+name = 'Microchip Chat Mention'
+uid = '735e3254-ea09-47af-9340-4b98ff696f41'
+version = 1
+description = 'Slides chat mentions below your top HUD. Automatically watches your player name, plus configurable nicknames. Default display time: 10 seconds. Configure in UI Mods Options or press Ctrl+Shift+M. Requires the current FAF ChatController.'
+author = 'Microchip'
+ui_only = true
+exclusive = false
+selectable = true
+enabled = true
+__umt = true
+icon = '/mods/Microchip-Chat-Mention/icon.png'
