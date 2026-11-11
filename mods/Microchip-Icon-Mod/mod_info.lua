@@ -1,6 +1,6 @@
 name = "Microchip Icon Mod"
 uid = "58dd831a-c322-4fca-a6c6-37a5d14f1fba"
-version = 1
+version = 2
 
 description = [[
 Based on Calibers Complete Icons Mod by Caliber. Full recognition and thanks to Caliber for the original mod on which Microchip Icon Mod is based.
