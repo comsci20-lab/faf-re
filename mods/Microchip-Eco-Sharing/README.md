@@ -2,6 +2,9 @@
 
 UI-only mod by Microchip. Works with classic FAF and faf-re. Only the giver needs it.
 
+Preserves the installed original red metal frame, resource icons, lime sliders
+and checked buttons.
+
 Open **ECO** in the top-left controls. Set separate energy and mass reserve percentages,
 tick recipients for each resource, enable automatic sharing, then click **Apply**.
 Automatic sharing starts disabled; reserves default to 75% energy and 60% mass.
