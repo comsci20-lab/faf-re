@@ -106,7 +106,7 @@ ShowNext = function()
     -- distance down from the HUD instead of starting outside the viewport.
     panel.Top:Set(math.max(0, frame.Top()) + L.ScaleNumber(50))
     panel:SetAlpha(0, true)
-    if message.sound then PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Announcement_Open'})) end
+    if message.sound then PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Comm_UEF_In'})) end
 end
 
 function Push(message)
