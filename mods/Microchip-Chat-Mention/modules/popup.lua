@@ -58,7 +58,7 @@ ShowNext = function()
     local background = Box(panel, 0, 0, width, height, 'f20c1520')
     background.Depth:Set(panel.Depth() - 1); background:DisableHitTest()
     Box(panel, 0, 0, 4, height, 'ff59e0cf'):DisableHitTest()
-    Text(panel, message.sender .. '  @  MENTIONED YOU', 12, 23, 12, 'ff59e0cf')
+    Text(panel, message.sender, 12, 23, 12, 'ff59e0cf')
     for i, line in ipairs(lines) do Text(panel, line, fontSize, 23, 41 + (i - 1) * lineHeight) end
     local countdown = Text(panel, '', 11, width - 96, height - 26, 'ff9fb1c2')
     local track = Box(panel, 4, height - 3, width - 4, 3, 'ff263645'); track:DisableHitTest()

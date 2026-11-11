@@ -97,7 +97,7 @@ def popup(seconds, y=78, second=False, cursor=None, opacity=1):
     d=ImageDraw.Draw(im)
     box(d,(x,y,x+w,y+h),'#0c1520','#30475a')
     d.rounded_rectangle((x,y,x+4,y+h),2,fill=CYAN)
-    text(d,(x+23,y+12),('Rook' if second else 'Atlas')+'  @  MENTIONED YOU',12,CYAN,True)
+    text(d,(x+23,y+12),'Rook' if second else 'Atlas',12,CYAN,True)
     text(d,(x+23,y+43),'MC, air support is ready. Ping your target.' if second else 'Microchip, can you cover the north side?',17)
     text(d,(x+w-96,y+95),f'{seconds}s left',11,MUTED)
     box(d,(x+w-37,y+9,x+w-9,y+37),'#1d2b3b',radius=3)
