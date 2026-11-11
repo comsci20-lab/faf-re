@@ -30,7 +30,6 @@ function Receive(sender, message, entry)
     if type(message.text) ~= 'string' or message.to == 'notify' then return end
     if entry.Camera or entry.Location or (entry.Type and entry.Type ~= 'Chat') then return end
     local player = PlayerName()
-    if string.lower(sender) == string.lower(player) then return end
     local matched = Matching.Match(message.text, player, config.nicknames)
     if not matched then return end
     local now = GetSystemTimeSeconds()
@@ -48,9 +47,14 @@ function Receive(sender, message, entry)
 end
 
 function Start()
-    if simulationTimer and not IsDestroyed(simulationTimer) then simulationTimer:Destroy() end
+    if simulationTimer and not IsDestroyed(simulationTimer) then return end
     nextSimulation = nil
-    simulationTimer = import('/lua/maui/group.lua').Group(GetFrame(0))
+    local frame = GetFrame(0)
+    simulationTimer = import('/lua/maui/group.lua').Group(frame)
+    -- Maui groups have circular default layout variables until both axes are
+    -- anchored. Even a non-drawing timer must have a valid layout in the tree.
+    simulationTimer.Width:Set(1); simulationTimer.Height:Set(1)
+    simulationTimer.Left:Set(frame.Left); simulationTimer.Top:Set(frame.Top)
     simulationTimer:DisableHitTest()
     simulationTimer:SetNeedsFrameUpdate(true)
     simulationTimer.OnFrame = function()

@@ -75,13 +75,15 @@ ShowNext = function()
         local position = math.min(1, (now - born) / 0.28)
         local offset = (1 - (1 - position) ^ 3)
         if closing then offset = 1 - math.min(1, (now - closing) / 0.18) ^ 2 end
-        self.Top:Set(frame.Top() + L.ScaleNumber(-height + (height + 78) * offset))
+        self.Top:Set(frame.Top() + L.ScaleNumber(42 + 36 * offset))
         if closing and now - closing >= 0.18 then
             self:SetNeedsFrameUpdate(false)
             self:Destroy(); current = nil; ShowNext()
         end
     end
-    panel.Top:Set(frame.Top() - L.ScaleNumber(height))
+    -- Keep the animated control on-screen from its first frame. Slide a short
+    -- distance down from the HUD instead of starting outside the viewport.
+    panel.Top:Set(frame.Top() + L.ScaleNumber(42))
     if message.sound then PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Announcement_Open'})) end
 end
 
@@ -90,5 +92,6 @@ function Push(message)
     -- Preserve the current popup's full lifetime; queue a bounded burst behind it.
     if table.getn(queue) >= 5 then table.remove(queue, 1) end
     table.insert(queue, message)
-    ShowNext()
+    local ok, problem = pcall(ShowNext)
+    if not ok then Clear(); WARN('Microchip Chat Mention popup: ' .. tostring(problem)) end
 end

@@ -86,11 +86,10 @@ namespace
     EXPECT_EQ(Str("return saved.nicknames"), "MC");
   }
 
-  TEST_F(ChatMention, OwnSystemLinksAndDisabledMessagesDoNotNotify)
+  TEST_F(ChatMention, SystemLinksAndDisabledMessagesDoNotNotify)
   {
     Receiver();
     Run(R"(
-      Receive('Microchip',{text='Microchip hello'}, {})
       Receive('Ally',{text='Microchip hello',to='notify'}, {})
       Receive('Ally',{text='Microchip hello'}, {Camera={}})
       Receive('Ally',{text='Microchip hello'}, {Type='ReceiveResources'})
@@ -98,6 +97,15 @@ namespace
       Receive('Ally',{text='Microchip hello'}, {})
     )");
     EXPECT_EQ(Num("return table.getn(pushed)"), 0);
+  }
+
+  TEST_F(ChatMention, OwnPlayerNameAndNicknameCanTriggerMentions)
+  {
+    Receiver();
+    Run("Save({nicknames='Micro'});Receive('Microchip',{text='Microchip hello',Id='own1'}, {})");
+    Run("Receive('Microchip',{text='Micro hello',Id='own2'}, {})");
+    EXPECT_EQ(Num("return table.getn(pushed)"), 2);
+    EXPECT_EQ(Str("return pushed[1].sender"), "Microchip");
   }
 
   TEST_F(ChatMention, ObserverDoesNotUseWatchedArmiesName)
@@ -144,6 +152,31 @@ namespace
       std::string error;
       EXPECT_EQ(Load(source, &error), 0) << entry.path() << ": " << error;
     }
+  }
+
+  TEST_F(ChatMention, LocalOutgoingEchoTriggersExactlyOneMention)
+  {
+    Receiver();
+    Run(R"(
+      mentionModule = {Receive=Receive}
+      local oldImport=import
+      function import(path)
+        if string.find(path,'mentions.lua',1,true) then return mentionModule end
+        return oldImport(path)
+      end
+      function GetArmiesTable() return {armiesTable={{nickname='Microchip'}}} end
+      function IsValidEntry() return true end
+      function AppendEntry() end
+      function OnReceive(sender,message)
+        AppendEntry({ArmyID=1,Text=message.text,Recipient=message.to,Id=message.Id})
+      end
+    )");
+    Run(Source("hook/lua/ui/game/chat/ChatController.lua"));
+    Run("AppendEntry({ArmyID=1,Text='Microchip testing',Recipient=2,Id='echo'})");
+    EXPECT_EQ(Num("return table.getn(pushed)"), 1);
+    EXPECT_EQ(Str("return pushed[1].channel"), "PRIVATE");
+    Run("OnReceive('Microchip',{text='Microchip testing',to=2,Id='echo'})");
+    EXPECT_EQ(Num("return table.getn(pushed)"), 1);
   }
 
   TEST_F(ChatMention, PopupTimerQueueAndCloseUseRealTime)
@@ -225,15 +258,33 @@ namespace
         end
         return previousImport(path)
       end
-      function GetFrame() return {} end
+      local function property()
+        return {Set=function(self,value) self.value=value end}
+      end
+      function GetFrame() return {Left=function() return 0 end,Top=function() return 0 end} end
       function IsDestroyed(value) return value.destroyed end
       function SessionSendChatMessage() error('Test traffic must never reach the network') end
+      local oldImport=import
+      function import(path)
+        local module=oldImport(path)
+        if string.find(path,'group.lua',1,true) then
+          local create=module.Group
+          module.Group=function()
+            local value=create()
+            value.Width=property();value.Height=property();value.Left=property();value.Top=property()
+            return value
+          end
+        end
+        return module
+      end
       Save({simulation=true,sound=true,fontSize=24,seconds=15})
       Start()
       clock=0;timer:OnFrame()
       clock=9.9;timer:OnFrame()
     )");
     EXPECT_EQ(Num("return table.getn(pushed)"), 0);
+    EXPECT_EQ(Num("return timer.Width.value"), 1);
+    EXPECT_EQ(Num("return timer.Height.value"), 1);
     Run("clock=10;timer:OnFrame()");
     EXPECT_EQ(Num("return table.getn(pushed)"), 1);
     EXPECT_EQ(Str("return pushed[1].channel"), "LOCAL TEST");

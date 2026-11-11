@@ -8,6 +8,6 @@ Enable the mod in the FAF mod manager. Open **UI Mods Options > Microchip Chat M
 
 The options also include **Simulation mode**, which generates a local test mention every 10 real seconds while in game, **Play notification sound**, and **Message font size** (12–32; default 17). Simulation and sound are off by default. Save to apply changes. Simulation messages never leave your computer; turning off mentions clears queued popups and pauses simulation. The sound plays once when each popup opens, including queued and test popups.
 
-Only received chat already accepted by FAF is eligible. Muted messages, outgoing messages, system notifications and camera/location links do not trigger popups. This mod does not send chat or change the simulation. It chains the same ChatController hooks as Microchip Offline Chat Translation.
+Chat already accepted by FAF is eligible, including your own messages and locally echoed outgoing private messages. Muted messages, system notifications and camera/location links do not trigger popups. This mod does not send chat or change the simulation. It chains the same ChatController hooks as Microchip Offline Chat Translation.
 
 Extract the distributed ZIP into your FAF user `mods` directory, keeping the `Microchip-Chat-Mention` folder intact. Restart the game after enabling the mod. The GIF is an illustrative mockup, not captured gameplay.

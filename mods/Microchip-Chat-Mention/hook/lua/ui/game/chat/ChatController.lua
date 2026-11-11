@@ -11,9 +11,17 @@ end
 
 function AppendEntry(entry)
     oldAppend(entry)
-    -- Observe only chat that survived FAF routing, duplicate and mute filters.
-    -- Locally echoed outgoing/private messages and system lines cannot trigger.
-    if incoming and entry and IsValidEntry(entry) then
-        Mention.Receive(incoming.sender, incoming.message, entry)
+    -- Both received chat and locally echoed outgoing messages arrive here.
+    -- Preserve FAF's routing/mute filters before looking for mentions.
+    if entry and IsValidEntry(entry) then
+        if incoming then
+            Mention.Receive(incoming.sender, incoming.message, entry)
+        elseif entry.ArmyID and entry.ArmyID > 0 then
+            local armies = GetArmiesTable().armiesTable
+            local army = armies and armies[entry.ArmyID]
+            if army and army.nickname then
+                Mention.Receive(army.nickname, {text = entry.Text, to = entry.Recipient, Id = entry.Id}, entry)
+            end
+        end
     end
 end
