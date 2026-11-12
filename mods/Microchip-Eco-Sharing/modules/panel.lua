@@ -158,7 +158,9 @@ function Toggle()
                 Text(rowGroup,string.sub(name,1,23),16,77,y+4)
                 draft.targets[name]=draft.targets[name] or {}
                 for column,key in ipairs({'ENERGY','MASS'}) do
-                    Tick(rowGroup,313+(column-1)*81,y-1,draft.targets[name][key],function(on) draft.targets[name][key]=on end)
+                    -- Lua 5.0 reuses generic-for variables after the loop ends.
+                    local resource=key
+                    Tick(rowGroup,313+(column-1)*81,y-1,draft.targets[name][resource],function(on) draft.targets[name][resource]=on end)
                 end
             end
         end
