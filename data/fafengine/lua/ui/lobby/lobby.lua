@@ -140,3 +140,70 @@ do
         AddChatText(text)
     end
 end
+
+
+do
+-- Append-only engine hook; do not modify FAF's downloaded lobby files.
+local ConnectionTest = import('/fafengine/lua/ui/lobby/connectiontest.lua')
+local Communication = import('/lua/ui/lobby/lobbyComm.lua')
+local UIUtil = import('/lua/ui/uiutil.lua')
+-- Filled by the builder only when a local threading preference is saved.
+local microchipSimWorkers = nil
+local originalCreateComm = Communication.CreateLobbyComm
+local connection, parent, buttonAnchor, optionsAnchor
+local originalCreateButton = UIUtil.CreateButtonStd
+UIUtil.CreateButtonStd = function(owner, texture, label, size, vertical, horizontal, click, rollover)
+    local control = originalCreateButton(owner, texture, label, size, vertical, horizontal, click, rollover)
+    if texture == '/BUTTON/closeslots/' then buttonAnchor = control end
+    if texture == '/BUTTON/defaultoption/' then optionsAnchor = control end
+    return control
+end
+local originalCreateScreen = UIUtil.CreateScreenGroup
+UIUtil.CreateScreenGroup = function(root, name)
+    local screen = originalCreateScreen(root, name)
+    if name == 'CreateLobby ScreenGroup' then parent = screen end
+    return screen
+end
+Communication.CreateLobbyComm = function(protocol, port, name, uid, traversal)
+    connection = originalCreateComm(protocol, port, name, uid, traversal)
+    return connection
+end
+
+local originalReallyCreateLobby = ReallyCreateLobby
+function ReallyCreateLobby(protocol, localPort, name, uid, traversal, over, exitBehavior, hasGame)
+    import('/fafengine/lua/ui/translation.lua').Reset()
+    if microchipSimWorkers ~= nil then
+        ConExecute('sim_Workers ' .. tostring(microchipSimWorkers))
+        LOG('Microchip lobby: simulation workers requested=' .. tostring(microchipSimWorkers))
+    end
+    parent = nil
+    originalReallyCreateLobby(protocol, localPort, name, uid, traversal, over, exitBehavior, hasGame)
+    if connection then ConnectionTest.Attach(connection) end
+end
+
+local originalAddChatText = AddChatText
+function AddChatText(text, playerID, scrollToBottom)
+    originalAddChatText(text, playerID, scrollToBottom)
+    if not playerID or not connection or tonumber(playerID) == tonumber(connection:GetLocalPlayerID()) then return end
+    local currentConnection = connection
+    import('/fafengine/lua/ui/translation.lua').Translate(text, function(english)
+        if currentConnection and connection == currentConnection then
+            originalAddChatText(english, playerID, false)
+        end
+    end)
+end
+
+local originalCreateUI = CreateUI
+function CreateUI(maxPlayers)
+    originalCreateUI(maxPlayers)
+    if buttonAnchor and optionsAnchor then
+        local panel = buttonAnchor:GetParent()
+        local offset = panel.Top() - panel:GetParent().Top()
+        -- Reserve a row above the observer box while keeping the existing buttons in place.
+        panel.Top:Set(function() return panel:GetParent().Top() + offset + 40 end)
+        optionsAnchor.Top:Set(function() return panel.Top() - 134 end)
+    end
+    if connection then ConnectionTest.Show(parent, buttonAnchor) end
+end
+
+end

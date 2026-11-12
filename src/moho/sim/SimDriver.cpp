@@ -1877,6 +1877,13 @@ void CSimDriver::SetStateAndNotify(const EDriverState state)
  * `mState` to `Dispatching` when the available beat has reached
  * `mDispatchBeat`.
  */
+void CSimDriver::RecordNetworkWaitDemand(bool active, bool waiting)
+{
+  boost::mutex::scoped_lock lock(mLock);
+  mClientManager->RecordNetworkWaitDemand(active && !mSimBusy && SIM_GetSessionPacing() == ESimSessionPacing::Network,
+      waiting && mSyncDataQueue.Empty(), mLastDequeuedBeat + 1);
+}
+
 void CSimDriver::PromoteToDispatchingWhenBeatAvailable(const int beatQuerySeed)
 {
   int availableBeat = beatQuerySeed;

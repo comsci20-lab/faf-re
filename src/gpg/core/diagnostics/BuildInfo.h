@@ -36,6 +36,9 @@ namespace gpg::diag
   /// "2026.11.002-nightly"), or the short commit for any other build ("a48d131-dirty").
   [[nodiscard]] const char* BuildVersion() noexcept;
 
+  /// Compilation date of the build metadata, e.g. "Nov 10 2026".
+  [[nodiscard]] const char* BuildDate() noexcept;
+
   /// One line for logs and reports: "a48d131-dirty x64 Release (master, v1.1.1-186-ga48d131-dirty)".
   [[nodiscard]] const char* BuildIdentity() noexcept;
 } // namespace gpg::diag
