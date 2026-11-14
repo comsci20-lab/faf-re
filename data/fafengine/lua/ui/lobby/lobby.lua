@@ -1,3 +1,59 @@
+-- Expose the existing native UI scale in lobby Settings (#6). LayoutHelpers
+-- scales control geometry and font point sizes, preserving native-resolution
+-- text rendering instead of stretching a rendered menu. Keep FAF's supported
+-- scales: some in-game artwork is selected by these exact values.
+do
+    local OriginalShowLobbyOptionsDialog = ShowLobbyOptionsDialog
+    function ShowLobbyOptionsDialog()
+        OriginalShowLobbyOptionsDialog()
+        local dialog = GUI.lobbyOptionsDialog
+        local content = dialog.content
+        local Layout = import('/lua/maui/layouthelpers.lua')
+        local Preferences = import('/lua/user/prefs.lua')
+        local frame = GUI:GetRootFrame()
+        local fit = math.min(frame.Width() / GUI.panel.BitmapWidth(),
+            frame.Height() / GUI.panel.BitmapHeight())
+        local scales = {0.8, 1, 1.25, 1.5, 1.75, 2}
+        local count = 1
+        for index, scale in ipairs(scales) do
+            if scale <= fit then count = index end
+        end
+
+        -- Popup copies its content size at construction; resize both so its
+        -- border, centering and bottom-anchored Close button remain correct.
+        Layout.SetHeight(content, 370)
+        dialog.Height:Set(content.Height())
+        local current = Preferences.GetOption('ui_scale') or 1
+        local selected = 1
+        for index = 1, count do
+            if math.abs(scales[index] - current) < math.abs(scales[selected] - current) then
+                selected = index
+            end
+        end
+        local label = UIUtil.CreateText(content,
+            string.format('Lobby / menu scale: %d%%', math.floor(current * 100 + 0.5)), 14, 'Arial', true)
+        Layout.AtLeftTopIn(label, content, 20, 250)
+        local slider = Slider(content, false, 1, math.max(2, count),
+            UIUtil.SkinnableFile('/slider02/slider_btn_up.dds'),
+            UIUtil.SkinnableFile('/slider02/slider_btn_over.dds'),
+            UIUtil.SkinnableFile('/slider02/slider_btn_down.dds'),
+            UIUtil.SkinnableFile('/slider02/slider-back_bmp.dds'))
+        Layout.AtLeftTopIn(slider, content, 20, 275)
+        slider:SetValue(selected)
+        slider.OnValueChanged = function(self, value)
+            local index = math.max(1, math.min(count, math.floor(value + 0.5)))
+            local scale = scales[index]
+            Preferences.SetOption('ui_scale', scale)
+            label:SetText(string.format('Lobby / menu scale: %d%%', math.floor(scale * 100 + 0.5)))
+        end
+        local hint = UIUtil.CreateText(content, 'All UI; takes effect after restarting the game.', 12, 'Arial', true)
+        Layout.AtLeftTopIn(hint, content, 20, 305)
+        Tooltip.AddControlTooltipManual(label, 'Lobby / menu scale',
+            'Scales menus, dialogs, text and the in-game UI. Only sizes that fit this lobby window are offered. '
+            .. 'Text is rendered at the larger font size; bitmap detail depends on the original artwork.')
+    end
+end
+
 -- faf-re hook of FAF's lua/ui/lobby/lobby.lua (plan WP17.6): in a lobby a tournament organiser runs on a game server,
 -- the screen shows what the organiser set and changes nothing. A player chats, readies up and leaves; nobody kicks,
 -- moves, starts the game or changes an option, faction, colour or team. The server drops such requests anyway
@@ -254,7 +310,7 @@ local function ShowColourPreferences()
     Layout.AtRightTopIn(button, parent, 301, 45)
     button.OnClick = function()
         local content = import('/lua/maui/group.lua').Group(parent)
-        content.Width:Set(430); content.Height:Set(255)
+        Layout.SetDimensions(content, 430, 255)
         local title = UIUtil.CreateText(content, 'Preferred lobby colours', 18, UIUtil.titleFont)
         Layout.AtLeftTopIn(title, content, 20, 15)
         local hint = UIUtil.CreateText(content, 'Uses the first free colour; upgrades when available.', 12, UIUtil.bodyFont)
@@ -291,8 +347,8 @@ function CreateUI(maxPlayers)
         local panel = buttonAnchor:GetParent()
         local offset = panel.Top() - panel:GetParent().Top()
         -- Reserve a row above the observer box while keeping the existing buttons in place.
-        panel.Top:Set(function() return panel:GetParent().Top() + offset + 40 end)
-        optionsAnchor.Top:Set(function() return panel.Top() - 134 end)
+        panel.Top:Set(function() return panel:GetParent().Top() + offset + Layout.ScaleNumber(40) end)
+        optionsAnchor.Top:Set(function() return panel.Top() - Layout.ScaleNumber(134) end)
     end
     if connection then ConnectionTest.Show(parent, buttonAnchor) end
     if singlePlayer then return end
