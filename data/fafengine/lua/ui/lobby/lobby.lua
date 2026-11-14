@@ -370,19 +370,51 @@ SetSlotInfo = function(...)
     return result
 end
 
--- Not in retail: after a connected human's name, show their average wait from past games
--- where they were the worst (waitscores.lua). Players with no recorded games get nothing.
+-- Not in retail: a "Lag" column at the right of the Nickname column with each human's
+-- average wait from past games where they were the worst (waitscores.lua). Empty when unknown.
 local WaitScores = import('/fafengine/lua/ui/lobby/waitscores.lua')
+local function LagCell(slot)
+    if not slot or not slot.name then return nil end
+    if not slot.microchipLag then
+        local cell = UIUtil.CreateText(slot, '', 14, 'Arial')
+        cell:SetColor('B9BFB9')
+        cell:DisableHitTest()
+        LayoutHelpers.AtRightIn(cell, slot.name, 26)
+        LayoutHelpers.AtVerticalCenterIn(cell, slot.name)
+        slot.microchipLag = cell
+    end
+    return slot.microchipLag
+end
+local function LagHeader()
+    local first = GUI.slots and GUI.slots[1]
+    if not first or not first.name or not GUI.labelGroup or GUI.microchipLagHeaderFor == GUI.labelGroup then return end
+    GUI.microchipLagHeaderFor = GUI.labelGroup
+    local header = UIUtil.CreateText(GUI.labelGroup, 'Lag', 14, UIUtil.titleFont)
+    header:DisableHitTest()
+    LayoutHelpers.AtRightIn(header, first.name, 26)
+    LayoutHelpers.AtVerticalCenterIn(header, GUI.labelGroup)
+    GUI.microchipLagHeader = header
+end
 local originalWaitSlot = SetSlotInfo
 SetSlotInfo = function(slotNum, playerInfo)
     local result = originalWaitSlot(slotNum, playerInfo)
-    local slot = GUI.slots and GUI.slots[slotNum]
-    if slot and slot.name and playerInfo and playerInfo.Human
-        and (wasConnected(playerInfo.OwnerID) or IsLocallyOwned(slotNum)) then
-        local ok, score = pcall(WaitScores.Get, playerInfo.PlayerName)
-        local text = ok and WaitScores.Format(score)
-        if text then slot.name:SetTitleText(GetPlayerDisplayName(playerInfo) .. '  [' .. text .. ']') end
+    LagHeader()
+    local cell = LagCell(GUI.slots and GUI.slots[slotNum])
+    if cell then
+        local text = ''
+        if playerInfo and playerInfo.Human then
+            local ok, score = pcall(WaitScores.Get, playerInfo.PlayerName)
+            text = ok and score and string.format('%.1fs', score.average) or ''
+        end
+        cell:SetText(text)
     end
+    return result
+end
+local originalWaitClear = ClearSlotInfo
+ClearSlotInfo = function(slotIndex)
+    local result = originalWaitClear(slotIndex)
+    local slot = GUI.slots and GUI.slots[slotIndex]
+    if slot and slot.microchipLag then slot.microchipLag:SetText('') end
     return result
 end
 
