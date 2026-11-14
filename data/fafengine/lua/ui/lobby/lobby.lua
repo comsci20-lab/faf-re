@@ -427,7 +427,8 @@ function CreateUI(maxPlayers)
         -- The lowered observer panel would overlap Launch Game; keep the button below it.
         local launch = GUI.launchGameButton
         if launch then
-            launch.Top:Set(function() return panel.Bottom() + LayoutHelpers.ScaleNumber(4) end)        end
+            -- FAF anchors the bottom edge (Top derives from Height), so move Bottom to keep full height.
+            launch.Bottom:Set(function() return panel.Bottom() + LayoutHelpers.ScaleNumber(4) + launch.Height() end)        end
     end
     if connection then ConnectionTest.Show(parent, buttonAnchor) end
     if singlePlayer then return end
