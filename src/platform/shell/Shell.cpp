@@ -718,7 +718,7 @@ namespace
     Deliver(target, event);
   }
 
-  void DeliverKey(
+  bool DeliverKey(
     ShellWindow* const top,
     const ShellEventType type,
     const long keyCode,
@@ -735,6 +735,7 @@ namespace
     event.m_rawCode = static_cast<ShellUint32>(source.virtualKey);
     event.m_rawFlags = source.repeat ? (1u << 30) : 0u;
     Deliver(target, event);
+    return event.m_suppressChar;
   }
 
   // The 2.4.2 window library (src/msw/window.cpp) sends a char event for a key Windows gives no WM_CHAR for, with
@@ -939,8 +940,9 @@ namespace
     case EventType::KeyDown: {
       // The 2.4.2 window library HandleKeyDown: the window-library code of a special key, else the virtual key itself.
       const int code = ShellKeyFromVirtualKey(source.virtualKey);
-      DeliverKey(top, SHELL_EVT_KEY_DOWN, code != 0 ? code : source.virtualKey, source, false);
-      DeliverCharForKey(top, source);
+      if (!DeliverKey(top, SHELL_EVT_KEY_DOWN, code != 0 ? code : source.virtualKey, source, false)) {
+        DeliverCharForKey(top, source);
+      }
       return;
     }
     case EventType::KeyUp: {

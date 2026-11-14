@@ -917,6 +917,9 @@ void moho::CUIKeyHandler::OnKeyDown(
   switch (keyEvent.m_keyCode) {
   case kKeyCodeEnter:
     UI_ActivateChat(shiftDown, ctrlDown, altDown);
+    // Opening chat can move focus to its edit box during this key-down.
+    // Do not submit that box with the character from the same press.
+    keyEvent.m_suppressChar = Maui_CurrentFocusControl.GetObjectPtr() != nullptr;
     return;
   case kKeyCodeTilde:
     MAUI_ToggleConsole();
