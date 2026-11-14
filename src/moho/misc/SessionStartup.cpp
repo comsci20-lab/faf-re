@@ -1,3 +1,6 @@
+#include <cstdlib>
+
+#include "platform/PlatformDefines.h"
 #include "moho/lua/CScrLuaInitForm.h"
 #include "moho/misc/FileWriteExact.h"
 #include "moho/misc/SessionStartup.h"
@@ -1314,6 +1317,52 @@ namespace
    * This object is that call, and the source-level invocation that keeps these
    * definitions off the linker's dead-strip list.
    */
+  // Engine addition (not in retail): hands the text of
+  // %LOCALAPPDATA%\Microchip\faf-lag\game-waits.csv to UI Lua so the lobby can show
+  // past lag scores. Read-only; returns nil when the file is missing. Never reaches the sim.
+  constexpr const char* kMicrochipReadWaitHistoryHelpText = "MicrochipReadWaitHistory() - text of the game wait CSV, or nil";
+
+  int cfunc_MicrochipReadWaitHistory(lua_State* const luaContext)
+  {
+    LuaPlus::LuaState* const state = ResolveBindingLuaState(luaContext);
+    if (state == nullptr || state->m_state == nullptr) {
+      return 0;
+    }
+    std::string text;
+#if FAFRE_PLATFORM_WINDOWS
+    if (const char* const local = std::getenv("LOCALAPPDATA")) {
+      const std::string path = std::string(local) + "\\Microchip\\faf-lag\\game-waits.csv";
+      if (std::FILE* const file = std::fopen(path.c_str(), "rb")) {
+        char buffer[4096];
+        std::size_t read = 0;
+        while ((read = std::fread(buffer, 1, sizeof(buffer), file)) > 0 && text.size() < (8u << 20)) {
+          text.append(buffer, read);
+        }
+        std::fclose(file);
+      }
+    }
+#endif
+    if (text.empty()) {
+      lua_pushnil(state->m_state);
+    } else {
+      lua_pushlstring(state->m_state, text.data(), text.size());
+    }
+    return 1;
+  }
+
+  moho::CScrLuaInitForm* func_MicrochipReadWaitHistory_LuaFuncDef()
+  {
+    static moho::CScrLuaBinder binder(
+      moho::SCR_UserLuaInitSet(),
+      "MicrochipReadWaitHistory",
+      &cfunc_MicrochipReadWaitHistory,
+      nullptr,
+      "<global>",
+      kMicrochipReadWaitHistoryHelpText
+    );
+    return &binder;
+  }
+
   struct SessionStartupLuaFuncDefBootstrap
   {
     SessionStartupLuaFuncDefBootstrap()
@@ -1326,6 +1375,7 @@ namespace
       (void)::moho::func_PrefetchSession_LuaFuncDef();
       (void)::moho::func_GetSessionClients_LuaFuncDef();
       (void)::moho::func_InternalSaveGame_LuaFuncDef();
+      (void)func_MicrochipReadWaitHistory_LuaFuncDef();
 #ifdef _WIN32
       ::moho::RegisterOfflineTranslation();
 #endif
