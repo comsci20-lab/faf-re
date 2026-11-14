@@ -308,7 +308,10 @@ local function ShowColourPreferences()
     local BitmapCombo = import('/lua/ui/controls/combo.lua').BitmapCombo
     local button = UIUtil.CreateButtonWithDropshadow(GUI.panel, '/BUTTON/medium/', 'Colour prefs')
     GUI.colourPreferencesButton = button
-    Layout.Below(button, GUI.patchnotesButton, 4)
+    -- Share the existing bottom row; Presets/Unit Manager was centered across
+    -- both columns and would overlap a new button below Patchnotes.
+    Layout.AtHorizontalCenterIn(GUI.restrictedUnitsOrPresetsBtn, GUI.gameoptionsButton)
+    Layout.AtVerticalCenterIn(button, GUI.restrictedUnitsOrPresetsBtn)
     Layout.AtHorizontalCenterIn(button, GUI.patchnotesButton)
     Tooltip.AddControlTooltipManual(button, 'Colour preferences',
         'Choose your first, second and third preferred lobby colours.')
