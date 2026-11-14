@@ -379,7 +379,9 @@ local function LagCell(slot)
         local cell = UIUtil.CreateText(slot, '', 14, 'Arial')
         cell:SetColor('B9BFB9')
         cell:DisableHitTest()
-        LayoutHelpers.AtRightIn(cell, slot.name, 26)
+        -- Narrow the nickname box so its dropdown arrow ends before the Lag column.
+        slot.name.Width:Set(LayoutHelpers.ScaleNumber(257 - 52))
+        LayoutHelpers.RightOf(cell, slot.name, 6)
         LayoutHelpers.AtVerticalCenterIn(cell, slot.name)
         slot.microchipLag = cell
     end
@@ -389,9 +391,11 @@ local function LagHeader()
     local first = GUI.slots and GUI.slots[1]
     if not first or not first.name or not GUI.labelGroup or GUI.microchipLagHeaderFor == GUI.labelGroup then return end
     GUI.microchipLagHeaderFor = GUI.labelGroup
+    -- Every row, open ones included, gets the narrower nickname box so the arrows line up.
+    for _, slot in pairs(GUI.slots) do LagCell(slot) end
     local header = UIUtil.CreateText(GUI.labelGroup, 'Lag', 14, UIUtil.titleFont)
     header:DisableHitTest()
-    LayoutHelpers.AtRightIn(header, first.name, 26)
+    LayoutHelpers.AtLeftIn(header, first.name, 257 - 52 + 6)
     LayoutHelpers.AtVerticalCenterIn(header, GUI.labelGroup)
     GUI.microchipLagHeader = header
 end
