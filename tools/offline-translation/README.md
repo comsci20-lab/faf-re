@@ -12,7 +12,7 @@ From the repository, after building `faf_main`:
 ```powershell
 python tools/offline-translation/install.py "$env:LOCALAPPDATA/Microchip/faf-translator"
 # Close the game, then:
-./tools/offline-translation/install-game.ps1
+./tools/offline-translation/install-game.ps1 -ModsRepository <path to microchip-faf-mods checkout>
 ```
 
 Setup downloads dependencies and official Argos language packs. Translation after

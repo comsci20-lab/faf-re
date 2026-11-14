@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param([string]$EngineDirectory = "$env:ProgramData/FAForever/bin_x64")
+param([string]$EngineDirectory = "$env:ProgramData/FAForever/bin_x64",
+      # Microchip-Offline-Chat lives in github.com/comsci20-lab/microchip-faf-mods; pass that checkout.
+      [Parameter(Mandatory)][string]$ModsRepository)
 $ErrorActionPreference = 'Stop'
 if (Get-Process main_x64,ForgedAlliance -ErrorAction SilentlyContinue) { throw 'Close the game before installing.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -47,7 +49,7 @@ foreach ($relative in $files.Keys) {
 $mods = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games/Gas Powered Games/Supreme Commander Forged Alliance/Mods'
 $mod = Join-Path $mods 'Microchip-Offline-Chat'
 if (Test-Path -LiteralPath $mod) { Copy-Item -LiteralPath $mod -Destination (Join-Path $backup 'Microchip-Offline-Chat') -Recurse }
-Copy-Item -LiteralPath "$repo/mods/Microchip-Offline-Chat" -Destination $mods -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $ModsRepository 'mods/Microchip-Offline-Chat') -Destination $mods -Recurse -Force
 $escaped = [regex]::Escape($uid)
 if ($text -match "\['$escaped'\]\s*=\s*(true|false)") {
     $text = [regex]::Replace($text, "\['$escaped'\]\s*=\s*(true|false)", "['$uid'] = true")
