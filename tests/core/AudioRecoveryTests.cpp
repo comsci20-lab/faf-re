@@ -242,7 +242,7 @@ TEST(AudioRecovery, NativeStreamingUsesTheWindowsSelectedRenderer)
   constexpr GUID iid{0x893ff2e4,0x8d03,0x4d5f,{0xb0,0xaa,0x36,0x3a,0x9c,0xbb,0xf4,0x37}};
   ASSERT_EQ(CoCreateInstance(clsid, nullptr, CLSCTX_INPROC_SERVER, iid,
                             reinterpret_cast<void**>(&resources.engine)), S_OK);
-  moho::SND_InstallXactClock(*resources.engine);
+  moho::SND_InstallXactClock(&clsid);
   std::uint16_t count = 0;
   ASSERT_GE(resources.engine->GetRendererCount(&count), 0);
   bool found = false;
