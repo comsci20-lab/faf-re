@@ -29,10 +29,12 @@ namespace moho
   };
 
   static_assert(
-    offsetof(SRangeExtractionPayload, centerX) == 0x00, "SRangeExtractionPayload::centerX offset must be 0x00"
+    offsetof(SRangeExtractionPayload, centerX) == 0x00,
+    "SRangeExtractionPayload::centerX offset must be 0x00"
   );
   static_assert(
-    offsetof(SRangeExtractionPayload, centerZ) == 0x04, "SRangeExtractionPayload::centerZ offset must be 0x04"
+    offsetof(SRangeExtractionPayload, centerZ) == 0x04,
+    "SRangeExtractionPayload::centerZ offset must be 0x04"
   );
   static_assert(
     offsetof(SRangeExtractionPayload, innerRadius) == 0x08,
@@ -121,15 +123,6 @@ namespace moho
    * all known extractor instances by blueprint key.
    */
   void InitializeBlueprintExtractors();
-
-  /**
-   * Address: 0x007ED9A0 (FUN_007ED9A0, Moho::sBlueprintExtractors::~sBlueprintExtractors)
-   *
-   * What it does:
-   * Destroys the global blueprint range-extractor registry and releases
-   * all registered extractor instances.
-   */
-  void ShutdownBlueprintExtractors();
 
   /**
    * Address: 0x007EDA40 (FUN_007EDA40)

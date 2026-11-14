@@ -73,12 +73,8 @@
 #include "moho/audio/CSimSoundManager.h"
 #include "moho/audio/CSndParams.h"
 #include "moho/audio/HSound.h"
-#include "platform/WxWidgets.h"
-#include <wx/app.h>
-#include <wx/dialog.h>
-#include <wx/sizer.h>
-#include <wx/treectrl.h>
-#include <wx/treelistctrl.h>
+#include "platform/shell/Shell.h"
+#include "platform/shell/app.h"
 #include "moho/command/CCommandDb.h"
 #include "moho/command/CommandIssueHelper.h"
 #include "moho/sim/BuildQueueCommandDecrement.h"
@@ -158,7 +154,7 @@
 #include "moho/sim/SOCellPos.h"
 #include "moho/sim/EAllianceTypeInfo.h"
 #include "moho/sim/CEconStorage.h"
-#include "moho/sim/CSimArmyEconomyInfo.h"
+#include "moho/sim/CEconomy.h"
 #include "moho/sim/SPhysConstants.h"
 #include "moho/sim/PathPreviewFinder.h"
 #include "moho/sim/SpecialFileType.h"
@@ -185,10 +181,8 @@
 #include "gpg/core/reflection/StaticInitPhase.h"
 #include "lua/LuaCrashDump.h"
 
-
 using namespace moho;
 namespace
 {
   constexpr const char* kNoSessionStartedText = "No session started.";
 }
-

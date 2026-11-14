@@ -21,6 +21,14 @@ set_target_properties(faf_peer_transport_tests PROPERTIES FOLDER "Tests/Existing
 add_test(NAME net_peer_transport COMMAND faf_peer_transport_tests)
 set_tests_properties(net_peer_transport PROPERTIES LABELS "Existing")
 
+# platform::net (issue #259): loopback sockets and the socket events the lockstep transport
+# waits on; Linux runs the same file on NetPosix.cpp (cmake/FafLinux.cmake).
+add_executable(faf_platform_net_tests EXCLUDE_FROM_ALL net/PlatformNetTests.cpp)
+target_link_libraries(faf_platform_net_tests PRIVATE faf_engine gtest_main)
+set_target_properties(faf_platform_net_tests PROPERTIES FOLDER "Tests/Net")
+add_test(NAME platform_net COMMAND faf_platform_net_tests)
+set_tests_properties(platform_net PROPERTIES LABELS "Net")
+
 # net_FastRetransmit (issue #237): a lost DATA packet's recovery with the
 # switch off and on, at a fast rate and at the game's rate.
 add_executable(faf_fast_retransmit_tests EXCLUDE_FROM_ALL net/FastRetransmitTests.cpp)
@@ -82,6 +90,29 @@ target_link_libraries(faf_effect_scan_tests PRIVATE gtest_main)
 set_target_properties(faf_effect_scan_tests PROPERTIES FOLDER "Tests/Existing")
 add_test(NAME effect_scan COMMAND faf_effect_scan_tests)
 set_tests_properties(effect_scan PROPERTIES LABELS "Existing")
+
+# Engine addition (dedicated-server plan WP9.1): the server's encoder of the sim's effect operations, its per-view
+# effects lane and the lane's reader; plan WP9.3: the client's applier of the lane.
+add_executable(faf_effect_op_encoder_tests EXCLUDE_FROM_ALL server/EffectOpEncoderTests.cpp server/EffectOpRouterTests.cpp
+  server/EffectLaneApplierTests.cpp
+  ${CMAKE_SOURCE_DIR}/src/server/EffectOpEncoder.cpp ${CMAKE_SOURCE_DIR}/src/server/EffectOpRouter.cpp
+  ${CMAKE_SOURCE_DIR}/src/remote/wire/EffectLane.cpp ${CMAKE_SOURCE_DIR}/src/remote/client/EffectLaneApplier.cpp)
+target_include_directories(faf_effect_op_encoder_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(faf_effect_op_encoder_tests PRIVATE gtest_main)
+set_target_properties(faf_effect_op_encoder_tests PROPERTIES FOLDER "Tests/Headless")
+add_test(NAME effect_op_encoder COMMAND faf_effect_op_encoder_tests)
+set_tests_properties(effect_op_encoder PROPERTIES LABELS "Headless")
+
+# Engine addition (dedicated-server plan WP10.9, WPR.14): the server-mode client's interpolation buffer, its beat
+# synthesis and the display model they run under, on scripted view arrivals; no engine needed.
+add_executable(faf_interp_buffer_tests EXCLUDE_FROM_ALL remote/InterpBufferTests.cpp
+  ${CMAKE_SOURCE_DIR}/src/remote/client/InterpBuffer.cpp ${CMAKE_SOURCE_DIR}/src/remote/client/BeatSynthesis.cpp
+  ${CMAKE_SOURCE_DIR}/src/remote/client/DisplayModel.cpp ${CMAKE_SOURCE_DIR}/src/remote/client/BeatClock.cpp)
+target_include_directories(faf_interp_buffer_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(faf_interp_buffer_tests PRIVATE gtest_main)
+set_target_properties(faf_interp_buffer_tests PROPERTIES FOLDER "Tests/Headless")
+add_test(NAME interp_buffer COMMAND faf_interp_buffer_tests)
+set_tests_properties(interp_buffer PROPERTIES LABELS "Headless")
 
 # Engine addition: where UserDecal:SetOrientation puts a decal's corner so it stays centred.
 add_executable(faf_scripted_decal_tests EXCLUDE_FROM_ALL scripted_decal/PlacementTests.cpp)
@@ -152,6 +183,8 @@ set_tests_properties(replay_scan PROPERTIES LABELS "Existing")
 # without FAF_REPLAY_DATA. Games take minutes, hence the timeout.
 add_executable(faf_replay_playback_tests EXCLUDE_FROM_ALL replay/ReplayPlaybackTests.cpp)
 target_link_libraries(faf_replay_playback_tests PRIVATE gtest_main)
+# No engine library, so no force-included platform/PlatformDefines.h: the test includes it from src.
+target_include_directories(faf_replay_playback_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(faf_replay_playback_tests PRIVATE FAF_HEADLESS_EXE="$<TARGET_FILE:headless>"
   FAF_REPLAY_ZOO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/replay/zoo")
 if(FAF_SERVER_MODE)
@@ -177,6 +210,14 @@ target_link_libraries(faf_prefs_thread_tests PRIVATE faf_engine gtest_main)
 set_target_properties(faf_prefs_thread_tests PROPERTIES FOLDER "Tests/Existing")
 add_test(NAME prefs_threads COMMAND faf_prefs_thread_tests)
 set_tests_properties(prefs_threads PROPERTIES LABELS "Existing")
+
+# Engine addition (#396): RScmResource::GetSkeleton from several threads at once
+# (tests/resource); every thread must get the one skeleton built for the resource.
+add_executable(faf_skeleton_build_thread_tests EXCLUDE_FROM_ALL resource/SkeletonBuildThreadTests.cpp)
+target_link_libraries(faf_skeleton_build_thread_tests PRIVATE faf_engine gtest_main)
+set_target_properties(faf_skeleton_build_thread_tests PROPERTIES FOLDER "Tests/Existing")
+add_test(NAME skeleton_build_threads COMMAND faf_skeleton_build_thread_tests)
+set_tests_properties(skeleton_build_threads PROPERTIES LABELS "Existing")
 
 # Engine addition (dedicated-server plan WPL.4, WPR.11): what the static
 # initialisers of faf_main's objects registered (tests/registry).
@@ -339,7 +380,17 @@ add_executable(faf_editor_brush_tests EXCLUDE_FROM_ALL editor/HeightBrushTests.c
   editor/MarkerTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdMarkers.cpp
   editor/DecalShapeTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdDecalShape.cpp
   editor/UnitTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdUnits.cpp
+  editor/UnitFateTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdUnitFate.cpp
+  editor/GroupOptionsTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdGroupOptions.cpp
+  editor/LuaSyntaxTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdLuaSyntax.cpp
+  editor/ViewStateTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdViewState.cpp
+  editor/AdaptiveModelTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdAdaptiveModel.cpp
   editor/CheckTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdChecks.cpp
+  editor/ShaderSlotTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdShaderSlots.cpp
+  editor/NodeGraphTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/graph/EdNodeGraph.cpp
+  editor/EmitterTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdEmitter.cpp
+  editor/EffectGraphTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/graph/EdEffectGraph.cpp
+  editor/TextureGraphTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/graph/EdTextureGraph.cpp
   editor/PathingTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdPathing.cpp
   editor/PackageTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdPackage.cpp
   editor/WaterPresetTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdWaterPreset.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdJson.cpp
@@ -353,14 +404,40 @@ add_executable(faf_editor_brush_tests EXCLUDE_FROM_ALL editor/HeightBrushTests.c
   editor/TerrainTypeTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdTerrainTypes.cpp
   editor/ImageChunkTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdImageChunks.cpp
   editor/ViewAidTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdViewAids.cpp
+  editor/ArmySlotTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdArmySlots.cpp
+  editor/AdaptiveTablesTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdAdaptiveTables.cpp
+  editor/RecentMapsTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdRecentMaps.cpp
+  editor/VaultTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdVault.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdHttp.cpp
+  editor/FafApiTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdFafApi.cpp
+  editor/WaterBodiesEditTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdWaterBodies.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdLuaText.cpp
+  ${CMAKE_SOURCE_DIR}/src/moho/sim/WaterBodies.cpp
   ${CMAKE_SOURCE_DIR}/src/editor/tools/EdHeightBrush.cpp ${CMAKE_SOURCE_DIR}/src/editor/tools/EdSymmetryCheck.cpp
   ${CMAKE_SOURCE_DIR}/src/editor/tools/EdHeightFile.cpp
   ${CMAKE_SOURCE_DIR}/src/editor/undo/EdHeightHistory.cpp)
 target_include_directories(faf_editor_brush_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(faf_editor_brush_tests PRIVATE gtest_main ole32 windowscodecs zlib123)
+# The zlib the engine links: 1.2.3 on both architectures (src/CMakeLists.txt).
+target_link_libraries(faf_editor_brush_tests PRIVATE gtest_main ole32 windowscodecs zlib123 winhttp crypt32 shell32)
 set_target_properties(faf_editor_brush_tests PROPERTIES FOLDER "Tests/Editor")
 add_test(NAME editor_height_brush COMMAND faf_editor_brush_tests)
 set_tests_properties(editor_height_brush PROPERTIES LABELS "Editor")
+
+# The material editor's DDS files, read back by the engine's own decoder (so it links the engine).
+add_executable(faf_editor_bake_tests EXCLUDE_FROM_ALL editor/TextureBakeTests.cpp editor/SoundMuteTests.cpp ${CMAKE_SOURCE_DIR}/src/editor/graph/EdTextureBake.cpp
+  ${CMAKE_SOURCE_DIR}/src/editor/graph/EdTextureGraph.cpp ${CMAKE_SOURCE_DIR}/src/editor/graph/EdNodeGraph.cpp ${CMAKE_SOURCE_DIR}/src/editor/doc/EdJson.cpp)
+target_include_directories(faf_editor_bake_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(faf_editor_bake_tests PRIVATE faf_engine gtest_main)
+set_target_properties(faf_editor_bake_tests PROPERTIES FOLDER "Tests/Editor")
+add_test(NAME editor_texture_bake COMMAND faf_editor_bake_tests)
+set_tests_properties(editor_texture_bake PROPERTIES LABELS "Editor")
+
+# The shell's mouse events from window-system events: wheel positions on the screen, as
+# WM_MOUSEWHEEL's (src/platform/shell/mouse.h). Shell.cpp is a client file, in faf_engine here;
+# the Linux client links it into the client alone.
+add_executable(faf_shell_mouse_tests EXCLUDE_FROM_ALL shell/ShellMouseEventTests.cpp)
+target_link_libraries(faf_shell_mouse_tests PRIVATE faf_engine gtest_main)
+set_target_properties(faf_shell_mouse_tests PROPERTIES FOLDER "Tests/Shell")
+add_test(NAME shell_mouse COMMAND faf_shell_mouse_tests)
+set_tests_properties(shell_mouse PROPERTIES LABELS "Shell")
 
 add_executable(faf_slab_tests EXCLUDE_FROM_ALL entity/FixedSlabPoolTests.cpp)
 target_link_libraries(faf_slab_tests PRIVATE faf_engine gtest_main)

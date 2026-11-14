@@ -22,7 +22,7 @@
 
 #include <cfloat>
 
-#include "boost/thread.h"
+#include "legacy/thread/Mutex.h"
 #include "../resource/RResId.h"
 #include "gpg/core/utils/Global.h"
 #include "moho/lua/ScriptChunkCache.h"
@@ -112,13 +112,16 @@ namespace moho
     LuaReloadRequestNode(float reloadAt, const fa::string& path);
 
     float reloadAtSeconds;    // +0x08
-    fa::string sourcePath; // +0x0C
+    fa::string sourcePath;    // +0x0C
     std::uint32_t reserved28; // +0x28
   };
 
   static_assert(sizeof(LuaReloadRequestNode) == 0x2C, "LuaReloadRequestNode size must be 0x2C");
 
-  LuaReloadRequestNode::LuaReloadRequestNode(const float reloadAt, const fa::string& path)
+  LuaReloadRequestNode::LuaReloadRequestNode(
+    const float reloadAt,
+    const fa::string& path
+  )
     : reloadAtSeconds(reloadAt)
     , sourcePath(path)
     , reserved28(0u)
@@ -156,110 +159,14 @@ namespace moho
 
   namespace
   {
-    // The rules keep their lock inline at +0x38, so it is stored as raw bytes
-    // to preserve the layout and constructed in place by the constructor.
-    static_assert(
-      sizeof(boost::mutex) <= 0x08, "boost::mutex must fit RRuleGameRulesImpl::mLockStorage at +0x38"
-    );
-
-    [[nodiscard]] boost::mutex& RuleMutexView(RRuleGameRulesImpl& rules) noexcept
-    {
-      return *reinterpret_cast<boost::mutex*>(&rules.mLockStorage[0]);
-    }
-
     template <typename TValue>
-    [[nodiscard]] TValue* StoreAdapterLane(TValue* const outValue, const TValue value) noexcept
+    [[nodiscard]] TValue* StoreAdapterLane(
+      TValue* const outValue,
+      const TValue value
+    ) noexcept
     {
       *outValue = value;
       return outValue;
-    }
-
-    [[nodiscard]] void** StoreOpaquePointerLane(void** const outValue, void* const value) noexcept
-    {
-      return StoreAdapterLane(outValue, value);
-    }
-
-    /**
-     * Address: 0x0052BD80 (FUN_0052BD80)
-     *
-     * What it does:
-     * Stores one opaque pointer lane into caller output storage.
-     */
-    [[maybe_unused]] [[nodiscard]] void** StoreOpaquePointerLaneA(void** const outValue, void* const value) noexcept
-    {
-      return StoreOpaquePointerLane(outValue, value);
-    }
-
-    /**
-     * Address: 0x0052C5E0 (FUN_0052C5E0)
-     *
-     * What it does:
-     * Stores one opaque pointer lane into caller output storage.
-     */
-    [[maybe_unused]] [[nodiscard]] void** StoreOpaquePointerLaneB(void** const outValue, void* const value) noexcept
-    {
-      return StoreOpaquePointerLane(outValue, value);
-    }
-
-    /**
-     * Address: 0x0052CC00 (FUN_0052CC00)
-     *
-     * What it does:
-     * Stores one opaque pointer lane into caller output storage.
-     */
-    [[maybe_unused]] [[nodiscard]] void** StoreOpaquePointerLaneC(void** const outValue, void* const value) noexcept
-    {
-      return StoreOpaquePointerLane(outValue, value);
-    }
-
-    /**
-     * Address: 0x0052D5E0 (FUN_0052D5E0)
-     *
-     * What it does:
-     * Swaps two 32-bit value lanes and returns the left-hand storage pointer.
-     */
-    [[maybe_unused]] [[nodiscard]] std::uint32_t* SwapDwordLaneValues(
-      std::uint32_t* const lhs,
-      std::uint32_t* const rhs
-    ) noexcept
-    {
-      const std::uint32_t value = *lhs;
-      *lhs = *rhs;
-      *rhs = value;
-      return lhs;
-    }
-
-    /**
-     * Address: 0x0052D600 (FUN_0052D600)
-     *
-     * What it does:
-     * Stores one iterator-node pointer lane into caller output storage.
-     */
-    [[maybe_unused]] [[nodiscard]] void** StoreIteratorNodePointerLaneA(void** const outValue, void* const value) noexcept
-    {
-      return StoreOpaquePointerLane(outValue, value);
-    }
-
-    /**
-     * Address: 0x0052D650 (FUN_0052D650)
-     *
-     * What it does:
-     * Stores one iterator-node pointer lane into caller output storage.
-     */
-    [[maybe_unused]] [[nodiscard]] void** StoreIteratorNodePointerLaneB(void** const outValue, void* const value) noexcept
-    {
-      return StoreOpaquePointerLane(outValue, value);
-    }
-
-    /**
-     * Address: 0x0052D6A0 (FUN_0052D6A0)
-     *
-     * What it does:
-     * Stores one iterator-node pointer lane into caller output storage.
-     */
-    [[maybe_unused]] [[nodiscard]] void** StoreIteratorNodePointerLaneC(void** const outValue, void* const value) noexcept
-    {
-      return StoreOpaquePointerLane(outValue, value);
     }
 
     /**
@@ -317,8 +224,10 @@ namespace moho
      * lookups that depend on its forward-slash-preserving output).
      */
     template <typename TBlueprint>
-    [[nodiscard]] TBlueprint*
-    LookupBlueprintByResId(const RRuleGameRulesBlueprintMap& map, const RResId& resId) noexcept
+    [[nodiscard]] TBlueprint* LookupBlueprintByResId(
+      const RRuleGameRulesBlueprintMap& map,
+      const RResId& resId
+    ) noexcept
     {
       if (resId.name.empty()) {
         return nullptr;
@@ -329,8 +238,10 @@ namespace moho
       // former byte-identical temporary copy - without allocating one.
       // Engine change (sim_BlueprintLookupFast); off, the binary's temporary copy is searched.
       const bool fastLookup = sim_BlueprintLookupFast;
-      if (const auto found = fastLookup ? map.find(resId.name) : map.find(fa::string(resId.name.view()));
-          found != map.end()) {
+      if (
+        const auto found = fastLookup ? map.find(resId.name) : map.find(fa::string(resId.name.view()));
+        found != map.end()
+      ) {
         return static_cast<TBlueprint*>(found->second);
       }
 
@@ -357,7 +268,9 @@ namespace moho
       return static_cast<TBlueprint*>(fallbackFound->second);
     }
 
-    [[nodiscard]] LuaPlus::LuaState* ResolveRootState(LuaPlus::LuaState* state) noexcept
+    [[nodiscard]] LuaPlus::LuaState* ResolveRootState(
+      LuaPlus::LuaState* state
+    ) noexcept
     {
       if (!state) {
         return nullptr;
@@ -367,13 +280,17 @@ namespace moho
       return root ? root : state;
     }
 
-    [[nodiscard]] bool IsLuaFunction(const LuaPlus::LuaObject& object) noexcept
+    [[nodiscard]] bool IsLuaFunction(
+      const LuaPlus::LuaObject& object
+    ) noexcept
     {
       return object.m_state != nullptr && object.m_object.tt == LUA_TFUNCTION;
     }
 
     void SetGlobalCopy(
-      LuaPlus::LuaState* const sourceState, LuaPlus::LuaState* const targetRootState, const char* const globalName
+      LuaPlus::LuaState* const sourceState,
+      LuaPlus::LuaState* const targetRootState,
+      const char* const globalName
     )
     {
       if (!sourceState || !targetRootState || !globalName) {
@@ -402,7 +319,10 @@ namespace moho
      * state it is exporting to. Each entry's word set is copied out of the map
      * node first, so the userdata owns its own storage.
      */
-    void PublishCategoriesTable(RRuleGameRulesImpl& rules, LuaPlus::LuaState* const targetState)
+    void PublishCategoriesTable(
+      RRuleGameRulesImpl& rules,
+      LuaPlus::LuaState* const targetState
+    )
     {
       if (!targetState) {
         return;
@@ -429,45 +349,10 @@ namespace moho
       }
     }
 
-    /**
-     * Address: 0x0052DBA0 (FUN_0052DBA0)
-     *
-     * What it does:
-     * Releases one raw runtime storage lane through global `operator delete`.
-     */
-    [[maybe_unused]] void DeleteStorageLane(void* const storage)
-    {
-      ::operator delete(storage);
-    }
-
-    /**
-     * Grows `mMaps` to at least `requestedCapacity` live-binding slots.
-     *
-     * No address of its own (the binary inlines this as part of
-     * `ExportToLuaState`'s own capacity check ahead of its `insert` call,
-     * cited in full on `legacy/containers/Vector.h`'s `insert(pos, count,
-     * value)` member as `FUN_0052DBE0`). Delegates entirely to
-     * `fa::vector<T>::reserve()`, which is the fix for a genuine
-     * behavioral divergence the previous hand-rolled body had: it allocated
-     * via `new RRuleGameRulesLuaExportBinding[requestedCapacity]{}`
-     * (default-constructing every slot up to the full new capacity, not
-     * just the live prefix) and *assigned* the live elements into those
-     * already-live slots, whereas the real binary's growth path -- and this
-     * member's own `reserve()`/`reallocate_to()` -- allocates raw,
-     * unconstructed memory and only *constructs* exactly the live prefix
-     * into it (see the divergence note on `RRuleGameRulesImpl::mMaps`,
-     * RRuleGameRules.h, for the full evidence trail: `FUN_0052D590`'s and
-     * `FUN_00536DF0`'s raw disassembly both show a scalar `operator
-     * delete`, never `delete[]`, which only pairs with a real vector's
-     * raw-allocate/exact-construct shape).
-     */
-    [[maybe_unused]] void ReserveExportBindingCapacity(RRuleGameRulesImpl& rules, const std::size_t requestedCapacity)
-    {
-      rules.mMaps.reserve(requestedCapacity);
-    }
-
-    [[nodiscard]] RRuleGameRulesLuaExportBinding*
-    FindExportBinding(RRuleGameRulesImpl& rules, LuaPlus::LuaState* const rootState) noexcept
+    [[nodiscard]] RRuleGameRulesLuaExportBinding* FindExportBinding(
+      RRuleGameRulesImpl& rules,
+      LuaPlus::LuaState* const rootState
+    ) noexcept
     {
       if (!rootState) {
         return nullptr;
@@ -481,8 +366,10 @@ namespace moho
       return nullptr;
     }
 
-    [[maybe_unused]] [[nodiscard]] const RRuleGameRulesLuaExportBinding*
-    FindExportBinding(const RRuleGameRulesImpl& rules, LuaPlus::LuaState* const rootState) noexcept
+    [[maybe_unused]] [[nodiscard]] const RRuleGameRulesLuaExportBinding* FindExportBinding(
+      const RRuleGameRulesImpl& rules,
+      LuaPlus::LuaState* const rootState
+    ) noexcept
     {
       return FindExportBinding(const_cast<RRuleGameRulesImpl&>(rules), rootState);
     }
@@ -500,8 +387,10 @@ namespace moho
      * from `RRuleGameRulesImpl::ExportToLuaState` (`FUN_00529F70`) at `call
      * sub_52DBE0`, 0x0052A31D.
      */
-    [[nodiscard]] RRuleGameRulesLuaExportBinding*
-    AddOrGetExportBinding(RRuleGameRulesImpl& rules, LuaPlus::LuaState* const rootState)
+    [[nodiscard]] RRuleGameRulesLuaExportBinding* AddOrGetExportBinding(
+      RRuleGameRulesImpl& rules,
+      LuaPlus::LuaState* const rootState
+    )
     {
       if (!rootState) {
         return nullptr;
@@ -540,7 +429,10 @@ namespace moho
      * the address citations on that struct's declaration in
      * RRuleGameRules.h).
      */
-    void EraseExportBinding(RRuleGameRulesImpl& rules, RRuleGameRulesLuaExportBinding* const binding)
+    void EraseExportBinding(
+      RRuleGameRulesImpl& rules,
+      RRuleGameRulesLuaExportBinding* const binding
+    )
     {
       if (!binding) {
         return;
@@ -549,7 +441,9 @@ namespace moho
       rules.mMaps.erase(binding);
     }
 
-    void ProcessPendingReloadRequests(RRuleGameRulesImpl& rules)
+    void ProcessPendingReloadRequests(
+      RRuleGameRulesImpl& rules
+    )
     {
       auto& pending = rules.mPendingBlueprintReloads;
       const float nowSeconds = gpg::time::CyclesToSeconds(gpg::time::GetSystemTimer().ElapsedCycles());
@@ -580,7 +474,8 @@ namespace moho
     void EnqueueLuaReloadRequest(
       RRuleGameRulesImpl& rules,
       const fa::string& sourcePath,
-      const float reloadDelaySeconds)
+      const float reloadDelaySeconds
+    )
     {
       auto& pending = rules.mPendingBlueprintReloads;
       const float deadline =
@@ -615,7 +510,9 @@ namespace moho
      * the file-watcher integration stages a path here, that path is dequeued
      * once and routed through the typed enqueue helper.
      */
-    void DrainFileWatcherIntoReloadQueue(RRuleGameRulesImpl& rules)
+    void DrainFileWatcherIntoReloadQueue(
+      RRuleGameRulesImpl& rules
+    )
     {
       fa::string& pendingPath = gPendingBlueprintReloadPath;
       if (pendingPath.empty()) {
@@ -626,7 +523,10 @@ namespace moho
       pendingPath.clear();
     }
 
-    void SynchronizeBlueprintTable(RRuleGameRulesImpl& rules, LuaPlus::LuaState* const rootState)
+    void SynchronizeBlueprintTable(
+      RRuleGameRulesImpl& rules,
+      LuaPlus::LuaState* const rootState
+    )
     {
       if (!rootState || !rules.mLuaState) {
         return;
@@ -681,7 +581,9 @@ namespace moho
       }
     }
 
-    void DestroyBlueprintObjectsFromOrdinalArray(RRuleGameRulesImpl& rules) noexcept
+    void DestroyBlueprintObjectsFromOrdinalArray(
+      RRuleGameRulesImpl& rules
+    ) noexcept
     {
       for (RBlueprint*& slot : rules.mBlueprintsByOrdinal) {
         if (slot != nullptr) {
@@ -698,7 +600,9 @@ namespace moho
       drained.swap(rules.mBlueprintsByOrdinal);
     }
 
-    void DestroyEffectBlueprintsInMap(RRuleGameRulesBlueprintMap& map) noexcept
+    void DestroyEffectBlueprintsInMap(
+      RRuleGameRulesBlueprintMap& map
+    ) noexcept
     {
       // The binary deletes the pointed-to blueprints and nulls each lane but
       // leaves the nodes in place; the map's own destructor tears the tree
@@ -862,7 +766,9 @@ namespace moho
       std::thread finished;
       {
         std::unique_lock<std::mutex> guard(state.lock);
-        state.ready.wait(guard, [&] { return !state.preparing; });
+        state.ready.wait(guard, [&] {
+          return !state.preparing;
+        });
         finished = std::move(state.prepareThread);
       }
       if (finished.joinable()) {
@@ -881,7 +787,9 @@ namespace moho
     }
 
     /// Rules being destroyed are no longer lent (a cancelled load deletes them without a session).
-    void RULE_ForgetLent(const RRuleGameRules* const rules)
+    void RULE_ForgetLent(
+      const RRuleGameRules* const rules
+    )
     {
       KeptRules& state = Kept();
       const std::lock_guard<std::mutex> guard(state.lock);
@@ -891,9 +799,13 @@ namespace moho
     }
   } // namespace
 
-  RRuleGameRulesImpl::RRuleGameRulesImpl(const fa::string& activeMods, CBackgroundTaskControl* const initHandler)
+  RRuleGameRulesImpl::RRuleGameRulesImpl(
+    const fa::string& activeMods,
+    CBackgroundTaskControl* const initHandler
+  )
     : mUnknown04(0u)
-    , mLockStorage{}
+    , mDiskWatchListener("*.bp")
+    , mLock()
     , mLuaState(nullptr)
     , mMaps{}
     , mFootprints{}
@@ -907,11 +819,6 @@ namespace moho
     , mBlueprintsByOrdinal()
     , mEntityCategoryLookup(nullptr)
   {
-    // 0x00553... constructs the blueprint watcher in place; it has no default
-    // state, which is why it is built here rather than in the member list.
-    new (mDiskWatchListenerStorage) CDiskWatchListener("*.bp");
-    new (&RuleMutexView(*this)) boost::mutex();
-
     mLuaState = new (std::nothrow) LuaPlus::LuaState(LuaPlus::LuaState::LIB_BASE);
     lua::NameLuaVm(mLuaState->m_state, "GameRules"); // diagnostics label only
 
@@ -930,8 +837,7 @@ namespace moho
     // null on first construction, but the binary performs the same
     // swap-delete unconditionally rather than special-casing "this is the
     // first call").
-    EntityCategoryLookupTable* const newCategoryLookup =
-      new (std::nothrow) EntityCategoryLookupTable(this);
+    EntityCategoryLookupTable* const newCategoryLookup = new (std::nothrow) EntityCategoryLookupTable(this);
     EntityCategoryLookupTable* const oldCategoryLookup = mEntityCategoryLookup;
     mEntityCategoryLookup = newCategoryLookup;
     delete oldCategoryLookup;
@@ -980,7 +886,9 @@ namespace moho
    * error (lua_RuntimeError, handler 0x0052BA2F) is logged and the result
    * stays nil.
    */
-  LuaPlus::LuaObject RULE_GetDefaultPlayerOptions(LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject RULE_GetDefaultPlayerOptions(
+    LuaPlus::LuaState* const state
+  )
   {
     LuaPlus::LuaObject defaultOptions{};
     try {
@@ -1000,7 +908,10 @@ namespace moho
    * Allocates one `RRuleGameRulesImpl` object and runs the concrete
    * constructor with active-mod payload + optional init wait-set pointer.
    */
-  RRuleGameRules* RRuleGameRules::Create(const fa::string& activeMods, CBackgroundTaskControl* const initHandler)
+  RRuleGameRules* RRuleGameRules::Create(
+    const fa::string& activeMods,
+    CBackgroundTaskControl* const initHandler
+  )
   {
     auto* const storage = static_cast<RRuleGameRulesImpl*>(::operator new(sizeof(RRuleGameRulesImpl), std::nothrow));
     if (storage == nullptr) {
@@ -1016,34 +927,13 @@ namespace moho
    * What it does:
    * Adapter overload for callsites that still pass normalized id strings.
    */
-  RPropBlueprint* RRuleGameRules::GetPropBlueprint(const fa::string& blueprintId)
+  RPropBlueprint* RRuleGameRules::GetPropBlueprint(
+    const fa::string& blueprintId
+  )
   {
     RResId lookup{};
     lookup.name = fa::string(blueprintId.data(), blueprintId.size());
     return GetPropBlueprint(lookup);
-  }
-
-  /**
-   * Address: 0x00529510 (FUN_00529510)
-   *
-   * What it does:
-   * Executes the scalar-deleting wrapper lane for `RRuleGameRulesImpl` by
-   * running the core destructor body and optionally releasing object storage.
-   */
-  RRuleGameRulesImpl* DestroyRRuleGameRulesImplWithDeleteFlag(
-    RRuleGameRulesImpl* const object,
-    const std::uint8_t deleteFlags
-  )
-  {
-    if (object == nullptr) {
-      return nullptr;
-    }
-
-    object->~RRuleGameRulesImpl();
-    if ((deleteFlags & 1u) != 0u) {
-      ::operator delete(static_cast<void*>(object));
-    }
-    return object;
   }
 
   /**
@@ -1060,7 +950,8 @@ namespace moho
     // binding into them; it goes first.
     SIM_DiscardPreparedLuaState(this);
     RULE_ForgetLent(this); // engine addition: a later rules object may get this address
-    const RRuleGameRules* expected = this; // engine addition (wld_StartSimEarly): a later rules object may get this address
+    const RRuleGameRules* expected =
+      this; // engine addition (wld_StartSimEarly): a later rules object may get this address
     (void)gLoaderReleasesBlueprints.compare_exchange_strong(expected, nullptr);
     gRulesGeneration.fetch_add(1u, std::memory_order_relaxed); // engine addition, see BlueprintNameCache
     DestroyBlueprintObjectsFromOrdinalArray(*this);
@@ -1098,9 +989,6 @@ namespace moho
 
     delete mLuaState;
     mLuaState = nullptr;
-
-    RuleMutexView(*this).~mutex();
-    DiskWatchListener().CDiskWatchListener::~CDiskWatchListener();
   }
 
   /**
@@ -1129,13 +1017,15 @@ namespace moho
    * Exports active-mod and blueprint globals to the target root Lua state and
    * tracks the state in the runtime export-binding list.
    */
-  void RRuleGameRulesImpl::ExportToLuaState(LuaPlus::LuaState* luaState)
+  void RRuleGameRulesImpl::ExportToLuaState(
+    LuaPlus::LuaState* luaState
+  )
   {
     if (!luaState || !mLuaState) {
       return;
     }
 
-    const boost::mutex::scoped_lock exportLock(RuleMutexView(*this));
+    const fa::mutex::scoped_lock exportLock(mLock);
 
     LuaPlus::LuaState* const rootState = ResolveRootState(luaState);
     if (!rootState) {
@@ -1175,7 +1065,7 @@ namespace moho
     if (mLuaState == nullptr) {
       return;
     }
-    const boost::mutex::scoped_lock releaseLock(RuleMutexView(*this));
+    const fa::mutex::scoped_lock releaseLock(mLock);
     LuaPlus::LuaObject globals = mLuaState->GetGlobals();
     globals.SetNil("__blueprints");
     lua_setgcthreshold(mLuaState->m_state, 0);
@@ -1183,24 +1073,36 @@ namespace moho
 
   void RRuleGameRulesImpl::OnSimHasBlueprints()
   {
-    if (rule_ReleaseScriptBlueprints && !KeepsScriptBlueprints() && gLoaderReleasesBlueprints.load(std::memory_order_acquire) != this) {
+    if (
+      rule_ReleaseScriptBlueprints && !KeepsScriptBlueprints() &&
+      gLoaderReleasesBlueprints.load(std::memory_order_acquire) != this
+    ) {
       ReleaseScriptBlueprints();
     }
   }
 
-  void RULE_DeferScriptBlueprintRelease(RRuleGameRules* const rules) noexcept
+  void RULE_DeferScriptBlueprintRelease(
+    RRuleGameRules* const rules
+  ) noexcept
   {
     gLoaderReleasesBlueprints.store(rules, std::memory_order_release);
   }
 
-  void RULE_ReleaseDeferredScriptBlueprints(RRuleGameRules* const rules)
+  void RULE_ReleaseDeferredScriptBlueprints(
+    RRuleGameRules* const rules
+  )
   {
-    if (rule_ReleaseScriptBlueprints && !KeepsScriptBlueprints() && rules != nullptr && gLoaderReleasesBlueprints.load(std::memory_order_acquire) == rules) {
+    if (
+      rule_ReleaseScriptBlueprints && !KeepsScriptBlueprints() && rules != nullptr &&
+      gLoaderReleasesBlueprints.load(std::memory_order_acquire) == rules
+    ) {
       static_cast<RRuleGameRulesImpl*>(rules)->ReleaseScriptBlueprints();
     }
   }
 
-  void RULE_SetKeepBetweenSessions(const bool keep)
+  void RULE_SetKeepBetweenSessions(
+    const bool keep
+  )
   {
     KeptRules& state = Kept();
     {
@@ -1213,7 +1115,9 @@ namespace moho
     }
   }
 
-  void RULE_PrepareKept(const fa::string& gameMods)
+  void RULE_PrepareKept(
+    const fa::string& gameMods
+  )
   {
     KeptRules& state = Kept();
     FinishPreparing(); // an earlier one, if any
@@ -1249,13 +1153,17 @@ namespace moho
       kept.ready.notify_all();
       gpg::Logf(
         "RULE: rules built ahead in %.2f s%s",
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(), dropped != nullptr ? " (not kept)" : ""
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(),
+        dropped != nullptr ? " (not kept)" : ""
       );
       delete dropped;
     });
   }
 
-  RRuleGameRules* RULE_TakeOrCreate(const fa::string& gameMods, CBackgroundTaskControl* const loadControl)
+  RRuleGameRules* RULE_TakeOrCreate(
+    const fa::string& gameMods,
+    CBackgroundTaskControl* const loadControl
+  )
   {
     KeptRules& state = Kept();
     FinishPreparing(); // rules being built ahead are taken when done, not built twice
@@ -1286,7 +1194,10 @@ namespace moho
     return rules;
   }
 
-  bool RULE_KeepAfterSession(RRuleGameRules* const rules, LuaPlus::LuaState* const sessionState)
+  bool RULE_KeepAfterSession(
+    RRuleGameRules* const rules,
+    LuaPlus::LuaState* const sessionState
+  )
   {
     KeptRules& state = Kept();
     RRuleGameRules* replaced = nullptr;
@@ -1317,6 +1228,14 @@ namespace moho
     return state.preparing ? nullptr : state.kept;
   }
 
+  RRuleGameRules* RULE_PeekLent()
+  {
+    KeptRules& state = Kept();
+    const std::lock_guard<std::mutex> guard(state.lock);
+    // Held const while lent; the same object is the kept (non-const) rules after the session. Readers only read it.
+    return state.enabled ? const_cast<RRuleGameRules*>(state.lent) : nullptr;
+  }
+
   void RULE_DeleteKept()
   {
     KeptRules& state = Kept();
@@ -1329,7 +1248,9 @@ namespace moho
     delete kept;
   }
 
-  void RRuleGameRulesImpl::UpdateLuaState(LuaPlus::LuaState* luaState)
+  void RRuleGameRulesImpl::UpdateLuaState(
+    LuaPlus::LuaState* luaState
+  )
   {
     if (!luaState) {
       return;
@@ -1347,7 +1268,7 @@ namespace moho
     // rules' own `lua_State` inside `SynchronizeBlueprintTable`. Without the
     // lock the two threads interleave inside one 5000-entry `SCR_Copy` loop
     // over a single `lua_State`, which corrupts it and faults in `luaV_index`.
-    boost::mutex::scoped_lock rulesLock(RuleMutexView(*this));
+    fa::mutex::scoped_lock rulesLock(mLock);
 
     // Drain pending file-watcher notifications. Each new path that isn't
     // already enqueued for reload becomes a fresh `LuaReloadRequestNode`
@@ -1377,7 +1298,9 @@ namespace moho
    * Removes one root Lua-state export binding and clears its `__blueprints`
    * global slot.
    */
-  void RRuleGameRulesImpl::CancelExport(LuaPlus::LuaState* luaState)
+  void RRuleGameRulesImpl::CancelExport(
+    LuaPlus::LuaState* luaState
+  )
   {
     if (!luaState) {
       return;
@@ -1416,7 +1339,9 @@ namespace moho
    * What it does:
    * Returns blueprint pointer by ordinal index from the flat ordinal table.
    */
-  RBlueprint* RRuleGameRulesImpl::GetBlueprintFromOrdinal(const int ordinal) const
+  RBlueprint* RRuleGameRulesImpl::GetBlueprintFromOrdinal(
+    const int ordinal
+  ) const
   {
     if (ordinal < 0 || static_cast<std::size_t>(ordinal) >= mBlueprintsByOrdinal.size()) {
       return nullptr;
@@ -1443,7 +1368,10 @@ namespace moho
    * Finds the closest named footprint with matching occupancy caps by minimizing
    * `max(|sizeX-dx|, |sizeZ-dz|)` over the runtime footprint list.
    */
-  const SNamedFootprint* RRuleGameRulesImpl::FindFootprint(const SFootprint& footprint, const char* name) const
+  const SNamedFootprint* RRuleGameRulesImpl::FindFootprint(
+    const SFootprint& footprint,
+    const char* name
+  ) const
   {
     (void)name;
     const std::uint8_t targetOccupancy = static_cast<std::uint8_t>(footprint.mOccupancyCaps);
@@ -1507,7 +1435,9 @@ namespace moho
    * What it does:
    * Entity-blueprint union lookup: unit -> projectile -> prop.
    */
-  REntityBlueprint* RRuleGameRulesImpl::GetEntityBlueprint(const RResId& resId)
+  REntityBlueprint* RRuleGameRulesImpl::GetEntityBlueprint(
+    const RResId& resId
+  )
   {
     if (RUnitBlueprint* const unit = GetUnitBlueprint(resId)) {
       return static_cast<REntityBlueprint*>(unit);
@@ -1523,7 +1453,9 @@ namespace moho
   /**
    * Address: 0x0052AB70 (FUN_0052AB70)
    */
-  RUnitBlueprint* RRuleGameRulesImpl::GetUnitBlueprint(const RResId& resId)
+  RUnitBlueprint* RRuleGameRulesImpl::GetUnitBlueprint(
+    const RResId& resId
+  )
   {
     return LookupBlueprintByResId<RUnitBlueprint>(mUnitBlueprints, resId);
   }
@@ -1531,7 +1463,9 @@ namespace moho
   /**
    * Address: 0x0052AD10 (FUN_0052AD10)
    */
-  RPropBlueprint* RRuleGameRulesImpl::GetPropBlueprint(const RResId& resId)
+  RPropBlueprint* RRuleGameRulesImpl::GetPropBlueprint(
+    const RResId& resId
+  )
   {
     return LookupBlueprintByResId<RPropBlueprint>(mPropBlueprints, resId);
   }
@@ -1539,7 +1473,9 @@ namespace moho
   /**
    * Address: 0x0052ADE0 (FUN_0052ADE0)
    */
-  RMeshBlueprint* RRuleGameRulesImpl::GetMeshBlueprint(const RResId& resId)
+  RMeshBlueprint* RRuleGameRulesImpl::GetMeshBlueprint(
+    const RResId& resId
+  )
   {
     return LookupBlueprintByResId<RMeshBlueprint>(mMeshBlueprints, resId);
   }
@@ -1547,7 +1483,9 @@ namespace moho
   /**
    * Address: 0x0052AC40 (FUN_0052AC40)
    */
-  RProjectileBlueprint* RRuleGameRulesImpl::GetProjectileBlueprint(const RResId& resId)
+  RProjectileBlueprint* RRuleGameRulesImpl::GetProjectileBlueprint(
+    const RResId& resId
+  )
   {
     return LookupBlueprintByResId<RProjectileBlueprint>(mProjectileBlueprints, resId);
   }
@@ -1555,7 +1493,9 @@ namespace moho
   /**
    * Address: 0x0052AEF0 (FUN_0052AEF0)
    */
-  REmitterBlueprint* RRuleGameRulesImpl::GetEmitterBlueprint(const RResId& resId)
+  REmitterBlueprint* RRuleGameRulesImpl::GetEmitterBlueprint(
+    const RResId& resId
+  )
   {
     return LookupBlueprintByResId<REmitterBlueprint>(mEmitterBlueprints, resId);
   }
@@ -1563,7 +1503,9 @@ namespace moho
   /**
    * Address: 0x0052AFC0 (FUN_0052AFC0)
    */
-  RBeamBlueprint* RRuleGameRulesImpl::GetBeamBlueprint(const RResId& resId)
+  RBeamBlueprint* RRuleGameRulesImpl::GetBeamBlueprint(
+    const RResId& resId
+  )
   {
     return LookupBlueprintByResId<RBeamBlueprint>(mBeamBlueprints, resId);
   }
@@ -1571,7 +1513,9 @@ namespace moho
   /**
    * Address: 0x0052B090 (FUN_0052B090)
    */
-  RTrailBlueprint* RRuleGameRulesImpl::GetTrailBlueprint(const RResId& resId)
+  RTrailBlueprint* RRuleGameRulesImpl::GetTrailBlueprint(
+    const RResId& resId
+  )
   {
     return LookupBlueprintByResId<RTrailBlueprint>(mTrailBlueprints, resId);
   }
@@ -1582,7 +1526,9 @@ namespace moho
    * What it does:
    * Effect-blueprint union lookup: emitter -> beam -> trail.
    */
-  REffectBlueprint* RRuleGameRulesImpl::GetEffectBlueprint(const RResId& resId)
+  REffectBlueprint* RRuleGameRulesImpl::GetEffectBlueprint(
+    const RResId& resId
+  )
   {
     if (REmitterBlueprint* const emitter = GetEmitterBlueprint(resId)) {
       return static_cast<REffectBlueprint*>(emitter);
@@ -1603,17 +1549,8 @@ namespace moho
     return mUnitBlueprints.size();
   }
 
-  /**
-    * Alias of FUN_0052B1E0 (non-canonical helper lane).
-   *
-   * What it does:
-   * Delegates category-name lookup to the shared resolver implementation.
-   */
-  const EntityCategorySet* RRuleGameRulesImpl::GetEntityCategory(const char* categoryName) const
-  {
-    const auto* const resolver = reinterpret_cast<const EntityCategoryLookupResolver*>(this);
-    return resolver->EntityCategoryLookupResolver::GetEntityCategory(categoryName);
-  }
+  // `RRuleGameRulesImpl::GetEntityCategory` (0x0052B1E0) lives in
+  // moho/entity/EntityCategoryLookupResolver.cpp with its lookup cache.
 
   /**
    * Address: 0x0052B280 (FUN_0052B280, Moho::RRuleGameRulesImpl::ParseEntityCategory)
@@ -1631,7 +1568,9 @@ namespace moho
    * `moho::ParseEntityCategory` (0x005552F0), which builds the result in
    * place, and returns it by value.
    */
-  EntityCategorySet RRuleGameRulesImpl::ParseEntityCategory(const char* categoryExpression) const
+  EntityCategorySet RRuleGameRulesImpl::ParseEntityCategory(
+    const char* categoryExpression
+  ) const
   {
     EntityCategorySet out;
     (void)moho::ParseEntityCategory(mEntityCategoryLookup, &out, categoryExpression);
@@ -1650,7 +1589,10 @@ namespace moho
    * Everything hashed is a value, never an address, so x86 and x64 builds and
    * the shipped engine agree on it.
    */
-  void RRuleGameRulesImpl::UpdateChecksum(void* md5Context, void* fileHandle)
+  void RRuleGameRulesImpl::UpdateChecksum(
+    void* md5Context,
+    void* fileHandle
+  )
   {
     auto& context = *static_cast<gpg::MD5Context*>(md5Context);
     auto* const file = static_cast<std::FILE*>(fileHandle);
@@ -1694,43 +1636,6 @@ namespace moho
     context.Update(&meshCount, sizeof(meshCount));
   }
 
-  /**
-   * Address: 0x00511900 (FUN_00511900)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `RRuleGameRules` using the secondary
-   * cache lane and returns the typed object pointer when compatible.
-   */
-  [[nodiscard]] RRuleGameRules* CastRRuleGameRulesFromRRefSecondary(const gpg::RRef& source)
-  {
-    gpg::RType* type = RRuleGameRules::sType2;
-    if (type == nullptr) {
-      type = gpg::LookupRType(typeid(RRuleGameRules));
-      RRuleGameRules::sType2 = type;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, type);
-    return static_cast<RRuleGameRules*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x00537810 (FUN_00537810)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `RRuleGameRules` using the primary
-   * cache lane and returns the typed object pointer when compatible.
-   */
-  [[nodiscard]] RRuleGameRules* CastRRuleGameRulesFromRRefPrimary(const gpg::RRef& source)
-  {
-    gpg::RType* type = RRuleGameRules::sType;
-    if (type == nullptr) {
-      type = gpg::LookupRType(typeid(RRuleGameRules));
-      RRuleGameRules::sType = type;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, type);
-    return static_cast<RRuleGameRules*>(upcast.mObj);
-  }
 } // namespace moho
 
 namespace moho
@@ -1747,7 +1652,9 @@ namespace moho
     struct BlueprintNameHash
     {
       using is_transparent = void;
-      [[nodiscard]] std::size_t operator()(const std::string_view name) const noexcept
+      [[nodiscard]] std::size_t operator()(
+        const std::string_view name
+      ) const noexcept
       {
         return std::hash<std::string_view>{}(name);
       }
@@ -1765,7 +1672,11 @@ namespace moho
       std::unordered_map<std::string, void*, BlueprintNameHash, std::equal_to<>> mFound;
 
       template <class TBlueprint, class Lookup>
-      [[nodiscard]] TBlueprint* Find(RRuleGameRules* const rules, const char* const name, Lookup&& lookup)
+      [[nodiscard]] TBlueprint* Find(
+        RRuleGameRules* const rules,
+        const char* const name,
+        Lookup&& lookup
+      )
       {
         if (!sim_BlueprintNameCache || rules == nullptr || name == nullptr) {
           return lookup();
@@ -1789,7 +1700,11 @@ namespace moho
     };
 
     template <class TBlueprint, class Get>
-    [[nodiscard]] TBlueprint* LookupByName(RRuleGameRules* const rules, const char* const name, Get get)
+    [[nodiscard]] TBlueprint* LookupByName(
+      RRuleGameRules* const rules,
+      const char* const name,
+      Get get
+    )
     {
       if (rules == nullptr) {
         return nullptr;
@@ -1804,21 +1719,30 @@ namespace moho
     thread_local BlueprintNameCache tProjectileNames;
   } // namespace
 
-  REmitterBlueprint* RULE_FindEmitterBlueprintByName(RRuleGameRules* const rules, const char* const name)
+  REmitterBlueprint* RULE_FindEmitterBlueprintByName(
+    RRuleGameRules* const rules,
+    const char* const name
+  )
   {
     return tEmitterNames.Find<REmitterBlueprint>(rules, name, [&] {
       return LookupByName<REmitterBlueprint>(rules, name, &RRuleGameRules::GetEmitterBlueprint);
     });
   }
 
-  RTrailBlueprint* RULE_FindTrailBlueprintByName(RRuleGameRules* const rules, const char* const name)
+  RTrailBlueprint* RULE_FindTrailBlueprintByName(
+    RRuleGameRules* const rules,
+    const char* const name
+  )
   {
     return tTrailNames.Find<RTrailBlueprint>(rules, name, [&] {
       return LookupByName<RTrailBlueprint>(rules, name, &RRuleGameRules::GetTrailBlueprint);
     });
   }
 
-  RProjectileBlueprint* RULE_FindProjectileBlueprintByName(RRuleGameRules* const rules, const char* const name)
+  RProjectileBlueprint* RULE_FindProjectileBlueprintByName(
+    RRuleGameRules* const rules,
+    const char* const name
+  )
   {
     return tProjectileNames.Find<RProjectileBlueprint>(rules, name, [&] {
       return LookupByName<RProjectileBlueprint>(rules, name, &RRuleGameRules::GetProjectileBlueprint);

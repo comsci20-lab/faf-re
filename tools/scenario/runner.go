@@ -374,6 +374,9 @@ func (r *runner) check(e Expect) []string {
 			}
 			how := "crashed or was closed"
 			if toInt(data["code"]) == 0 {
+				if e.CleanExitOK {
+					continue // the scenario expects its games to end themselves
+				}
 				how = "exited cleanly (closed?)"
 			}
 			fails = append(fails, fmt.Sprintf("player %d %s %s on its own (code %v)", rec.UID, rec.Text, how, data["code"]))
@@ -394,6 +397,13 @@ func (r *runner) check(e Expect) []string {
 		if n < e.MinTurnAllocations {
 			fails = append(fails, fmt.Sprintf("TURN allocations %d < %d (relay not used)", n, e.MinTurnAllocations))
 		}
+	}
+	if e.OwnServerTokenOnly {
+		res := r.l.CheckServerTokens()
+		for _, n := range res.Notes {
+			r.j.Note(journal.Note, 0, "server tokens: "+n, nil)
+		}
+		fails = append(fails, res.Fails...)
 	}
 	if e.RelayOnly {
 		total := 0

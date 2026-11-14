@@ -33,7 +33,7 @@ namespace moho
      * onto the input window. Returns the new head's index, or -1 without an
      * input window.
      */
-    virtual int AddFrame(wxWindow* inputWindow, wxWindow* eventHostWindow) = 0;
+    virtual int AddFrame(ShellWindow* inputWindow, ShellWindow* eventHostWindow) = 0;
 
     /**
      * Address: 0x0084CC50 (FUN_0084CC50)
@@ -148,7 +148,7 @@ namespace moho
 
   struct UICommandModeData
   {
-    fa::string mMode;          // +0x00
+    fa::string mMode;              // +0x00
     LuaPlus::LuaObject mPayload{}; // +0x1C
 
     /**
@@ -178,9 +178,7 @@ namespace moho
   };
 
   static_assert(sizeof(UICommandModeData) == 0x30, "moho::UICommandModeData size must be 0x30");
-  static_assert(
-    offsetof(UICommandModeData, mPayload) == 0x1C, "moho::UICommandModeData::mPayload offset must be 0x1C"
-  );
+  static_assert(offsetof(UICommandModeData, mPayload) == 0x1C, "moho::UICommandModeData::mPayload offset must be 0x1C");
 
   /**
    * Address: 0x0084C5E0 (FUN_0084C5E0)
@@ -211,22 +209,6 @@ namespace moho
   [[nodiscard]] CUIManager* GetUiManagerGlobalLaneA() noexcept;
 
   /**
-   * Address: 0x0084C960 (FUN_0084C960)
-   *
-   * What it does:
-   * Secondary lane returning the global UI-manager singleton pointer.
-   */
-  [[nodiscard]] CUIManager* GetUiManagerGlobalLaneB() noexcept;
-
-  /**
-   * Address: 0x0083CE10 (FUN_0083CE10)
-   *
-   * What it does:
-   * Forces UI state to lobby-mode.
-   */
-  void ForceUiStateLobbyMode();
-
-  /**
    * Address: 0x0083D140 (FUN_0083D140, ?UI_StartFrontEnd@Moho@@YA_NXZ)
    *
    * What it does:
@@ -253,7 +235,11 @@ namespace moho
    */
   [[nodiscard]]
   bool UI_StartHostLobbyUI(
-    const char* protocol, int port, const char* playerName, const char* gameName, const char* mapName
+    const char* protocol,
+    int port,
+    const char* playerName,
+    const char* gameName,
+    const char* mapName
   );
 
   /**
@@ -349,7 +335,8 @@ namespace moho
   );
 
   /**
-   * Address: 0x0083D500 (FUN_0083D500, ?UI_ShowDesyncDialog@Moho@@YAXHABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
+   * Address: 0x0083D500 (FUN_0083D500,
+   * ?UI_ShowDesyncDialog@Moho@@YAXHABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
    *
    * What it does:
    * Builds one Lua table from desync payload strings and invokes

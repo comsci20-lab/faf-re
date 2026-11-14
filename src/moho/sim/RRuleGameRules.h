@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/thread.h"
+#include "legacy/thread/Mutex.h"
 #include "legacy/containers/Map.h"
 #include "legacy/containers/Set.h"
 #include "legacy/containers/String.h"
@@ -19,7 +19,7 @@ namespace LuaPlus
 {
   class LuaState;
   class LuaObject;
-}
+} // namespace LuaPlus
 
 namespace gpg
 {
@@ -105,7 +105,7 @@ namespace moho
   /**
    * The category-name -> category-word-range map embedded in
    * `RRuleGameRulesImpl::mEntityCategoryLookup` (+0xC4, see
-   * `EntityCategoryLookupResolver::GetEntityCategory`). Address evidence for
+   * `RRuleGameRulesImpl::GetEntityCategory`). Address evidence for
    * the tree operations this instantiation reaches is cited on
    * `fa::detail::rb_tree`'s `insert_unique`/`insert_at`/`buy_node`/
    * `rb_decrement`/`find_node` members (insert/lookup side, reached from
@@ -116,10 +116,8 @@ namespace moho
    * `EntityCategoryLookupTable` constructor and implicit
    * destructor) in `RbTree.h`.
    *
-   * `EntityCategoryLookupResolver.cpp` independently models the read-only
-   * half of this exact tree as a lighter `CategoryNameMapView`/`Tree.h` view
-   * (no owning insert/erase, since that file only ever looks values up);
-   * all three recoveries agree on the node layout (key@+0x10, value@+0x30,
+   * `GetEntityCategory` (EntityCategoryLookupResolver.cpp) reads the same
+   * tree through this type; the recoveries agree on the node layout (key@+0x10, value@+0x30,
    * colour@+0x58, isNil@+0x59) -- corroborating evidence from three
    * independently recovered call sites for the same binary object.
    */
@@ -144,7 +142,7 @@ namespace moho
     // +0x0C is the alignment hole the 8-aligned fallback opens, not a field -
     // see the evidence block above. The tail beyond +0x3C is the same.
     EntityCategorySet mCategoryFallback; // +0x10
-    RRuleGameRules* mRules;       // +0x38
+    RRuleGameRules* mRules;              // +0x38
 
     /**
      * Address: 0x00555290 (FUN_00555290, sub_555290)
@@ -228,21 +226,15 @@ namespace moho
     offsetof(EntityCategoryLookupTable, mCategoryFallback) == 0x10,
     "EntityCategoryLookupTable::mCategoryFallback offset"
   );
-  static_assert(
-    offsetof(EntityCategoryLookupTable, mRules) == 0x38,
-    "EntityCategoryLookupTable::mRules offset"
-  );
-  static_assert(
-    sizeof(EntityCategoryLookupTable) == 0x40,
-    "EntityCategoryLookupTable size must be 0x40"
-  );
+  static_assert(offsetof(EntityCategoryLookupTable, mRules) == 0x38, "EntityCategoryLookupTable::mRules offset");
+  static_assert(sizeof(EntityCategoryLookupTable) == 0x40, "EntityCategoryLookupTable size must be 0x40");
 
   struct RRuleGameRulesBlueprintNode : fa::Tree<RRuleGameRulesBlueprintNode>
   {
-    fa::string mBlueprintId; // +0x0C
-    void* mBlueprint;           // +0x28
-    std::uint8_t mColor;        // +0x2C
-    std::uint8_t mIsSentinel;   // +0x2D
+    fa::string mBlueprintId;  // +0x0C
+    void* mBlueprint;         // +0x28
+    std::uint8_t mColor;      // +0x2C
+    std::uint8_t mIsSentinel; // +0x2D
     std::uint8_t pad_2E[2];
   };
 
@@ -351,7 +343,7 @@ namespace moho
    */
   struct RRuleGameRulesLuaExportBinding
   {
-    LuaPlus::LuaState* mRootState;                       // +0x00
+    LuaPlus::LuaState* mRootState;                    // +0x00
     fa::set<std::uint32_t> mPendingBlueprintOrdinals; // +0x04 (proxy_@+04, head_@+08, size_@+0C)
   };
 
@@ -738,19 +730,10 @@ namespace moho
     void SetupCategories();
 
   public:
-    std::uint32_t mUnknown04;                         // +0x04
-    /// The blueprint file watcher the constructor builds in place with the
-    /// "*.bp" pattern and tears down by hand. It has no default state, so it
-    /// lives in raw storage exactly as the binary lays it out.
-    alignas(CDiskWatchListener) std::uint8_t mDiskWatchListenerStorage[sizeof(CDiskWatchListener)]; // +0x08
-
-    [[nodiscard]] CDiskWatchListener& DiskWatchListener() noexcept
-    {
-      return *reinterpret_cast<CDiskWatchListener*>(mDiskWatchListenerStorage);
-    }
-    // boost::mutex placed by hand; 8 bytes on x86, larger on x64.
-    alignas(boost::mutex) std::uint8_t mLockStorage[sizeof(boost::mutex)]; // +0x38
-    LuaPlus::LuaState* mLuaState;                     // +0x40
+    std::uint32_t mUnknown04; // +0x04
+    CDiskWatchListener mDiskWatchListener;                                 // +0x08, watches "*.bp"
+    fa::mutex mLock;                                                       // +0x38 (8 bytes on x86, larger on x64)
+    LuaPlus::LuaState* mLuaState;                                          // +0x40
     /**
      * Vector of per-target-LuaState export bindings. Real field name per
      * IDA's own decompilation of `ExportToLuaState` (`this->mMaps`,
@@ -808,7 +791,7 @@ namespace moho
      * `{proxy, first, last, end}` quad at +0xB4..+0xC0 is one whole legacy
      * vector object, not four independent lanes.
      */
-    fa::vector<RBlueprint*> mBlueprintsByOrdinal;  // +0xB4
+    fa::vector<RBlueprint*> mBlueprintsByOrdinal; // +0xB4
     /**
      * Real ground-truth object is `Moho::EntityCategorySet`/`EntityCategory`
      * (the mangled ctor/dtor names differ - see the address block on
@@ -827,46 +810,48 @@ namespace moho
   };
 
   static_assert(offsetof(RRuleGameRulesImpl, mLuaState) == 0x40, "RRuleGameRulesImpl::mLuaState offset must be 0x40");
-  static_assert(
-    offsetof(RRuleGameRulesImpl, mMaps) == 0x44, "RRuleGameRulesImpl::mMaps offset must be 0x44"
-  );
+  static_assert(offsetof(RRuleGameRulesImpl, mMaps) == 0x44, "RRuleGameRulesImpl::mMaps offset must be 0x44");
   static_assert(
     sizeof(fa::vector<RRuleGameRulesLuaExportBinding>) == 0x10,
     "fa::vector<RRuleGameRulesLuaExportBinding> size must be 0x10"
   );
   static_assert(
-    offsetof(RRuleGameRulesImpl, mFootprints) == 0x54, "RRuleGameRulesImpl::mFootprints offset must be 0x54"
+    offsetof(RRuleGameRulesImpl, mFootprints) == 0x54,
+    "RRuleGameRulesImpl::mFootprints offset must be 0x54"
   );
   static_assert(
-    offsetof(RRuleGameRulesImpl, mUnitBlueprints) == 0x60, "RRuleGameRulesImpl::mUnitBlueprints offset must be 0x60"
+    offsetof(RRuleGameRulesImpl, mUnitBlueprints) == 0x60,
+    "RRuleGameRulesImpl::mUnitBlueprints offset must be 0x60"
   );
   static_assert(
     offsetof(RRuleGameRulesImpl, mProjectileBlueprints) == 0x6C,
     "RRuleGameRulesImpl::mProjectileBlueprints offset must be 0x6C"
   );
   static_assert(
-    offsetof(RRuleGameRulesImpl, mPropBlueprints) == 0x78, "RRuleGameRulesImpl::mPropBlueprints offset must be 0x78"
+    offsetof(RRuleGameRulesImpl, mPropBlueprints) == 0x78,
+    "RRuleGameRulesImpl::mPropBlueprints offset must be 0x78"
   );
   static_assert(
-    offsetof(RRuleGameRulesImpl, mMeshBlueprints) == 0x84, "RRuleGameRulesImpl::mMeshBlueprints offset must be 0x84"
+    offsetof(RRuleGameRulesImpl, mMeshBlueprints) == 0x84,
+    "RRuleGameRulesImpl::mMeshBlueprints offset must be 0x84"
   );
   static_assert(
     offsetof(RRuleGameRulesImpl, mEmitterBlueprints) == 0x90,
     "RRuleGameRulesImpl::mEmitterBlueprints offset must be 0x90"
   );
   static_assert(
-    offsetof(RRuleGameRulesImpl, mBeamBlueprints) == 0x9C, "RRuleGameRulesImpl::mBeamBlueprints offset must be 0x9C"
+    offsetof(RRuleGameRulesImpl, mBeamBlueprints) == 0x9C,
+    "RRuleGameRulesImpl::mBeamBlueprints offset must be 0x9C"
   );
   static_assert(
-    offsetof(RRuleGameRulesImpl, mTrailBlueprints) == 0xA8, "RRuleGameRulesImpl::mTrailBlueprints offset must be 0xA8"
+    offsetof(RRuleGameRulesImpl, mTrailBlueprints) == 0xA8,
+    "RRuleGameRulesImpl::mTrailBlueprints offset must be 0xA8"
   );
   static_assert(
     offsetof(RRuleGameRulesImpl, mBlueprintsByOrdinal) == 0xB4,
     "RRuleGameRulesImpl::mBlueprintsByOrdinal offset must be 0xB4"
   );
-  static_assert(
-    sizeof(fa::vector<RBlueprint*>) == 0x10, "fa::vector<RBlueprint*> size must be 0x10"
-  );
+  static_assert(sizeof(fa::vector<RBlueprint*>) == 0x10, "fa::vector<RBlueprint*> size must be 0x10");
   static_assert(
     offsetof(RRuleGameRulesImpl, mEntityCategoryLookup) == 0xC4,
     "RRuleGameRulesImpl::mEntityCategoryLookup offset must be 0xC4"
@@ -932,6 +917,13 @@ namespace moho
    * with `RULE_TakeOrCreate`, so a caller drops every pointer into them before a session starts.
    */
   [[nodiscard]] RRuleGameRules* RULE_PeekKept();
+
+  /**
+   * Engine addition: the rules lent to the running session that will be kept after it (`RULE_TakeOrCreate` with
+   * keeping on), or null. The same object becomes the kept rules when the session ends, so blueprint pointers read
+   * from it on the main thread stay good across the session's end (the editor's view in front of its play).
+   */
+  [[nodiscard]] RRuleGameRules* RULE_PeekLent();
 
   /** Deletes the kept rules, if any (the editor, before the engine shuts down). */
   void RULE_DeleteKept();

@@ -11,8 +11,9 @@ Wm3::Vector3f Unit::GetFormationVector() const
 {
   Wm3::Vector3f result{0.0f, 0.0f, 0.0f};
 
-  if (IsUnitState(UNITSTATE_TransportLoading) || IsUnitState(UNITSTATE_Refueling) ||
-      mInfoCache.mFormationLayer == nullptr) {
+  if (
+    IsUnitState(UNITSTATE_TransportLoading) || IsUnitState(UNITSTATE_Refueling) || mInfoCache.mFormationLayer == nullptr
+  ) {
     return result;
   }
 
@@ -23,7 +24,7 @@ Wm3::Vector3f Unit::GetFormationVector() const
     }
   }
 
-  const auto* const formationLayer = reinterpret_cast<const CAiFormationInstance*>(mInfoCache.mFormationLayer);
+  const auto* const formationLayer = static_cast<const CAiFormationInstance*>(mInfoCache.mFormationLayer);
   if (formationLayer != nullptr && formationLayer->CommandIsForm()) {
     formationLayer->GetForwardVector(&result, const_cast<Unit*>(this));
   }
@@ -76,7 +77,7 @@ void Unit::UpdateInfoCache()
     return;
   }
 
-  CAiFormationInstance* const formation = reinterpret_cast<CAiFormationInstance*>(GetFormation());
+  CAiFormationInstance* const formation = static_cast<CAiFormationInstance*>(GetFormation());
   SOffsetInfo* offsetInfo = nullptr;
 
   if (formation != nullptr && formation->CommandIsForm() && formation->Contains(this, false)) {
@@ -84,7 +85,7 @@ void Unit::UpdateInfoCache()
     // GetPriority, GetLeader, GetTargetPosition, GetDistFromLeader,
     // IsInFormation.
     offsetInfo = formation->GetOffsetInfo(this);
-    mInfoCache.mFormationLayer = reinterpret_cast<CFormationInstance*>(formation);
+    mInfoCache.mFormationLayer = static_cast<CFormationInstance*>(formation);
     mInfoCache.mFormationPriorityOrder = formation->GetPriority(this, offsetInfo);
 
     Unit* const formationLead = formation->GetLeader(this, offsetInfo);
@@ -144,7 +145,9 @@ void Unit::UpdateInfoCache()
 /**
  * Address: 0x006A8D80 (FUN_006A8D80, ?IsHigherPriorityThan@Unit@Moho@@QBE_NPBV12@@Z)
  */
-bool Unit::IsHigherPriorityThan(const Unit* const other) const
+bool Unit::IsHigherPriorityThan(
+  const Unit* const other
+) const
 {
   if (!other) {
     return true;
@@ -269,9 +272,7 @@ namespace moho
   {
     return ::PrepareMove(moveFlags, unit, inOutPos, outSkirtRect, useWholeMap);
   }
-}
-
-
+} // namespace moho
 
 /**
  * Address: 0x0062BEE0 (FUN_0062BEE0, Moho::Unit::HasMeleeSpaceAroundSmallTarget)
@@ -281,7 +282,10 @@ namespace moho
  * filters by occupancy/pathability checks, and writes nearest valid melee
  * destination into `inOutCell`.
  */
-bool Unit::HasMeleeSpaceAroundSmallTarget(Unit* const target, SOCellPos* const inOutCell)
+bool Unit::HasMeleeSpaceAroundSmallTarget(
+  Unit* const target,
+  SOCellPos* const inOutCell
+)
 {
   if (target == nullptr || inOutCell == nullptr) {
     return false;
@@ -366,7 +370,11 @@ bool Unit::HasMeleeSpaceAroundSmallTarget(Unit* const target, SOCellPos* const i
  * collision probes plus occupancy/pathability checks, and writes nearest
  * valid melee destination into `inOutCell`.
  */
-bool Unit::HasMeleeSpaceAroundLargeTarget(Unit* const target, SOCellPos* const inOutCell, const int targetSize)
+bool Unit::HasMeleeSpaceAroundLargeTarget(
+  Unit* const target,
+  SOCellPos* const inOutCell,
+  const int targetSize
+)
 {
   if (target == nullptr || inOutCell == nullptr) {
     return false;
@@ -397,12 +405,10 @@ bool Unit::HasMeleeSpaceAroundLargeTarget(Unit* const target, SOCellPos* const i
 
   constexpr float kMeleeProbeHalfHeight = 1000.0f;
   Wm3::Box3f outerProbe = BuildAxisAlignedCollisionProbe(
-    Wm3::Vec3f::Zero(),
-    Wm3::Vec3f(outerHalfExtentX, kMeleeProbeHalfHeight, outerHalfExtentZ)
+    Wm3::Vec3f::Zero(), Wm3::Vec3f(outerHalfExtentX, kMeleeProbeHalfHeight, outerHalfExtentZ)
   );
   Wm3::Box3f innerProbe = BuildAxisAlignedCollisionProbe(
-    Wm3::Vec3f::Zero(),
-    Wm3::Vec3f(innerHalfExtentX, kMeleeProbeHalfHeight, innerHalfExtentZ)
+    Wm3::Vec3f::Zero(), Wm3::Vec3f(innerHalfExtentX, kMeleeProbeHalfHeight, innerHalfExtentZ)
   );
   CollisionResult collisionResult{};
 
@@ -490,7 +496,6 @@ void Unit::ExecuteOccupyGround()
   }
   const EOccupancyCaps occupancyCaps = footprint.mOccupancyCaps;
 
-
   const auto& occupyRects = blueprint->Physics.OccupyRects;
   if (occupyRects.empty()) {
     const Wm3::Vec3f& unitPos = GetPosition();
@@ -547,14 +552,13 @@ void Unit::ReleaseOccupyGround()
 /**
  * Address: 0x006AB6F0 (FUN_006AB6F0, ?ReserveOgridRect@Unit@Moho@@QAEXABV?$Rect2@H@gpg@@@Z)
  */
-void Unit::ReserveOgridRect(const gpg::Rect2i& ogridRect)
+void Unit::ReserveOgridRect(
+  const gpg::Rect2i& ogridRect
+)
 {
   FreeOgridRect();
 
-  ReservedOgridRectMinX = ogridRect.x0;
-  ReservedOgridRectMinZ = ogridRect.z0;
-  ReservedOgridRectMaxX = ogridRect.x1;
-  ReservedOgridRectMaxZ = ogridRect.z1;
+  mReservedOgridRect = ogridRect;
 
   FillReservedOgridRect(*this, true);
 }
@@ -567,25 +571,24 @@ void Unit::FreeOgridRect()
   // 0x006AB7C9: `je` past both the vacate and the zeroing when the reserved
   // rect quantises to the zero collision rect -- the stored bounds are left
   // untouched in that case.
-  const gpg::Rect2i reservedRect = GetReservedOgridRect(*this);
+  const gpg::Rect2i reservedRect = mReservedOgridRect;
   if (IsCollisionRectEquivalentToZero(reservedRect)) {
     return;
   }
 
   FillReservedOgridRect(*this, false);
 
-  ReservedOgridRectMinX = 0;
-  ReservedOgridRectMinZ = 0;
-  ReservedOgridRectMaxX = 0;
-  ReservedOgridRectMaxZ = 0;
+  mReservedOgridRect = gpg::Rect2i{0, 0, 0, 0};
 }
 
 /**
  * Address: 0x006AB810 (FUN_006AB810, ?CanReserveOgridRect@Unit@Moho@@QAE_NABV?$Rect2@H@gpg@@@Z)
  */
-bool Unit::CanReserveOgridRect(const gpg::Rect2i& ogridRect)
+bool Unit::CanReserveOgridRect(
+  const gpg::Rect2i& ogridRect
+)
 {
-  const gpg::Rect2i reservedRect = GetReservedOgridRect(*this);
+  const gpg::Rect2i reservedRect = mReservedOgridRect;
   const bool hadReservation = !IsCollisionRectEquivalentToZero(reservedRect);
   if (hadReservation) {
     FillReservedOgridRect(*this, false);

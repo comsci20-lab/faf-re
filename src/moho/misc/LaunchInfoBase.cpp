@@ -80,12 +80,12 @@ namespace
     /**
      * Address: 0x00543530 (FUN_00543530)
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x005436C0 (FUN_005436C0)
      */
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
   };
 
   static_assert(sizeof(ArmyLaunchInfoVectorTypeInfo) == 0x68, "ArmyLaunchInfoVectorTypeInfo size must be 0x68");
@@ -182,7 +182,9 @@ namespace
    * Wires the reflected `LaunchInfoNew` constructor and destructor callback
    * lanes into an initialized `gpg::RType` descriptor.
    */
-  void InitializeLaunchInfoNewTypeInfoCallbacks(gpg::RType* const typeInfo)
+  void InitializeLaunchInfoNewTypeInfoCallbacks(
+    gpg::RType* const typeInfo
+  )
   {
     GPG_ASSERT(typeInfo != nullptr);
     if (!typeInfo) {
@@ -314,184 +316,6 @@ namespace
   }
 
   /**
-   * Address: 0x00544530 (FUN_00544530)
-   *
-   * What it does:
-   * Lazily resolves `ArmyLaunchInfo` reflection type and dispatches one archive
-   * read for the provided object lane.
-   */
-  [[maybe_unused]] gpg::ReadArchive* ReadArmyLaunchInfoArchiveAdapter(
-    gpg::ReadArchive* const archive,
-    void* const object,
-    gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    ReadArmyLaunchInfoReflectedObject(archive, object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x005445A0 (FUN_005445A0)
-   *
-   * What it does:
-   * Lazily resolves `ArmyLaunchInfo` reflection type and dispatches one archive
-   * write for the provided object lane.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteArmyLaunchInfoArchiveAdapter(
-    gpg::WriteArchive* const archive,
-    const void* const object,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    WriteArmyLaunchInfoReflectedObject(archive, object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x005449F0 (FUN_005449F0)
-   *
-   * What it does:
-   * Lazily resolves `vector<ArmyLaunchInfo>` reflection type and dispatches one
-   * archive read for the provided object lane.
-   */
-  [[maybe_unused]] gpg::ReadArchive* ReadArmyLaunchInfoVectorArchiveAdapter(
-    gpg::ReadArchive* const archive,
-    void* const object,
-    gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    gpg::RType* const type = ResolveArmyLaunchInfoVectorType();
-    archive->Read(type, object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x00544A30 (FUN_00544A30)
-   *
-   * What it does:
-   * Lazily resolves `vector<ArmyLaunchInfo>` reflection type and dispatches one
-   * archive write for the provided object lane.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteArmyLaunchInfoVectorArchiveAdapter(
-    gpg::WriteArchive* const archive,
-    const void* const object,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    gpg::RType* const type = ResolveArmyLaunchInfoVectorType();
-    archive->Write(type, object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x00544B00 (FUN_00544B00)
-   *
-   * What it does:
-   * Lazily resolves `LaunchInfoBase` reflection type and dispatches one archive
-   * read for the provided object lane.
-   */
-  [[maybe_unused]] gpg::ReadArchive* ReadLaunchInfoBaseArchiveAdapter(
-    gpg::ReadArchive* const archive,
-    void* const object,
-    gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    ReadLaunchInfoBaseReflectedObject(archive, object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x00544B80 (FUN_00544B80)
-   *
-   * What it does:
-   * Lazily resolves `LaunchInfoBase` reflection type and dispatches one archive
-   * write for the provided object lane.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteLaunchInfoBaseArchiveAdapter(
-    gpg::WriteArchive* const archive,
-    const void* const object,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    WriteLaunchInfoBaseReflectedObject(archive, object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x00544B40 (FUN_00544B40)
-   *
-   * What it does:
-   * Lazily resolves `vector<string>` reflection type and dispatches one archive
-   * read for the provided object lane.
-   */
-  [[maybe_unused]] gpg::ReadArchive* ReadLaunchInfoStringVectorArchiveAdapter(
-    gpg::ReadArchive* const archive,
-    void* const object,
-    gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    ReadStringVectorReflectedObject(archive, object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x00544BC0 (FUN_00544BC0)
-   *
-   * What it does:
-   * Lazily resolves `vector<string>` reflection type and dispatches one archive
-   * write for the provided object lane.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteLaunchInfoStringVectorArchiveAdapter(
-    gpg::WriteArchive* const archive,
-    const void* const object,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    GPG_ASSERT(ownerRef != nullptr);
-    if (!archive || !ownerRef) {
-      return archive;
-    }
-
-    WriteStringVectorReflectedObject(archive, object, *ownerRef);
-    return archive;
-  }
-
-  /**
    * Address: 0x005448D0 (FUN_005448D0, scalar deleting destructor thunk)
    */
   ArmyLaunchInfoVectorTypeInfo::~ArmyLaunchInfoVectorTypeInfo() = default;
@@ -512,7 +336,9 @@ namespace
   /**
    * Address: 0x00543020 (FUN_00543020)
    */
-  fa::string ArmyLaunchInfoVectorTypeInfo::GetLexical(const gpg::RRef& ref) const
+  fa::string ArmyLaunchInfoVectorTypeInfo::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
     const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
@@ -540,7 +366,10 @@ namespace
   /**
    * Address: 0x00543120 (FUN_00543120)
    */
-  gpg::RRef ArmyLaunchInfoVectorTypeInfo::SubscriptIndex(void* const obj, const int ind) const
+  gpg::RRef ArmyLaunchInfoVectorTypeInfo::SubscriptIndex(
+    void* const obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     auto* const vectorStorage = static_cast<ArmyLaunchInfoVector*>(obj);
@@ -555,7 +384,9 @@ namespace
   /**
    * Address: 0x005430C0 (FUN_005430C0)
    */
-  size_t ArmyLaunchInfoVectorTypeInfo::GetCount(void* const obj) const
+  size_t ArmyLaunchInfoVectorTypeInfo::GetCount(
+    void* const obj
+  ) const
   {
     const auto* const vectorStorage = static_cast<const ArmyLaunchInfoVector*>(obj);
     return vectorStorage ? vectorStorage->size() : 0u;
@@ -564,7 +395,10 @@ namespace
   /**
    * Address: 0x005430E0 (FUN_005430E0)
    */
-  void ArmyLaunchInfoVectorTypeInfo::SetCount(void* const obj, const int count) const
+  void ArmyLaunchInfoVectorTypeInfo::SetCount(
+    void* const obj,
+    const int count
+  ) const
   {
     auto* const vectorStorage = static_cast<ArmyLaunchInfoVector*>(obj);
     if (!vectorStorage) {
@@ -577,9 +411,14 @@ namespace
   /**
    * Address: 0x00543530 (FUN_00543530)
    */
-  void ArmyLaunchInfoVectorTypeInfo::SerLoad(gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const)
+  void ArmyLaunchInfoVectorTypeInfo::SerLoad(
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const
+  )
   {
-    auto* const vectorStorage = reinterpret_cast<ArmyLaunchInfoVector*>(objectPtr);
+    auto* const vectorStorage = static_cast<ArmyLaunchInfoVector*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(vectorStorage != nullptr);
     if (!archive || !vectorStorage) {
@@ -612,10 +451,13 @@ namespace
    * Address: 0x005436C0 (FUN_005436C0)
    */
   void ArmyLaunchInfoVectorTypeInfo::SerSave(
-    gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
   )
   {
-    const auto* const vectorStorage = reinterpret_cast<const ArmyLaunchInfoVector*>(objectPtr);
+    const auto* const vectorStorage = static_cast<const ArmyLaunchInfoVector*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
       return;
@@ -635,37 +477,8 @@ namespace
 
   bool gLaunchInfoBaseTypeRegistered = false;
 
-  template <typename TShared>
-  void ReleaseSharedOwnerControlBlockOnly(boost::SharedPtrRaw<TShared>& shared) noexcept
-  {
-    if (shared.pi != nullptr) {
-      shared.pi->release();
-    }
-  }
-
-  /**
-   * Address: 0x00542040 (FUN_00542040)
-   *
-   * What it does:
-   * Drops one shared-owner lane from `LaunchInfoNew::Create` output without
-   * touching the destination pair before reassignment.
-   */
-  void ReleaseLaunchInfoCreateOutputOwner(boost::SharedPtrRaw<void>& shared) noexcept
-  {
-    ReleaseSharedOwnerControlBlockOnly(shared);
-  }
-
-  /**
-   * Address: 0x00542B40 (FUN_00542B40)
-   *
-   * What it does:
-   * Drops one shared-owner lane for `SSessionSaveData` payloads.
-   */
-  void ReleaseLoadSessionDataOwner(boost::SharedPtrRaw<moho::SSessionSaveData>& shared) noexcept
-  {
-    ReleaseSharedOwnerControlBlockOnly(shared);
-  }
-
+  // The binary's FUN_00542040 (drop the previous owner of LaunchInfoNew::Create's output) and FUN_00542B40 (drop
+  // the SSessionSaveData owner) are shared_ptr::reset on those fields now.
 
   /**
    * Address: 0x005439E0 (FUN_005439E0)
@@ -682,15 +495,17 @@ namespace
    * reallocation/grow path (FUN_00543DB0), which copies the prior range,
    * inserts the new entry, then releases the old buffer.
    */
-} // end anonymous-namespace block to host moho:: definitions matching the
+} // namespace
   // header declarations (these helpers are referenced by name from SessionStartup
   // and the LaunchInfoBase reflection type-info; the header puts them in
   // `namespace moho`, so the definitions must live there too).
 
 namespace moho
 {
-  void AppendArmyLaunchInfo(fa::vector<ArmyLaunchInfo>& armyLaunchInfo,
-                            const ArmyLaunchInfo& entry)
+  void AppendArmyLaunchInfo(
+    fa::vector<ArmyLaunchInfo>& armyLaunchInfo,
+    const ArmyLaunchInfo& entry
+  )
   {
     armyLaunchInfo.push_back(entry);
   }
@@ -722,7 +537,6 @@ namespace
   // real source-level instantiation site is `LaunchInfoNew`'s clone path
   // (`createdInfo->mArmyLaunchInfo = mArmyLaunchInfo;`).
 
-
   /**
    * Address: 0x00542270 (FUN_00542270)
    *
@@ -739,20 +553,6 @@ namespace
     gpg::PreRegisterRType(typeid(moho::LaunchInfoBase), &gLaunchInfoBaseTypeInfo);
     gLaunchInfoBaseTypeRegistered = true;
     return &gLaunchInfoBaseTypeInfo;
-  }
-
-  /**
-   * Address: 0x005421B0 (FUN_005421B0)
-   */
-  [[maybe_unused]] void ArmyLaunchInfoTypeInfoStartupNoop()
-  {
-  }
-
-  /**
-   * Address: 0x005423A0 (FUN_005423A0)
-   */
-  [[maybe_unused]] void LaunchInfoBaseTypeInfoStartupNoop()
-  {
   }
 
   struct LaunchInfoNewTypeInfoBootstrap
@@ -846,7 +646,9 @@ namespace moho
   /**
    * Address: 0x005442C0 (FUN_005442C0, AddBase_LaunchInfoBase)
    */
-  void __stdcall LaunchInfoNewTypeInfo::AddBase_LaunchInfoBase(gpg::RType* const typeInfo)
+  void __stdcall LaunchInfoNewTypeInfo::AddBase_LaunchInfoBase(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* baseType = LaunchInfoBase::sType;
     if (!baseType) {
@@ -875,7 +677,9 @@ namespace moho
   /**
    * Address: 0x00543CF0 (FUN_00543CF0)
    */
-  gpg::RRef LaunchInfoNewTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef LaunchInfoNewTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<LaunchInfoNew*>(objectStorage);
     if (object) {
@@ -887,7 +691,9 @@ namespace moho
   /**
    * Address: 0x00543CD0 (FUN_00543CD0)
    */
-  void LaunchInfoNewTypeInfo::Delete(void* const objectStorage)
+  void LaunchInfoNewTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<LaunchInfoNew*>(objectStorage);
   }
@@ -895,7 +701,9 @@ namespace moho
   /**
    * Address: 0x00543D60 (FUN_00543D60)
    */
-  void LaunchInfoNewTypeInfo::Destruct(void* const objectStorage)
+  void LaunchInfoNewTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<LaunchInfoNew*>(objectStorage);
     if (!object) {
@@ -930,8 +738,7 @@ namespace moho
     , mLanguage()
     , mCheatsEnabled(false)
     , pad_89{0, 0, 0}
-  {
-  }
+  {}
 
   /**
    * Address: 0x00541F90 (FUN_00541F90)
@@ -942,8 +749,7 @@ namespace moho
    */
   ArmyLaunchInfo::ArmyLaunchInfo()
     : mUnitSources()
-  {
-  }
+  {}
 
   /**
    * Address: 0x00542440 (FUN_00542440, deleting dtor thunk)
@@ -990,8 +796,7 @@ namespace moho
     , mProps(nullptr)
     , mStrVec()
     , mInitSeed(0)
-  {
-  }
+  {}
 
   /**
    * Address: 0x005427F0 (FUN_005427F0, deleting destructor thunk)
@@ -1013,7 +818,9 @@ namespace moho
    * What it does:
    * Allocates and populates a new LaunchInfoNew shared object from this source.
    */
-  void LaunchInfoNew::Create(boost::SharedPtrRaw<void>& outCreated)
+  void LaunchInfoNew::Create(
+    std::shared_ptr<void>& outCreated
+  )
   {
     LaunchInfoNew* const createdInfo = new LaunchInfoNew();
     createdInfo->mGameMods = mGameMods;
@@ -1032,16 +839,16 @@ namespace moho
     createdInfo->mStrVec = mStrVec;
     createdInfo->mInitSeed = static_cast<std::int32_t>(gpg::time::GetSystemTimer().ElapsedCycles());
 
-    ReleaseLaunchInfoCreateOutputOwner(outCreated);
-    outCreated = boost::SharedPtrRaw<void>::with_deleter(static_cast<void*>(createdInfo), [](void* payload) {
-      delete static_cast<LaunchInfoNew*>(payload);
-    });
+    outCreated.reset(); // FUN_00542040: the previous owner goes first
+    outCreated = std::shared_ptr<LaunchInfoNew>(createdInfo);
   }
 
   /**
    * Address: 0x00544360 (FUN_00544360, Moho::LaunchInfoNew::MemberDeserialize)
    */
-  void LaunchInfoNew::MemberDeserialize(gpg::ReadArchive* const archive)
+  void LaunchInfoNew::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -1062,7 +869,9 @@ namespace moho
   /**
    * Address: 0x005443F0 (FUN_005443F0, Moho::LaunchInfoNew::MemberSerialize)
    */
-  void LaunchInfoNew::MemberSerialize(gpg::WriteArchive* const archive) const
+  void LaunchInfoNew::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -1089,8 +898,7 @@ namespace moho
     , mReadArchive(nullptr)
     , mLoadSessionData()
     , mSharedLaunchInfo()
-  {
-  }
+  {}
 
   /**
    * Address: 0x00542B20 (FUN_00542B20, deleting destructor thunk)
@@ -1101,8 +909,8 @@ namespace moho
    */
   LaunchInfoLoad::~LaunchInfoLoad()
   {
-    mSharedLaunchInfo.release();
-    ReleaseLoadSessionDataOwner(mLoadSessionData);
+    mSharedLaunchInfo.reset();
+    mLoadSessionData.reset(); // FUN_00542B40
     delete mReadArchive;
     mReadArchive = nullptr;
   }
@@ -1121,12 +929,11 @@ namespace moho
    * What it does:
    * Returns retained shared payload lane for session creation.
    */
-  void LaunchInfoLoad::Create(boost::SharedPtrRaw<void>& outCreated)
+  void LaunchInfoLoad::Create(
+    std::shared_ptr<void>& outCreated
+  )
   {
-    boost::SharedPtrRaw<void> sharedLaunchInfo{};
-    sharedLaunchInfo.px = static_cast<void*>(mSharedLaunchInfo.px);
-    sharedLaunchInfo.pi = mSharedLaunchInfo.pi;
-    outCreated.assign_retain(sharedLaunchInfo);
+    outCreated = std::static_pointer_cast<void>(mSharedLaunchInfo);
   }
 
   /**
@@ -1170,7 +977,10 @@ namespace gpg
    * Builds an `RRef` for `LaunchInfoBase*`, upcasting derived launch-info
    * objects to their complete-object pointer when needed.
    */
-  RRef* RRef_LaunchInfoBase(RRef* outRef, moho::LaunchInfoBase* value)
+  RRef* RRef_LaunchInfoBase(
+    RRef* outRef,
+    moho::LaunchInfoBase* value
+  )
   {
     if (!outRef) {
       return nullptr;
@@ -1200,22 +1010,32 @@ namespace gpg
       return outRef;
     }
 
-    outRef->mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(value) - static_cast<std::uintptr_t>(baseOffset));
+    outRef->mObj = gpg::CompleteObject(value, baseOffset);
     outRef->mType = dynamicType;
     return outRef;
   }
 } // namespace gpg
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_LaunchInfoNewTypeInfo_05cb74, moho::register_LaunchInfoNewTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_LaunchInfoNewTypeInfo_05cb74,
+  moho::register_LaunchInfoNewTypeInfo
+)
 
-GPG_PREREGISTER_INIT(preregister_ArmyLaunchInfoVectorTypeStartup_05cb74, moho::preregister_ArmyLaunchInfoVectorTypeStartup)
+GPG_PREREGISTER_INIT(
+  preregister_ArmyLaunchInfoVectorTypeStartup_05cb74,
+  moho::preregister_ArmyLaunchInfoVectorTypeStartup
+)
 
-GPG_PREREGISTER_INIT(RegisterArmyLaunchInfoTypeInfoStartup_05cb74, RegisterArmyLaunchInfoTypeInfoStartup)
-GPG_PREREGISTER_INIT(EnsureLaunchInfoBaseTypeRegistered_05cb74, EnsureLaunchInfoBaseTypeRegistered)
+GPG_PREREGISTER_INIT(
+  RegisterArmyLaunchInfoTypeInfoStartup_05cb74,
+  RegisterArmyLaunchInfoTypeInfoStartup
+)
+GPG_PREREGISTER_INIT(
+  EnsureLaunchInfoBaseTypeRegistered_05cb74,
+  EnsureLaunchInfoBaseTypeRegistered
+)
 
 namespace moho
 {
@@ -1227,7 +1047,9 @@ namespace moho
    * game-mods text, scenario-info text, army launch info, command-source
    * control lanes, language, and cheat flag.
    */
-  void LaunchInfoBase::MemberDeserialize(gpg::ReadArchive* const archive)
+  void LaunchInfoBase::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -1252,7 +1074,9 @@ namespace moho
    * What it does:
    * Saves LaunchInfoBase fields in the same order as the load callback.
    */
-  void LaunchInfoBase::MemberSerialize(gpg::WriteArchive* const archive)
+  void LaunchInfoBase::MemberSerialize(
+    gpg::WriteArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {

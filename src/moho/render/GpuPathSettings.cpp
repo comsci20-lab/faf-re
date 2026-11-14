@@ -2,16 +2,17 @@
 
 #include "moho/render/GpuPathSettings.h"
 
-#include "gpg/gal/Device.hpp"
-#include "gpg/gal/GpuDriven.h"
-#include "gpg/gal/PipelineDiskCache.h"
-#include "gpg/gal/PlacedResources.h"
 #include "gpg/gal/backends/common/ImageCodec.h"
 #include "gpg/gal/backends/common/PipelineMemo.h"
 #include "gpg/gal/backends/d3d11/EffectSourceD3D11.h"
+#include "gpg/gal/Device.hpp"
 #include "gpg/gal/effects/EffectRuntime.h"
 #include "gpg/gal/effects/RayTracedShadows.h"
 #include "gpg/gal/effects/TextureFiltering.h"
+#include "gpg/gal/GpuDriven.h"
+#include "gpg/gal/PipelineDefer.h"
+#include "gpg/gal/PipelineDiskCache.h"
+#include "gpg/gal/PlacedResources.h"
 #include "moho/console/CConCommand.h"
 #include "moho/render/ProjectileIconRenderer.h"
 #include "moho/render/RangeGpuRenderer.h"
@@ -30,10 +31,14 @@ namespace moho
      */
     TConVar<bool> gTConVar_d3d_PipelineCache(
       "d3d_PipelineCache",
-      "Keep Direct3D 12 pipeline states on disk across sessions, so they are not compiled again in the frame that "
-      "first draws them (1, the default) or create every one in that frame (0). /nopipelinecache turns it off at startup.",
+      "Keep Direct3D 12 and Vulkan pipeline states on disk across sessions, so they are not compiled again in the "
+      "frame that first draws them (1, the default) or create every one in that frame (0). /nopipelinecache turns it "
+      "off at startup.",
       &gpg::gal::gPipelineDiskCache
     );
+
+    // The Direct3D 12 backend's switches; it is Windows-only (the Linux client, issue #255).
+#if FAFRE_PLATFORM_WINDOWS
 
     /** Engine addition: `d3d_PlacedResources` (see gpg/gal/PlacedResources.h). */
     TConVar<bool> gTConVar_d3d_PlacedResources(
@@ -51,11 +56,23 @@ namespace moho
       "least 64 KB of a heap (0). Needs d3d_PlacedResources. Read at each creation.",
       &gpg::gal::gSharedBuffers
     );
+#endif
+
+    /** Engine addition: `ren_AsyncPipelines` (see gpg/gal/PipelineDefer.h). */
+    TConVar<bool> gTConVar_ren_AsyncPipelines(
+      "ren_AsyncPipelines",
+      "Direct3D 12 and Vulkan: a pipeline the world's meshes, terrain or decals need for the first time is built on a "
+      "worker thread and the draw waits a frame or two for it (1, the default), instead of the frame stalling while "
+      "the "
+      "driver builds it (0). Read at each draw.",
+      &gpg::gal::gAsyncPipelines
+    );
 
     /** Engine addition: `ren_PipelineMemo` (see gpg/gal/backends/common/PipelineMemo.h). */
     TConVar<bool> gTConVar_ren_PipelineMemo(
       "ren_PipelineMemo",
-      "Direct3D 12 / Vulkan: a draw finds its pipeline in a small table of recent ones (1, the default), or always builds "
+      "Direct3D 12 / Vulkan: a draw finds its pipeline in a small table of recent ones (1, the default), or always "
+      "builds "
       "the full key (0). Read at each draw.",
       &gpg::gal::gPipelineMemo
     );
@@ -63,7 +80,8 @@ namespace moho
     /** Engine addition: `ren_UsedTextureTable` (see gpg/gal/backends/common/PipelineMemo.h). */
     TConVar<bool> gTConVar_ren_UsedTextureTable(
       "ren_UsedTextureTable",
-      "Direct3D 12 / Vulkan: an effect pass keeps its texture table when only bindings its shaders don't read changed (1, "
+      "Direct3D 12 / Vulkan: an effect pass keeps its texture table when only bindings its shaders don't read changed "
+      "(1, "
       "the default), or rebuilds it on any change (0). Read at each pass.",
       &gpg::gal::gUsedTextureTable
     );
@@ -71,7 +89,8 @@ namespace moho
     /** Engine addition: `ren_VulkanDynamicConstants` (see gpg/gal/backends/common/PipelineMemo.h). */
     TConVar<bool> gTConVar_ren_VulkanDynamicConstants(
       "ren_VulkanDynamicConstants",
-      "Vulkan: a draw whose shader constants changed binds one set per upload buffer with its constants' offset (1, the "
+      "Vulkan: a draw whose shader constants changed binds one set per upload buffer with its constants' offset (1, "
+      "the "
       "default), or allocates and writes a new set (0). Read between frames.",
       &gpg::gal::gVulkanDynamicConstants
     );
@@ -131,7 +150,7 @@ namespace moho
       "ren_RayTracedShadows",
       "Direct3D 12 and Vulkan with ray tracing (DXR 1.1 / VK_KHR_ray_query): sun shadows of the ground, units and "
       "buildings by a ray towards the sun from every lit point, instead of the shadow map (trees and other "
-      "alpha-tested meshes stay in the map). 1 on (default), 0 off (live); -1 at startup keeps the device from "
+      "alpha-tested meshes stay in the map). 1 on, 0 off (default, live); -1 at startup keeps the device from "
       "setting ray tracing up at all.",
       &gpg::gal::effects::gRayTracedShadows
     );
@@ -211,22 +230,35 @@ namespace moho
 
     const GpuPathEntry kGpuPaths[] = {
       {"ren_GpuIcons", &ren_GpuIcons, gpg::gal::kGpuPathStrategicIcons, gpg::gal::kGpuFeatureVertexPulling},
-      {"ren_GpuIconClassify", &ren_GpuIconClassify, gpg::gal::kGpuPathIconClassify,
+      {"ren_GpuIconClassify",
+       &ren_GpuIconClassify,
+       gpg::gal::kGpuPathIconClassify,
        gpg::gal::kGpuFeatureVertexPulling | gpg::gal::kGpuFeatureCompute | gpg::gal::kGpuFeatureIndirectDraw},
       {"ren_GpuFog", &ren_GpuFog, gpg::gal::kGpuPathFogOfWar, gpg::gal::kGpuFeatureVertexPulling},
-      {"ren_GpuSelectBrackets", &ren_GpuSelectBrackets, gpg::gal::kGpuPathSelectBrackets, gpg::gal::kGpuFeatureVertexPulling},
+      {"ren_GpuSelectBrackets",
+       &ren_GpuSelectBrackets,
+       gpg::gal::kGpuPathSelectBrackets,
+       gpg::gal::kGpuFeatureVertexPulling},
       {"ren_ParticleBatch", &ren_ParticleBatch, gpg::gal::kGpuPathParticleBatch, gpg::gal::kGpuFeatureBufferCopy},
-      {"ren_GpuProjectileIcons", &ren_GpuProjectileIcons, gpg::gal::kGpuPathProjectileIcons,
+      {"ren_GpuProjectileIcons",
+       &ren_GpuProjectileIcons,
+       gpg::gal::kGpuPathProjectileIcons,
        gpg::gal::kGpuFeatureVertexPulling},
       {"ren_GpuShapes", &ren_GpuShapes, gpg::gal::kGpuPathWorldShapes, gpg::gal::kGpuFeatureVertexPulling},
       {"ren_GpuRanges", &ren_GpuRanges, gpg::gal::kGpuPathRanges, gpg::gal::kGpuFeatureVertexPulling},
       {"ren_GpuText", &ren_GpuText, gpg::gal::kGpuPathMsdfText, gpg::gal::kGpuFeatureVertexPulling},
-      {"ren_GpuFontCook", &ren_GpuFontCook, gpg::gal::kGpuPathMsdfCook,
+      {"ren_GpuFontCook",
+       &ren_GpuFontCook,
+       gpg::gal::kGpuPathMsdfCook,
        gpg::gal::kGpuFeatureVertexPulling | gpg::gal::kGpuFeatureCompute},
     };
   } // namespace
 
-  bool GpuPathEnabled(const int setting, const std::uint32_t path, const std::uint32_t requiredFeatures)
+  bool GpuPathEnabled(
+    const int setting,
+    const std::uint32_t path,
+    const std::uint32_t requiredFeatures
+  )
   {
     if (setting == 0) {
       return false;

@@ -1,55 +1,15 @@
 // Part of Unit.cpp, included there: consumption, production and weak references.
 
 /**
- * Address: 0x006AAE20 (FUN_006AAE20, Moho::Unit::GetConsumptionRequest)
- *
- * What it does:
- * Returns the requested per-tick consumption pair from `mConsumptionData`.
- */
-SEconValue Unit::GetConsumptionRequest() const
-{
-  SEconValue request{};
-  request.energy = mConsumptionData->mRequested.energy;
-  request.mass = mConsumptionData->mRequested.mass;
-  return request;
-}
-
-/**
- * Address: 0x006AAE40 (FUN_006AAE40, Moho::Unit::UpdateResourceProduction)
- *
- * What it does:
- * Stores one economy-rate pair in the shared runtime production lane.
- */
-void Unit::UpdateResourceProduction(const SEconValue& resourceProduction)
-{
-  mUnitVarDat.mMaintainenceCost.ENERGY = resourceProduction.energy;
-  mUnitVarDat.mMaintainenceCost.MASS = resourceProduction.mass;
-}
-
-/**
- * Address: 0x006ABC70 (FUN_006ABC70, ?ResetEconValues@Unit@Moho@@QAEXXZ)
- *
- * What it does:
- * Clears the unit's produced and resources-spent economy totals.
- */
-Unit* Unit::ResetEconValues()
-{
-  SSTIUnitVariableData& varDat = VarDat();
-  varDat.mResourcesSpent.ENERGY = 0.0f;
-  varDat.mResourcesSpent.MASS = 0.0f;
-  varDat.mProduced.ENERGY = 0.0f;
-  varDat.mProduced.MASS = 0.0f;
-  return this;
-}
-
-/**
  * Address: 0x006AA900 (FUN_006AA900, ?SetConsumptionActive@Unit@Moho@@QAEX_N@Z)
  *
  * What it does:
  * Rebuilds unit upkeep request lanes for active/inactive economy
  * consumption and dispatches matching Lua script callbacks.
  */
-void Unit::SetConsumptionActive(const bool isActive)
+void Unit::SetConsumptionActive(
+  const bool isActive
+)
 {
   const bool oldConsumptionIsActive = ConsumptionActive;
   ConsumptionActive = isActive;
@@ -65,8 +25,8 @@ void Unit::SetConsumptionActive(const bool isActive)
     request->mGranted.mass = 0.0f;
 
     if (ArmyRef != nullptr) {
-      if (CSimArmyEconomyInfo* const economyInfo = ArmyRef->GetEconomy(); economyInfo != nullptr) {
-        request->mNode.ListLinkBefore(&economyInfo->registrationNode);
+      if (CEconomy* const economyInfo = ArmyRef->GetEconomy(); economyInfo != nullptr) {
+        request->mNode.ListLinkBefore(&economyInfo->mConsumptionData);
       }
     }
 
@@ -82,9 +42,9 @@ void Unit::SetConsumptionActive(const bool isActive)
     // production pool (`GetEconomy() + 8` = mResources), so it is banked as
     // income on the next economy tick -- not straight into mStored.
     if (mConsumptionData != nullptr && ArmyRef != nullptr) {
-      if (CSimArmyEconomyInfo* const economyInfo = ArmyRef->GetEconomy(); economyInfo != nullptr) {
-        economyInfo->mResources.ENERGY += mConsumptionData->mGranted.energy;
-        economyInfo->mResources.MASS += mConsumptionData->mGranted.mass;
+      if (CEconomy* const economyInfo = ArmyRef->GetEconomy(); economyInfo != nullptr) {
+        economyInfo->mResources.energy += mConsumptionData->mGranted.energy;
+        economyInfo->mResources.mass += mConsumptionData->mGranted.mass;
       }
     }
 
@@ -115,62 +75,14 @@ void Unit::SetConsumptionActive(const bool isActive)
  * Writes one production-active flag lane and dispatches matching
  * `OnProductionActive` / `OnProductionInActive` script callbacks.
  */
-void Unit::SetProductionActive(const bool isActive)
+void Unit::SetProductionActive(
+  const bool isActive
+)
 {
   ProductionActive = isActive;
   (void)RunScript(isActive ? kUnitOnProductionActiveScript : kUnitOnProductionInactiveScript);
 }
 
-/**
- * Address: 0x006A9370 (FUN_006A9370, ?RenderAIDebugInfo@Unit@Moho@@AAEXXZ)
- *
- * What it does:
- * Emits per-unit AI debug stat counters under `AIDebug_<UniqueName>`,
- * including platoon metadata, idle marker, and active unit-state markers.
- */
-void Unit::RenderAIDebugInfo()
-{
-  if (!mDebugAIStates || ArmyRef == nullptr) {
-    return;
-  }
-
-  ArmyRef->UpdateAIDebugPlatoonStats(this);
-
-  CArmyStats* const armyStats = ArmyRef->GetArmyStats();
-  if (armyStats == nullptr) {
-    return;
-  }
-
-  const fa::string debugPrefix = fa::string("AIDebug_") + GetUniqueName();
-  const fa::string unitStatePrefix = debugPrefix + "_UnitStates";
-
-  const CUnitCommand* headCommand = nullptr;
-  if (CommandQueue != nullptr && !CommandQueue->mCommandVec.empty()) {
-    headCommand = CommandQueue->mCommandVec.begin()->GetObjectPtr();
-  }
-
-  if (headCommand == nullptr) {
-    IncrementAIDebugStateStat(armyStats, unitStatePrefix + "_Idle");
-  }
-
-  for (
-    std::int32_t stateValue = static_cast<std::int32_t>(UNITSTATE_Immobile);
-    stateValue <= static_cast<std::int32_t>(UNITSTATE_SiloBuildingAmmo);
-    ++stateValue
-  ) {
-    const EUnitState state = static_cast<EUnitState>(stateValue);
-    if (!IsUnitState(state)) {
-      continue;
-    }
-
-    const char* const stateLexical = UnitStateToDebugLexical(state);
-    if (stateLexical == nullptr || stateLexical[0] == '\0') {
-      continue;
-    }
-
-    IncrementAIDebugStateStat(armyStats, unitStatePrefix + "_" + stateLexical);
-  }
-}
 namespace
 {
   /**
@@ -181,7 +93,9 @@ namespace
    * inlines the same null-tag test and `id_` load at each one.
    */
   template <class TObject>
-  [[nodiscard]] moho::EntId WeakRefEntityId(const moho::WeakPtr<TObject>& weak) noexcept
+  [[nodiscard]] moho::EntId WeakRefEntityId(
+    const moho::WeakPtr<TObject>& weak
+  ) noexcept
   {
     const TObject* const target = weak.GetObjectPtr();
     return target != nullptr ? target->id_ : kNoCreatorEntityId;
@@ -201,9 +115,7 @@ namespace
   {
     return attributeRadius < 0.0f ? blueprint->*blueprintRadius : attributeRadius;
   }
-}
-
-
+} // namespace
 
 /**
  * Address: 0x006ABCC0 (FUN_006ABCC0, ?Sync@Unit@Moho@@UAEXPAUSSyncData@2@@Z)
@@ -229,7 +141,9 @@ namespace
  * Both shared animation poses are refreshed on every sync, dirty or not,
  * because they change every frame the unit animates.
  */
-void Unit::Sync(SSyncData* const syncData)
+void Unit::Sync(
+  SSyncData* const syncData
+)
 {
   RefreshSyncBlock();
   Entity::Sync(syncData);
@@ -250,7 +164,8 @@ namespace moho
 } // namespace moho
 
 void Unit::RefreshSyncBlock(
-  boost::shared_ptr<CAniPose>* const releasedPose, boost::shared_ptr<CAniPose>* const releasedPriorPose
+  std::shared_ptr<CAniPose>* const releasedPose,
+  std::shared_ptr<CAniPose>* const releasedPriorPose
 )
 {
   if (NeedSyncGameData) {
@@ -263,8 +178,7 @@ void Unit::RefreshSyncBlock(
 
     varDat.mTacticalSiloBuildCount = AiSiloBuild != nullptr ? AiSiloBuild->SiloGetBuildCount(SILOTYPE_Tactical) : 0;
     varDat.mNukeSiloBuildCount = AiSiloBuild != nullptr ? AiSiloBuild->SiloGetBuildCount(SILOTYPE_Nuke) : 0;
-    varDat.mTacticalSiloStorageCount =
-      AiSiloBuild != nullptr ? AiSiloBuild->SiloGetStorageCount(SILOTYPE_Tactical) : 0;
+    varDat.mTacticalSiloStorageCount = AiSiloBuild != nullptr ? AiSiloBuild->SiloGetStorageCount(SILOTYPE_Tactical) : 0;
     varDat.mNukeSiloStorageCount = AiSiloBuild != nullptr ? AiSiloBuild->SiloGetStorageCount(SILOTYPE_Nuke) : 0;
     varDat.mTacticalSiloMaxStorageCount =
       AiSiloBuild != nullptr ? AiSiloBuild->SiloGetMaxStorageCount(SILOTYPE_Tactical) : 0;
@@ -329,8 +243,8 @@ void Unit::RefreshSyncBlock(
 
   if (!POSE_HoldClientHandles(*AniActor)) {
     if (VarDat().mSharedPose.get() != nullptr || VarDat().mPriorSharedPose.get() != nullptr) {
-      boost::shared_ptr<CAniPose> none;
-      boost::shared_ptr<CAniPose> nonePrior;
+      std::shared_ptr<CAniPose> none;
+      std::shared_ptr<CAniPose> nonePrior;
       if (releasedPose != nullptr) {
         releasedPose->swap(VarDat().mSharedPose);
       } else {

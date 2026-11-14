@@ -31,7 +31,10 @@
 namespace faf::remote::net
 {
   inline constexpr std::uint8_t kHandshakeTag = 0xFB;
-  inline constexpr std::uint16_t kHandshakeVersion = 1;
+  // 2 (plan WP9.1 step 3): a `View` may carry lanes after the pose lane (the effects lane), which a client before it
+  // refused as bytes after the lanes; such a client is now told so at the Hello instead. Clients from 2 on skip lanes
+  // they don't know, so a later lane needs no new version.
+  inline constexpr std::uint16_t kHandshakeVersion = 2;
   inline constexpr std::size_t kHelloSize = 128;
   inline constexpr std::size_t kCookieSize = 16;
   inline constexpr std::size_t kProofSize = 16;
@@ -89,7 +92,13 @@ namespace faf::remote::net
   };
 
   /** A Hello answered: its Challenge, or a Reject for another version. */
-  [[nodiscard]] std::vector<std::uint8_t> AnswerHello(const std::uint8_t* data, std::size_t size, const CCookieJar& jar, std::uint64_t addressKey, std::uint64_t nowUs);
+  [[nodiscard]] std::vector<std::uint8_t> AnswerHello(
+    const std::uint8_t* data,
+    std::size_t size,
+    const CCookieJar& jar,
+    std::uint64_t addressKey,
+    std::uint64_t nowUs
+  );
 
   struct SConnectRequest
   {
@@ -108,7 +117,8 @@ namespace faf::remote::net
     std::vector<std::uint8_t> accept;
   };
 
-  /** A Connect whose cookie held, and the uid's token: empty when the proof doesn't hold or the exchange is degenerate. */
+  /** A Connect whose cookie held, and the uid's token: empty when the proof doesn't hold or the exchange is degenerate.
+   */
   [[nodiscard]] std::optional<SServerSession> AnswerConnect(const SConnectRequest& request, const Token& token);
 
   [[nodiscard]] std::vector<std::uint8_t> WriteReject(EHandshakeRefusal why);
@@ -122,7 +132,8 @@ namespace faf::remote::net
     CClientHandshake(const CClientHandshake&) = delete;
     CClientHandshake& operator=(const CClientHandshake&) = delete;
 
-    /** The Connect for a Challenge, which later Challenges repeat. Empty when it isn't a Challenge or no random came. */
+    /** The Connect for a Challenge, which later Challenges repeat. Empty when it isn't a Challenge or no random came.
+     */
     [[nodiscard]] std::vector<std::uint8_t> OnChallenge(const std::uint8_t* data, std::size_t size);
     /** The channel's keys from an Accept; empty when it isn't one for this Connect. */
     [[nodiscard]] std::optional<ChannelKeys> OnAccept(const std::uint8_t* data, std::size_t size) const;

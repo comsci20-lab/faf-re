@@ -17,8 +17,8 @@
 
 namespace moho
 {
-namespace
-{
+  namespace
+  {
     [[nodiscard]] IWldUIProvider* ResolveWldUIProvider() noexcept
     {
       if (sWldUIProvider == nullptr) {
@@ -27,27 +27,26 @@ namespace
 
       return dynamic_cast<IWldUIProvider*>(sWldUIProvider);
     }
-}
+  } // namespace
 
+  // gActiveWldSession: moho/sim/WldSessionState.cpp (WldSessionState.h).
 
-    // gActiveWldSession: moho/sim/WldSessionState.cpp (WldSessionState.h).
-
-    /**
-     * The world session's simulation driver (`sSimDriver`, 0x010C4F50), a
-     * `boost::scoped_ptr`. Its out-of-line members are LTCG copies specialised
-     * on this global, none of them referenced:
-     * Address: 0x0088E8B0 (FUN_0088E8B0, `reset`: new value stored first, old
-     *   one deleted through vtable slot 0, no self-test)
-     * Address: 0x0088E8F0 (FUN_0088E8F0, `operator unspecified_bool_type`: 0 when
-     *   set, -1 - the null data-member pointer - when empty)
-     * Address: 0x0088E9F0 (FUN_0088E9F0, `swap`: three plain stores)
-     * Address: 0x00C07EB0 (FUN_00C07EB0, atexit destructor: delete through slot 0)
-     * `get` is WLD_GetDriver (0x0088D330); 0x0088E8D0 and 0x0088E8E0 are its ICF
-     * twins.
-     */
-    boost::scoped_ptr<ISTIDriver> sSimDriver;
-namespace
-{
+  /**
+   * The world session's simulation driver (`sSimDriver`, 0x010C4F50), a
+   * `boost::scoped_ptr`. Its out-of-line members are LTCG copies specialised
+   * on this global, none of them referenced:
+   * Address: 0x0088E8B0 (FUN_0088E8B0, `reset`: new value stored first, old
+   *   one deleted through vtable slot 0, no self-test)
+   * Address: 0x0088E8F0 (FUN_0088E8F0, `operator unspecified_bool_type`: 0 when
+   *   set, -1 - the null data-member pointer - when empty)
+   * Address: 0x0088E9F0 (FUN_0088E9F0, `swap`: three plain stores)
+   * Address: 0x00C07EB0 (FUN_00C07EB0, atexit destructor: delete through slot 0)
+   * `get` is WLD_GetDriver (0x0088D330); 0x0088E8D0 and 0x0088E8E0 are its ICF
+   * twins.
+   */
+  std::unique_ptr<ISTIDriver> sSimDriver;
+  namespace
+  {
 
     // Engine addition (replay timeline): a new sim on its way behind the running session.
     enum class EReplaySimSwap
@@ -70,7 +69,10 @@ namespace
     // which beat, and whether the sim had already desynced. Reads only the
     // two globals above plus Sim::sInstance; guarded so a teardown-time crash
     // still prints the rest.
-    void WriteSimCrashSectionAdapter(std::FILE* const sink, const gpg::diag::CrashSectionInfo& info)
+    void WriteSimCrashSectionAdapter(
+      std::FILE* const sink,
+      const gpg::diag::CrashSectionInfo& info
+    )
     {
       (void)info;
       const auto line = [sink](const char* const format, ...) {
@@ -91,9 +93,12 @@ namespace
       }
 
       if (const auto* const simDriver = dynamic_cast<const CSimDriver*>(sSimDriver.get())) {
-        line("driver    : state=%d dispatchBeat=%d nextIssueBeat=%d",
-             static_cast<int>(simDriver->DiagDriverState()), simDriver->DiagDispatchBeat(),
-             simDriver->DiagNextIssueBeat());
+        line(
+          "driver    : state=%d dispatchBeat=%d nextIssueBeat=%d",
+          static_cast<int>(simDriver->DiagDriverState()),
+          simDriver->DiagDispatchBeat(),
+          simDriver->DiagNextIssueBeat()
+        );
       } else if (sSimDriver.get() != nullptr) {
         line("driver    : not the lockstep driver (loopback or a server session's)");
       } else {
@@ -101,10 +106,18 @@ namespace
       }
 
       if (Sim* const sim = Sim::sInstance) {
-        line("sim       : beat=%u tick=%u gameEnded=%d gameOver=%d", sim->mCurBeat, sim->mCurTick,
-             sim->mGameEnded ? 1 : 0, sim->mGameOver ? 1 : 0);
-        line("desync    : %s (%u record(s))", sim->mIsDesyncFree ? "free" : "DESYNCED",
-             static_cast<unsigned>(sim->mDesyncs.size()));
+        line(
+          "sim       : beat=%u tick=%u gameEnded=%d gameOver=%d",
+          sim->mCurBeat,
+          sim->mCurTick,
+          sim->mGameEnded ? 1 : 0,
+          sim->mGameOver ? 1 : 0
+        );
+        line(
+          "desync    : %s (%u record(s))",
+          sim->mIsDesyncFree ? "free" : "DESYNCED",
+          static_cast<unsigned>(sim->mDesyncs.size())
+        );
       } else {
         line("sim       : none");
       }
@@ -154,7 +167,9 @@ namespace
      * `ISessionListener::DetachFromSessionListenerLane` - where the
      * creation-time pass at FUN_00869870 dispatches slot 0.
      */
-    [[nodiscard]] std::intptr_t DoTeardownCallbacks(WldTeardownCallbackVector* const callbacks)
+    [[nodiscard]] std::intptr_t DoTeardownCallbacks(
+      WldTeardownCallbackVector* const callbacks
+    )
     {
       if (callbacks == nullptr) {
         return 0;
@@ -250,20 +265,27 @@ namespace
      * clients (players or observers of a live game) keeps the original pacing.
      */
     [[nodiscard]] ESimSessionPacing SelectSessionPacing(
-      const bool isReplay, const bool isMultiplayer, IClientManager* const clientManager
+      const bool isReplay,
+      const bool isMultiplayer,
+      IClientManager* const clientManager
     )
     {
       if (isReplay) {
         return ESimSessionPacing::Replay;
       }
-      if (isMultiplayer || clientManager == nullptr || clientManager->GetConnector() != nullptr ||
-          clientManager->NumberOfClients() != 1u || clientManager->GetLocalClient() == nullptr) {
+      if (
+        isMultiplayer || clientManager == nullptr || clientManager->GetConnector() != nullptr ||
+        clientManager->NumberOfClients() != 1u || clientManager->GetLocalClient() == nullptr
+      ) {
         return ESimSessionPacing::Network;
       }
       return ESimSessionPacing::Local;
     }
 
-    [[nodiscard]] ESimSessionPacing SelectSessionPacing(const CWldSession& session, IClientManager* const clientManager)
+    [[nodiscard]] ESimSessionPacing SelectSessionPacing(
+      const CWldSession& session,
+      IClientManager* const clientManager
+    )
     {
       return SelectSessionPacing(session.IsReplay != 0, session.IsMultiplayer != 0, clientManager);
     }
@@ -279,7 +301,7 @@ namespace
     struct SEarlySimStart
     {
       ISTIDriver* driver = nullptr;
-      boost::shared_ptr<LaunchInfoBase> launchClone;
+      std::shared_ptr<LaunchInfoBase> launchClone;
       std::string language; // the launch info's, checked against the session's once that exists
     };
     SEarlySimStart sEarlySim;
@@ -306,14 +328,19 @@ namespace
      * The language is the user interface's `__language`: the session's comes from the same
      * userInit.lua and preferences in its SessionInit.lua, which is still running.
      */
-    void StartSimEarly(SWldSessionInfo* const sessionInfo, CWldSessionLoaderImpl* const loader)
+    void StartSimEarly(
+      SWldSessionInfo* const sessionInfo,
+      CWldSessionLoaderImpl* const loader
+    )
     {
       RRuleGameRules* rules = nullptr;
       CWldMap* map = nullptr;
-      if (sEarlySim.driver != nullptr || sessionInfo == nullptr || sessionInfo->mLaunchInfo.get() == nullptr ||
-          !WLD_GetEarlySimInputs(loader->mGameData, &rules, &map) || map->mTerrainRes == nullptr ||
-          SelectSessionPacing(sessionInfo->mIsReplay, sessionInfo->mIsMultiplayer, sessionInfo->mClientManager) ==
-            ESimSessionPacing::Network) {
+      if (
+        sEarlySim.driver != nullptr || sessionInfo == nullptr || sessionInfo->mLaunchInfo.get() == nullptr ||
+        !WLD_GetEarlySimInputs(loader->mGameData, &rules, &map) || map->mTerrainRes == nullptr ||
+        SelectSessionPacing(sessionInfo->mIsReplay, sessionInfo->mIsMultiplayer, sessionInfo->mClientManager) ==
+          ESimSessionPacing::Network
+      ) {
         return;
       }
       const LuaPlus::LuaObject userLanguage = USER_GetLuaState()->GetGlobal("__language");
@@ -343,13 +370,10 @@ namespace
       launchInfo->mLanguage.assign_owned(language);
 
       if (!sessionInfo->mIsMultiplayer && !sessionInfo->mIsReplay) {
-        boost::SharedPtrRaw<void> createdLaunchInfo{};
+        std::shared_ptr<void> createdLaunchInfo;
         launchInfo->Create(createdLaunchInfo);
-        boost::SharedPtrRaw<LaunchInfoBase> createdTyped{};
-        createdTyped.px = static_cast<LaunchInfoBase*>(createdLaunchInfo.px);
-        createdTyped.pi = createdLaunchInfo.pi;
-        sEarlySim.launchClone = boost::SharedPtrFromRawRetained(createdTyped);
-        createdLaunchInfo.release();
+        sEarlySim.launchClone = std::static_pointer_cast<LaunchInfoBase>(createdLaunchInfo);
+        createdLaunchInfo.reset();
       }
 
       if (LaunchInfoNew* const newLaunchInfo = launchInfo->GetNew(); newLaunchInfo != nullptr) {
@@ -370,9 +394,8 @@ namespace
         sessionInfo->mSourceId
       );
 #if FAF_SERVER_MODE
-      driver = faf::remote::client::WrapForLoopback(
-        driver, *rules, launchMap->GetBounds3D(), sessionInfo->mIsMultiplayer
-      );
+      driver =
+        faf::remote::client::WrapForLoopback(driver, *rules, launchMap->GetBounds3D(), sessionInfo->mIsMultiplayer);
 #endif
       sEarlySim.driver = driver;
     }
@@ -383,7 +406,10 @@ namespace
      * loading screen, the "loading" stage is only the first beat waiting for the sim,
      * and it needs the cover as much as catching up does.
      */
-    void UpdateRejoinScreen(IClientManager* const clientManager, const bool loadingScreenUp)
+    void UpdateRejoinScreen(
+      IClientManager* const clientManager,
+      const bool loadingScreenUp
+    )
     {
       auto* const manager = static_cast<CClientManagerImpl*>(clientManager);
       if (manager == nullptr || manager->mRejoinFeed == nullptr) {
@@ -429,7 +455,9 @@ namespace
      * profiler markers: built and immediately discarded, kept for the identical
      * allocation side effects.
      */
-    void WLD_DoLoading(bool* const outContinue)
+    void WLD_DoLoading(
+      bool* const outContinue
+    )
     {
       {
         const std::string marker(" DoLoading 1", 12u);
@@ -508,8 +536,11 @@ namespace
       if (simStartedEarly) {
         const char* const sessionLanguage = wldSession->mState->GetGlobal("__language").ToString();
         if (sessionLanguage == nullptr || sEarlySim.language != sessionLanguage) {
-          gpg::Warnf("wld_StartSimEarly: the sim started with language '%s', the session's is '%s'",
-                     sEarlySim.language.c_str(), sessionLanguage != nullptr ? sessionLanguage : "");
+          gpg::Warnf(
+            "wld_StartSimEarly: the sim started with language '%s', the session's is '%s'",
+            sEarlySim.language.c_str(),
+            sessionLanguage != nullptr ? sessionLanguage : ""
+          );
         }
         if (sEarlySim.launchClone) {
           wldSession->mLaunchInfo = sEarlySim.launchClone;
@@ -519,8 +550,7 @@ namespace
       } else {
         // The launch info keeps its own copy of the playable map so a restart can
         // rebuild the session without the terrain resource still being alive.
-        auto* const playableMap =
-          wldSession->mWldMap->mTerrainRes->mMap;
+        auto* const playableMap = wldSession->mWldMap->mTerrainRes->mMap;
         STIMap* const launchMap = new STIMap(playableMap);
 
         LaunchInfoBase* const launchInfo = sessionInfo->mLaunchInfo.get();
@@ -535,14 +565,11 @@ namespace
         if (!wldSession->IsMultiplayer && !wldSession->IsReplay) {
           // Single player: the session takes a shared owner on a fresh clone of
           // the launch info, which is what a mid-game save serializes.
-          boost::SharedPtrRaw<void> createdLaunchInfo{};
+          std::shared_ptr<void> createdLaunchInfo;
           launchInfo->Create(createdLaunchInfo);
 
-          boost::SharedPtrRaw<LaunchInfoBase> createdTyped{};
-          createdTyped.px = static_cast<LaunchInfoBase*>(createdLaunchInfo.px);
-          createdTyped.pi = createdLaunchInfo.pi;
-          wldSession->mLaunchInfo = boost::SharedPtrFromRawRetained(createdTyped);
-          createdLaunchInfo.release();
+          wldSession->mLaunchInfo = std::static_pointer_cast<LaunchInfoBase>(createdLaunchInfo);
+          createdLaunchInfo.reset();
         }
 
         {
@@ -575,39 +602,43 @@ namespace
 #if FAF_SERVER_MODE
           // The client's own map heights, as loaded: the server's terrain edits go on a copy of them.
           const CHeightField* heights = nullptr;
-          if (wldSession->mWldMap != nullptr && wldSession->mWldMap->mTerrainRes != nullptr && wldSession->mWldMap->mTerrainRes->mMap != nullptr) {
+          if (
+            wldSession->mWldMap != nullptr && wldSession->mWldMap->mTerrainRes != nullptr &&
+            wldSession->mWldMap->mTerrainRes->mMap != nullptr
+          ) {
             heights = wldSession->mWldMap->mTerrainRes->mMap->mHeightField.get();
           }
           // Plan WP2.6: what the loaded rules hold goes to the server before the driver says the game is loaded.
           const fa::string& gameMods = sessionInfo->mLaunchInfo->mGameMods;
           faf::remote::ReportServerContent(*wldSession->mRules, std::string(gameMods.c_str(), gameMods.size()));
-          driver = faf::remote::client::CreateServerSessionDriver(*wldSession->mRules, *sessionInfo->mLaunchInfo, heights);
+          driver =
+            faf::remote::client::CreateServerSessionDriver(*wldSession->mRules, *sessionInfo->mLaunchInfo, heights);
           // The driver makes its own client manager, which the session's start never saw (a lockstep session's gets
           // the UI interface when it begins): chat the server relays reaches the UI through it (plan WP11.4).
           driver->GetClientManager()->SetUIInterface(&sCWldUiInterface);
 #endif
         } else {
-        // Engine addition (issue #275): does nothing unless a save came with this client's seat.
-        REJOIN_PrepareRestore(*sessionInfo);
-        REPLAY_PrepareSession(*sessionInfo); // engine addition (replay timeline)
-        // Engine addition: replays and single-player sessions get a beat lead (`sim_ReplayLead`,
-        // `sim_LocalLead`); a session with any network connector keeps the original pacing.
-        SIM_SetSessionPacing(SelectSessionPacing(*wldSession, clientManager));
-        // 0x0088C364..0x0088C37C: the inlined `scoped_ptr::reset` - the new
-        // driver is stored first, then the previous one is deleted.
-        driver = SIM_CreateDriver(
-          static_cast<CClientManagerImpl*>(clientManager),
-          replayStream.release(),
-          sessionInfo->mLaunchInfo,
-          sessionInfo->mSourceId
-        );
+          // Engine addition (issue #275): does nothing unless a save came with this client's seat.
+          REJOIN_PrepareRestore(*sessionInfo);
+          REPLAY_PrepareSession(*sessionInfo); // engine addition (replay timeline)
+          // Engine addition: replays and single-player sessions get a beat lead (`sim_ReplayLead`,
+          // `sim_LocalLead`); a session with any network connector keeps the original pacing.
+          SIM_SetSessionPacing(SelectSessionPacing(*wldSession, clientManager));
+          // 0x0088C364..0x0088C37C: the inlined `scoped_ptr::reset` - the new
+          // driver is stored first, then the previous one is deleted.
+          driver = SIM_CreateDriver(
+            static_cast<CClientManagerImpl*>(clientManager),
+            replayStream.release(),
+            sessionInfo->mLaunchInfo,
+            sessionInfo->mSourceId
+          );
 #if FAF_SERVER_MODE
-        // Engine addition, server mode: `/loopback` runs the session through the remote
-        // driver, the lockstep driver standing in for its server (replays and single-player
-        // sessions only). Without it, unchanged.
-        driver = faf::remote::client::WrapForLoopback(
-          driver, *wldSession->mRules, launchMap->GetBounds3D(), wldSession->IsMultiplayer != 0
-        );
+          // Engine addition, server mode: `/loopback` runs the session through the remote
+          // driver, the lockstep driver standing in for its server (replays and single-player
+          // sessions only). Without it, unchanged.
+          driver = faf::remote::client::WrapForLoopback(
+            driver, *wldSession->mRules, launchMap->GetBounds3D(), wldSession->IsMultiplayer != 0
+          );
 #endif
         }
       }
@@ -632,7 +663,9 @@ namespace
      * session's map, rules, UI and camera stay. What the old sim published stays until the new one
      * reaches the target, so that is what the screen shows until then.
      */
-    [[nodiscard]] bool StartReplaySim(CWldSession& session)
+    [[nodiscard]] bool StartReplaySim(
+      CWldSession& session
+    )
     {
       sReplaySwapRate = sSimDriver->GetClientManager()->GetSimRateRequested();
       sReplaySwapFocus = session.FocusArmy;
@@ -662,10 +695,7 @@ namespace
       REPLAY_PrepareSession(*sessionInfo);
       SIM_SetSessionPacing(SelectSessionPacing(session, clientManager));
       ISTIDriver* driver = SIM_CreateDriver(
-        static_cast<CClientManagerImpl*>(clientManager),
-        nullptr,
-        sessionInfo->mLaunchInfo,
-        sessionInfo->mSourceId
+        static_cast<CClientManagerImpl*>(clientManager), nullptr, sessionInfo->mLaunchInfo, sessionInfo->mSourceId
       );
 #if FAF_SERVER_MODE
       driver = faf::remote::client::WrapForLoopback(
@@ -685,7 +715,9 @@ namespace
      * and `WLD_DoPostInitializing` without their UI, then the new sim's beats are held until the
      * target, and applied in one frame. True while the session has no beats to take.
      */
-    [[nodiscard]] bool StepReplaySimSwap(CWldSession& session)
+    [[nodiscard]] bool StepReplaySimSwap(
+      CWldSession& session
+    )
     {
       constexpr double kNewSimLimitSeconds = 300.0;
 
@@ -763,7 +795,8 @@ namespace
         session.DoBeat(fa::auto_ptr<SSyncData>(held));
       }
       gpg::Logf(
-        "Replay timeline: %d held beats applied in %.2f s", static_cast<int>(sReplayHeldBeats.size()),
+        "Replay timeline: %d held beats applied in %.2f s",
+        static_cast<int>(sReplayHeldBeats.size()),
         std::chrono::duration<double>(std::chrono::steady_clock::now() - applyStart).count()
       );
       sReplayHeldBeats.clear();
@@ -782,7 +815,9 @@ namespace
      * session info, runs the loader's teardown callbacks, and finally tells the
      * client manager that this client has finished loading.
      */
-    void WLD_DoInitializing(bool* const outContinue)
+    void WLD_DoInitializing(
+      bool* const outContinue
+    )
     {
       ISTIDriver* const simDriver = sSimDriver.get();
       if (simDriver == nullptr) {
@@ -796,7 +831,9 @@ namespace
       // Engine addition: once per session, while the loading screen waits for the sim's first
       // sync, build the GPU-driven render paths the first frame of play would otherwise build
       // (REN_PrepareGpuPaths); the main thread is idle here for the seconds the sim takes to start.
-      if (static const CWldSession* sPreparedFor = nullptr; ren_PrepareDuringLoading && sPreparedFor != gActiveWldSession) {
+      if (
+        static const CWldSession* sPreparedFor = nullptr; ren_PrepareDuringLoading && sPreparedFor != gActiveWldSession
+      ) {
         sPreparedFor = gActiveWldSession;
         const auto prepareStart = std::chrono::steady_clock::now();
         const int paths = REN_PrepareGpuPaths();
@@ -804,8 +841,11 @@ namespace
         if (IWldTerrainRes* const terrainRes = REN_GetTerrainRes(); terrainRes != nullptr) {
           terrainRes->GetSkyDome().CreateRenderAbility();
         }
-        gpg::Logf("Render: %d GPU-driven paths and the sky dome prepared during loading in %.1f ms", paths,
-          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prepareStart).count());
+        gpg::Logf(
+          "Render: %d GPU-driven paths and the sky dome prepared during loading in %.1f ms",
+          paths,
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prepareStart).count()
+        );
       }
 
       simDriver->Dispatch();
@@ -873,37 +913,15 @@ namespace
     }
 
     /**
-     * Address: 0x0088BFD0 (FUN_0088BFD0)
-     *
-     * What it does:
-     * Signals one trailing post-init sim-driver lane, transitions world-frame
-     * dispatch to `Playing`, and notifies the active world-UI provider through
-     * `OnStart` when present.
-     */
-    [[maybe_unused]] int WLD_EnterPlayingAndNotifyUIProvider()
-    {
-      int dispatchResult = 0;
-      if (ISTIDriver* const simDriver = sSimDriver.get(); simDriver != nullptr) {
-        simDriver->DecrementOutstandingRequestsAndSignal();
-      }
-
-      gWldFrameAction = EWldFrameAction::Playing;
-
-      if (IWldUIProvider* const wldUIProvider = ResolveWldUIProvider(); wldUIProvider != nullptr) {
-        wldUIProvider->OnStart();
-      }
-
-      return dispatchResult;
-    }
-
-    /**
      * Address: 0x0088C6D0 (FUN_0088C6D0, func_DoPostInitializing)
      *
      * What it does:
      * Dispatches post-init sim/network work, transitions to playing once every
      * client is ready, and toggles waiting-dialog UI lanes during the handoff.
      */
-    void WLD_DoPostInitializing(bool* const outContinue)
+    void WLD_DoPostInitializing(
+      bool* const outContinue
+    )
     {
       if (outContinue != nullptr) {
         *outContinue = false;
@@ -955,7 +973,9 @@ namespace
      * Dispatches waiting-state sim/network work, transitions to playing when
      * all peers are ready, and fires waiting-dialog stop/start UI callbacks.
      */
-    void WLD_DoWaiting(bool* const outContinue)
+    void WLD_DoWaiting(
+      bool* const outContinue
+    )
     {
       if (outContinue != nullptr) {
         *outContinue = false;
@@ -999,7 +1019,9 @@ namespace
      * the sim driver, runs one world-session frame, fires the trailing
      * sim-driver post-frame slot, and pumps the disconnect dialog callback.
      */
-    void WLD_DoPlayingAction(const float deltaSeconds)
+    void WLD_DoPlayingAction(
+      const float deltaSeconds
+    )
     {
       // Engine addition (replay timeline): a new sim behind this session, and keyframes.
       CWldSession* const replaySession = WLD_GetActiveSession();
@@ -1071,61 +1093,9 @@ namespace
       SetupSinglePlayerCommandSourceLane(*sessionInfo, localSource.mName.c_str());
       WLD_BeginSession(sessionInfo);
     }
-}
-
-
-  /**
-   * Address: 0x0088BD20 (FUN_0088BD20, ?WLD_SetUIProvider@Moho@@YAXPAVIWldUIProvider@1@@Z)
-   *
-   * What it does:
-   * Replaces the process-global world-UI provider ownership lane, deleting the
-   * previous provider when it differs from the new one.
-   */
-  void WLD_SetUIProvider(IWldUIProvider* const provider)
-  {
-    if (sWldUIProvider != provider && sWldUIProvider != nullptr) {
-      delete sWldUIProvider;
-    }
-
-    sWldUIProvider = provider;
-  }
+  } // namespace
 
   // WLD_GetFrameAction, WLD_SetFrameAction: moho/sim/WldSessionState.cpp.
-
-  /**
-   * Address: 0x0088BE80 (FUN_0088BE80, ?WLD_IsSessionActive@Moho@@YA_NXZ)
-   *
-   * What it does:
-   * Returns whether world-frame dispatch is currently active.
-   */
-  bool WLD_IsSessionActive()
-  {
-    return gWldFrameAction != EWldFrameAction::Inactive;
-  }
-
-  /**
-   * Address: 0x0088BE90 (FUN_0088BE90, world-frame playing-state probe)
-   *
-   * What it does:
-   * Returns whether world-frame dispatch is currently in the `Playing` state.
-   */
-  bool WLD_IsSessionPlaying()
-  {
-    return gWldFrameAction == EWldFrameAction::Playing;
-  }
-
-  /**
-   * Address: 0x0088BEA0 (FUN_0088BEA0, ?WLD_RequestEndSession@Moho@@YAXXZ)
-   *
-   * What it does:
-   * Requests world-session exit when frame dispatch is currently active.
-   */
-  void WLD_RequestEndSession()
-  {
-    if (gWldFrameAction != EWldFrameAction::Inactive) {
-      gWldFrameAction = EWldFrameAction::Exit;
-    }
-  }
 
   /**
    * Address: 0x0088E6D0 (FUN_0088E6D0)
@@ -1138,7 +1108,9 @@ namespace
    * initializer 0x00BE7510 (instruction 0x00BE7530 stores the callback
    * address in the command object's slot at 0x00F5B770).
    */
-  void CON_WLD_ClientDebugDump(const fa::vector<fa::string>& args)
+  void CON_WLD_ClientDebugDump(
+    const fa::vector<fa::string>& args
+  )
   {
     (void)args;
 
@@ -1154,31 +1126,14 @@ namespace
    * Console-command callback that requests world-session exit when frame
    * dispatch is currently active.
    */
-  void CON_WLD_RequestEndSession(const fa::vector<fa::string>& args)
+  void CON_WLD_RequestEndSession(
+    const fa::vector<fa::string>& args
+  )
   {
     (void)args;
 
     if (gWldFrameAction != EWldFrameAction::Inactive) {
       gWldFrameAction = EWldFrameAction::Exit;
-    }
-  }
-
-  /**
-   * Address: 0x0088BEC0 (FUN_0088BEC0, ?WLD_RequestRestartSession@Moho@@YAXXZ)
-   *
-   * What it does:
-   * Requests world-session recreation when frame dispatch is active and the
-   * active session carries restart launch info.
-   */
-  void WLD_RequestRestartSession()
-  {
-    if (gWldFrameAction == EWldFrameAction::Inactive) {
-      return;
-    }
-
-    CWldSession* const activeSession = WLD_GetActiveSession();
-    if (activeSession != nullptr && activeSession->mLaunchInfo) {
-      gWldFrameAction = EWldFrameAction::CreateSession;
     }
   }
 
@@ -1197,7 +1152,9 @@ namespace
   /**
    * Address: 0x0088CAE0 (FUN_0088CAE0, ?WLD_Frame@Moho@@YA_NM@Z)
    */
-  bool WLD_Frame(const float deltaSeconds)
+  bool WLD_Frame(
+    const float deltaSeconds
+  )
   {
     if (CWldSessionLoaderImpl* const loader = GetWldSessionLoader(); loader != nullptr) {
       loader->Update();
@@ -1206,37 +1163,37 @@ namespace
     for (;;) {
       bool continueDispatch = false;
       switch (gWldFrameAction) {
-        case EWldFrameAction::Inactive:
-          if (CWldSessionLoaderImpl* const loader = GetWldSessionLoader(); loader != nullptr) {
-            loader->SetCreated();
-          }
-          return true;
-        case EWldFrameAction::Preload:
-          WLD_DoPreload();
-          return true;
-        case EWldFrameAction::Loading:
-          WLD_DoLoading(&continueDispatch);
-          break;
-        case EWldFrameAction::Initialize:
-          WLD_DoInitializing(&continueDispatch);
-          break;
-        case EWldFrameAction::PostInitialize:
-          WLD_DoPostInitializing(&continueDispatch);
-          break;
-        case EWldFrameAction::Waiting:
-          WLD_DoWaiting(&continueDispatch);
-          break;
-        case EWldFrameAction::Playing:
-          WLD_DoPlayingAction(deltaSeconds);
-          return true;
-        case EWldFrameAction::CreateSession:
-          WLD_CreateSessionInfo();
-          return true;
-        case EWldFrameAction::Exit:
-          (void)WLD_TeardownAndStartFrontEnd();
-          return true;
-        default:
-          return true;
+      case EWldFrameAction::Inactive:
+        if (CWldSessionLoaderImpl* const loader = GetWldSessionLoader(); loader != nullptr) {
+          loader->SetCreated();
+        }
+        return true;
+      case EWldFrameAction::Preload:
+        WLD_DoPreload();
+        return true;
+      case EWldFrameAction::Loading:
+        WLD_DoLoading(&continueDispatch);
+        break;
+      case EWldFrameAction::Initialize:
+        WLD_DoInitializing(&continueDispatch);
+        break;
+      case EWldFrameAction::PostInitialize:
+        WLD_DoPostInitializing(&continueDispatch);
+        break;
+      case EWldFrameAction::Waiting:
+        WLD_DoWaiting(&continueDispatch);
+        break;
+      case EWldFrameAction::Playing:
+        WLD_DoPlayingAction(deltaSeconds);
+        return true;
+      case EWldFrameAction::CreateSession:
+        WLD_CreateSessionInfo();
+        return true;
+      case EWldFrameAction::Exit:
+        (void)WLD_TeardownAndStartFrontEnd();
+        return true;
+      default:
+        return true;
       }
 
       if (continueDispatch) {
@@ -1283,26 +1240,15 @@ namespace
   }
 
   /**
-   * Address: 0x008699B0 (FUN_008699B0)
-   *
-   * What it does:
-   * Resolves the process-global teardown-callback vector and runs the normal
-   * teardown callback dispatch entry point.
-   */
-  [[nodiscard]] std::intptr_t WLD_RunTeardownCallbacksFromGlobalList()
-  {
-    WldTeardownCallbackVector* const callbacks = WLD_GetOnTeardownCallbacks();
-    return DoTeardownCallbacks(callbacks);
-  }
-
-  /**
    * Address: 0x00869950 (FUN_00869950)
    *
    * What it does:
    * Appends one teardown-callback pointer to the process-global callback
    * vector and returns that vector.
    */
-  WldTeardownCallbackVector* WLD_AddOnTeardownCallback(IWldTeardownCallback* const callback)
+  WldTeardownCallbackVector* WLD_AddOnTeardownCallback(
+    IWldTeardownCallback* const callback
+  )
   {
     WldTeardownCallbackVector* const callbacks = WLD_GetOnTeardownCallbacks();
     if (callbacks == nullptr) {
@@ -1333,7 +1279,7 @@ namespace
 
   void WLD_Teardown()
   {
-    DropEarlySim(); // engine addition (wld_StartSimEarly): a load given up before its session
+    DropEarlySim();      // engine addition (wld_StartSimEarly): a load given up before its session
     REPLAY_OnTeardown(); // engine addition (replay timeline)
     sReplaySimSwap = EReplaySimSwap::None;
     for (SSyncData* const held : sReplayHeldBeats) {
@@ -1368,9 +1314,9 @@ namespace
     sSimDriver.reset();
   }
 
-
   /**
-   * Address: 0x00897220 (FUN_00897220, ?WLD_CreateSession@Moho@@YAPAVCWldSession@1@AAV?$auto_ptr@VLuaState@LuaPlus@@@std@@AAV?$auto_ptr@VRRuleGameRules@Moho@@@4@AAV?$auto_ptr@VCWldMap@Moho@@@4@AAUSWldSessionInfo@1@@Z)
+   * Address: 0x00897220 (FUN_00897220,
+   * ?WLD_CreateSession@Moho@@YAPAVCWldSession@1@AAV?$auto_ptr@VLuaState@LuaPlus@@@std@@AAV?$auto_ptr@VRRuleGameRules@Moho@@@4@AAV?$auto_ptr@VCWldMap@Moho@@@4@AAUSWldSessionInfo@1@@Z)
    *
    * What it does:
    * Allocates one world-session object, constructs it from transferred
@@ -1401,37 +1347,6 @@ namespace
     return session;
   }
 
-  /**
-   * Address: 0x008972D0 (FUN_008972D0)
-   *
-   * What it does:
-   * Runs one deleting teardown path for `CWldSession` and returns the original
-   * pointer lane.
-   */
-  CWldSession* DeleteWldSessionAndReturn(CWldSession* const session) noexcept
-  {
-    session->~CWldSession();
-    ::operator delete(session);
-    return session;
-  }
-
-  /**
-   * Address: 0x008972A0 (FUN_008972A0, ?WLD_DestroySession@Moho@@YAXXZ)
-   *
-   * What it does:
-   * Destroys the active world-session object when present and clears the
-   * process-global active-session pointer.
-   */
-  void WLD_DestroySession()
-  {
-    CWldSession* const activeSession = gActiveWldSession;
-    if (activeSession != nullptr) {
-      (void)DeleteWldSessionAndReturn(activeSession);
-    }
-
-    gActiveWldSession = nullptr;
-  }
-
   // WLD_GetSession: moho/sim/WldSessionState.cpp.
 
   /**
@@ -1440,7 +1355,9 @@ namespace
    * What it does:
    * Replaces pending world-session bootstrap info and schedules preload.
    */
-  void WLD_BeginSession(fa::auto_ptr<SWldSessionInfo> sessionInfo)
+  void WLD_BeginSession(
+    fa::auto_ptr<SWldSessionInfo> sessionInfo
+  )
   {
     gPendingWldSessionInfo = sessionInfo;
     gWldFrameAction = EWldFrameAction::Preload;
@@ -1589,36 +1506,9 @@ namespace
     }
   }
 
-  /**
-   * Address: 0x0088D2F0 (FUN_0088D2F0, ?WLD_SetGameSpeed@Moho@@YAXH@Z)
-   *
-   * What it does:
-   * Sets one requested sim-rate lane after clamping the provided game-speed
-   * value to the legacy `[-10, 10]` bounds.
-   */
-  void WLD_SetGameSpeed(int gameSpeed)
-  {
-    ISTIDriver* const simDriver = sSimDriver.get();
-    if (simDriver == nullptr) {
-      return;
-    }
-
-    CClientManagerImpl* const clientManager = simDriver->GetClientManager();
-    int clampedGameSpeed = gameSpeed;
-    if (gameSpeed >= 10) {
-      clampedGameSpeed = 10;
-    }
-
-    if (clampedGameSpeed < -10) {
-      clampedGameSpeed = -10;
-    }
-
-    clientManager->SetSimRate(clampedGameSpeed);
-  }
-
   // WLD_GetDriver and WLD_GetActiveSession: moho/sim/WldSessionState.cpp; the
   // driver is this file's sSimDriver, handed over through the hook below.
-}
+} // namespace moho
 
 namespace
 {
@@ -1630,5 +1520,4 @@ namespace
   }
 
   [[maybe_unused]] const bool gSessionSimDriverSet = (moho::sSessionSimDriver = &SessionSimDriver, true);
-}
-
+} // namespace

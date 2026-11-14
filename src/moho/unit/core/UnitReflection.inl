@@ -27,48 +27,7 @@ namespace
 
   [[maybe_unused]] UnitTypeInfoPreRegisterBootstrap gUnitTypeInfoPreRegisterBootstrap;
 
-  /**
-   * Address: 0x0055D980 (FUN_0055D980, copy_UnitWeaponInfo_range_with_rollback)
-   *
-   * What it does:
-   * Copy-constructs one half-open `UnitWeaponInfo` range into destination
-   * storage using the engine `UnitWeaponInfo(const UnitWeaponInfo&)` copy
-   * constructor (`FUN_0055D6F0`), destroying already-constructed entries
-   * before rethrowing if a copy step throws.
-   */
-  [[maybe_unused]] UnitWeaponInfo* CopyUnitWeaponInfoRangeWithRollback(
-    const UnitWeaponInfo* const sourceBegin,
-    const UnitWeaponInfo* const sourceEnd,
-    UnitWeaponInfo* const destinationBegin
-  )
-  {
-    if (sourceBegin == sourceEnd) {
-      return destinationBegin;
-    }
-
-    if (sourceBegin == nullptr || sourceEnd == nullptr || destinationBegin == nullptr) {
-      return destinationBegin;
-    }
-
-    UnitWeaponInfo* destinationCursor = destinationBegin;
-    try {
-      for (const UnitWeaponInfo* sourceCursor = sourceBegin;
-           sourceCursor != sourceEnd;
-           ++sourceCursor, ++destinationCursor) {
-        ::new (destinationCursor) UnitWeaponInfo(*sourceCursor);
-      }
-      return destinationCursor;
-    } catch (...) {
-      while (destinationCursor != destinationBegin) {
-        --destinationCursor;
-        destinationCursor->~UnitWeaponInfo();
-      }
-      throw;
-    }
-  }
-}
-
-
+} // namespace
 
 /**
  * Address: 0x0055B6E0 (FUN_0055B6E0, ??0UnitWeaponInfo@Moho@@QAE@@Z)
@@ -123,7 +82,9 @@ UnitWeaponInfo::~UnitWeaponInfo()
  * to inline storage defaults (size 0, capacity 15) and then assigned from the
  * source strings.
  */
-UnitWeaponInfo::UnitWeaponInfo(const UnitWeaponInfo& other)
+UnitWeaponInfo::UnitWeaponInfo(
+  const UnitWeaponInfo& other
+)
   : mCat1()
   , mCat2()
   , mLayer(other.mLayer)
@@ -136,16 +97,12 @@ UnitWeaponInfo::UnitWeaponInfo(const UnitWeaponInfo& other)
   // --- mCat1: BVSet copy (mUniverse + mBits.mFirstWordIndex + mBits.mWords) ---
   mCat1.mUniverse = other.mCat1.mUniverse;
   mCat1.mBits.mFirstWordIndex = other.mCat1.mBits.mFirstWordIndex;
-  (void)gpg::FastVectorN2RebindAndCopy<unsigned int>(
-    &mCat1.mBits.mWords, &other.mCat1.mBits.mWords
-  );
+  (void)gpg::FastVectorN2RebindAndCopy<unsigned int>(&mCat1.mBits.mWords, &other.mCat1.mBits.mWords);
 
   // --- mCat2: BVSet copy (mUniverse + mBits.mFirstWordIndex + mBits.mWords) ---
   mCat2.mUniverse = other.mCat2.mUniverse;
   mCat2.mBits.mFirstWordIndex = other.mCat2.mBits.mFirstWordIndex;
-  (void)gpg::FastVectorN2RebindAndCopy<unsigned int>(
-    &mCat2.mBits.mWords, &other.mCat2.mBits.mWords
-  );
+  (void)gpg::FastVectorN2RebindAndCopy<unsigned int>(&mCat2.mBits.mWords, &other.mCat2.mBits.mWords);
 
   // --- UI range visual-id strings: inline-default then assign from source. ---
   mUIMinRangeVisualId.tidy(false, 0U);
@@ -171,7 +128,9 @@ UnitWeaponInfo::UnitWeaponInfo(const UnitWeaponInfo& other)
  * storage first - the destination already owns whatever buffer it has, which is
  * why the binary calls the copy lane directly at 0x0055F225 / 0x0055F23D.
  */
-UnitWeaponInfo& UnitWeaponInfo::operator=(const UnitWeaponInfo& other)
+UnitWeaponInfo& UnitWeaponInfo::operator=(
+  const UnitWeaponInfo& other
+)
 {
   // No self-assignment guard: the binary has none. Aliasing is absorbed by the
   // fastvector copy lane and by fa::string::assign.
@@ -205,7 +164,9 @@ UnitWeaponInfo& UnitWeaponInfo::operator=(const UnitWeaponInfo& other)
  * Loads category masks, layer/radius lanes, and both UI range visual-id
  * strings from one archive payload.
  */
-void UnitWeaponInfo::MemberDeserialize(gpg::ReadArchive* const archive)
+void UnitWeaponInfo::MemberDeserialize(
+  gpg::ReadArchive* const archive
+)
 {
   if (!archive) {
     return;
@@ -229,7 +190,9 @@ void UnitWeaponInfo::MemberDeserialize(gpg::ReadArchive* const archive)
  * Stores category masks, layer/radius lanes, and both UI range visual-id
  * strings into one archive payload.
  */
-void UnitWeaponInfo::MemberSerialize(gpg::WriteArchive* const archive) const
+void UnitWeaponInfo::MemberSerialize(
+  gpg::WriteArchive* const archive
+) const
 {
   if (!archive) {
     return;
@@ -304,7 +267,8 @@ namespace moho
 
   TConVar<bool> gTConVar_sim_ParallelBlipFlush(
     "sim_ParallelBlipFlush",
-    "Run sim_DeferBlipUnlinks' bulk unlink on sim workers, one weak chain per job (same chains; needs sim_Workers > 0).",
+    "Run sim_DeferBlipUnlinks' bulk unlink on sim workers, one weak chain per job (same chains; needs sim_Workers > "
+    "0).",
     &sim_ParallelBlipFlush
   );
 
@@ -313,7 +277,7 @@ namespace moho
     "Ticks between the bulk unlinks of sim_DeferBlipUnlinks (at least 1).",
     &sim_DeferBlipUnlinksTicks
   );
-}
+} // namespace moho
 
 namespace
 {
@@ -339,7 +303,10 @@ namespace
   {
   public:
     /// Takes over `list`'s heap block, if it has one; the list is left empty either way.
-    void Adopt(BlipList& list, const std::uint32_t tick)
+    void Adopt(
+      BlipList& list,
+      const std::uint32_t tick
+    )
     {
       const std::uint32_t interval = static_cast<std::uint32_t>(std::max(moho::sim_DeferBlipUnlinksTicks, 1));
       if (tick - mTick >= interval) {
@@ -350,7 +317,9 @@ namespace
     }
 
     /// `Adopt` without the flush check, for a dying unit's list.
-    void Park(BlipList& list)
+    void Park(
+      BlipList& list
+    )
     {
       const BlipList::ReleasedBlock released = list.ReleaseHeapStorage();
       if (released.begin == nullptr) {
@@ -380,12 +349,15 @@ namespace
         }
       }
       std::sort(mChains.begin(), mChains.end());
-      std::sort(mBlocks.begin(), mBlocks.end(), [](const auto& lhs, const auto& rhs) { return lhs.begin < rhs.begin; });
+      std::sort(mBlocks.begin(), mBlocks.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.begin < rhs.begin;
+      });
 
       const auto isWaiting = [this](const moho::WeakPtrNode* const node) {
-        const auto after = std::upper_bound(
-          mBlocks.begin(), mBlocks.end(), node, [](const auto* const value, const auto& block) { return value < block.begin; }
-        );
+        const auto after =
+          std::upper_bound(mBlocks.begin(), mBlocks.end(), node, [](const auto* const value, const auto& block) {
+          return value < block.begin;
+        });
         return after != mBlocks.begin() && node < std::prev(after)->end;
       };
       mChainRuns.clear();
@@ -400,14 +372,16 @@ namespace
       // workers; each chain ends the same whichever thread walks it.
       constexpr std::size_t kMinParallelChains = 64u;
       constexpr std::size_t kChainGrain = 16u;
-      if (moho::sim_ParallelBlipFlush && mChainRuns.size() >= kMinParallelChains && !moho::IsSimWorkerThread()
-          && moho::CSimWorkerPool::ParallelEnabled()) {
+      if (
+        moho::sim_ParallelBlipFlush && mChainRuns.size() >= kMinParallelChains && !moho::IsSimWorkerThread() &&
+        moho::CSimWorkerPool::ParallelEnabled()
+      ) {
         moho::CSimWorkerPool::Get().ParallelFor(
           mChainRuns.size(), kChainGrain, [this, &isWaiting](const std::size_t begin, const std::size_t end) {
-            for (std::size_t index = begin; index < end; ++index) {
-              moho::WeakPtr<moho::Entity>::SpliceOutOfChain(mChainRuns[index].head, mChainRuns[index].count, isWaiting);
-            }
+          for (std::size_t index = begin; index < end; ++index) {
+            moho::WeakPtr<moho::Entity>::SpliceOutOfChain(mChainRuns[index].head, mChainRuns[index].count, isWaiting);
           }
+        }
         );
       } else {
         for (const ChainRun& run : mChainRuns) {
@@ -444,14 +418,18 @@ namespace
     return unlinks;
   }
   template <class T>
-  void DeleteAndNull(T*& object) noexcept
+  void DeleteAndNull(
+    T*& object
+  ) noexcept
   {
     T* const oldObject = object;
     object = nullptr;
     delete oldObject;
   }
 
-  void DestroyUnitEconomyRequest(CEconRequest*& request) noexcept
+  void DestroyUnitEconomyRequest(
+    CEconRequest*& request
+  ) noexcept
   {
     CEconRequest* const oldRequest = request;
     request = nullptr;
@@ -463,7 +441,9 @@ namespace
     delete oldRequest;
   }
 
-  void DestroyUnitExtraStorage(CEconStorage*& storage) noexcept
+  void DestroyUnitExtraStorage(
+    CEconStorage*& storage
+  ) noexcept
   {
     CEconStorage* const oldStorage = storage;
     storage = nullptr;
@@ -472,14 +452,18 @@ namespace
     delete oldStorage;
   }
 
-  void DestroyUnitEconomyEvents(Unit& unit) noexcept
+  void DestroyUnitEconomyEvents(
+    Unit& unit
+  ) noexcept
   {
     while (!unit.mEconomyEventListHead.empty()) {
       delete unit.mEconomyEventListHead.front();
     }
   }
 
-  void ClearUnitWeakReferences(Unit& unit) noexcept
+  void ClearUnitWeakReferences(
+    Unit& unit
+  ) noexcept
   {
     unit.CreatorRef.UnlinkFromOwnerChain();
     unit.TransportedByRef.UnlinkFromOwnerChain();
@@ -502,7 +486,9 @@ namespace
     unit.mBlipsInRange.ResetStorageToInline();
   }
 
-  void ClearGuardedByOwners(Unit& unit)
+  void ClearGuardedByOwners(
+    Unit& unit
+  )
   {
     std::vector<Unit*> guardedByUnits;
     if (!unit.GuardedByList.Empty()) {

@@ -21,7 +21,13 @@ namespace
     return sInstance;
   }
 
-  struct Bootstrap { Bootstrap() { register_stringTypeInfoStartup(); } };
+  struct Bootstrap
+  {
+    Bootstrap()
+    {
+      register_stringTypeInfoStartup();
+    }
+  };
   Bootstrap gBootstrap;
 } // namespace
 
@@ -31,7 +37,9 @@ namespace
  * What it does:
  * Returns a copy of the string referenced by ref.mObj.
  */
-fa::string RStringType::GetLexical(const gpg::RRef& ref) const
+fa::string RStringType::GetLexical(
+  const gpg::RRef& ref
+) const
 {
   const auto* const value = static_cast<const fa::string*>(ref.mObj);
   return *value;
@@ -43,7 +51,10 @@ fa::string RStringType::GetLexical(const gpg::RRef& ref) const
  * What it does:
  * Assigns null-terminated `str` into the fa::string at *ref.mObj.
  */
-bool RStringType::SetLexical(const gpg::RRef& ref, const char* const str) const
+bool RStringType::SetLexical(
+  const gpg::RRef& ref,
+  const char* const str
+) const
 {
   auto* const out = static_cast<fa::string*>(ref.mObj);
   *out = fa::string{str, std::strlen(str)};
@@ -63,8 +74,16 @@ stringTypeInfo::stringTypeInfo()
 
 stringTypeInfo::~stringTypeInfo() = default;
 
-/** Address: 0x008E0500 */
-const char* stringTypeInfo::GetName() const { return "std::string"; }
+/**
+ * Address: 0x008E0500 (`mov eax, 0xE01694 ; "string"`, `ret`)
+ *
+ * Retail's name, so its saves (`string`, `vector<string>`) load; saves from builds that said `std::string` are still
+ * read through `REF_CurrentTypeName`.
+ */
+const char* stringTypeInfo::GetName() const
+{
+  return "string";
+}
 
 /**
  * Address: 0x008E0510
@@ -85,7 +104,9 @@ void register_stringTypeInfoStartup()
   (void)Acquire();
 }
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_stringTypeInfoStartup_3f2685, register_stringTypeInfoStartup)
+GPG_PREREGISTER_INIT(
+  register_stringTypeInfoStartup_3f2685,
+  register_stringTypeInfoStartup
+)

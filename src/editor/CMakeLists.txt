@@ -24,14 +24,13 @@ target_link_libraries(faf_editor PRIVATE faf_engine faf_imgui)
 # /memtrace names the call sites of what a play leaves behind (EdMemTrace.cpp).
 target_link_libraries(faf_editor PRIVATE dbghelp)
 # Height images (tools/EdHeightFile.cpp) through the Windows imaging component; the file dialogs.
-target_link_libraries(faf_editor PRIVATE ole32 windowscodecs comdlg32)
+target_link_libraries(faf_editor PRIVATE ole32 windowscodecs comdlg32 winhttp crypt32)
 target_link_options(faf_editor PRIVATE "/ENTRY:mainCRTStartup")
 
-# The game's window resources (wx's cursors and bitmaps, the icon) and manifest, as faf_main has
-# them (src/CMakeLists.txt): the game's frame and viewport are the editor's window.
+# The game's window resources (the icon) and manifest, as faf_main has them (src/CMakeLists.txt):
+# the game's frame and viewport are the editor's window.
 set(_faf_editor_app_dir "${CMAKE_CURRENT_SOURCE_DIR}/../moho/app")
 target_sources(faf_editor PRIVATE "${_faf_editor_app_dir}/MohoResources.rc" "${_faf_editor_app_dir}/MohoManifest.rc")
-set_source_files_properties("${_faf_editor_app_dir}/MohoResources.rc" PROPERTIES INCLUDE_DIRECTORIES "${FAF_WX_INCLUDE_DIR}")
 target_link_options(faf_editor PRIVATE /MANIFEST:NO)
 
 # The older renderers' DLLs load only if something calls into them, which the editor never

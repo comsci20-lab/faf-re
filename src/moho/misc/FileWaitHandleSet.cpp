@@ -1,4 +1,6 @@
 #include "moho/misc/FileWaitHandleSet.h"
+
+#include "gpg/core/utils/Tss.h"
 #include "moho/lua/CScrLuaObjectFactory.h"
 #include "moho/lua/CScrLuaInitForm.h"
 #include "moho/misc/CZipFile.h"
@@ -15,7 +17,6 @@
 #include <new>
 #include <stdexcept>
 #include <string_view>
-#include <unordered_map>
 
 #include "gpg/core/streams/FileStream.h"
 #include "lua/LuaObject.h"
@@ -23,6 +24,7 @@
 #include "moho/lua/ScriptChunkCache.h"
 #include "moho/misc/StartupHelpers.h"
 #include "moho/console/CConCommand.h"
+#include "legacy/thread/Mutex.h"
 
 namespace moho
 {
@@ -38,25 +40,6 @@ namespace
   std::atomic<std::FILE*> sAccessTrace{nullptr};
   std::mutex sAccessTraceLock;
 
-  using DiskThreadStateStringMap = std::unordered_map<const moho::FWHSThreadState*, fa::string*>;
-
-  /**
-   * Per-thread error-string storage, standing in for the
-   * `boost::thread_specific_ptr` the binary keeps in `FWHSThreadState`.
-   *
-   * The map is allocated once per thread and deliberately never destroyed.
-   * The wait-handle set is a function-local static whose destructor runs from
-   * atexit, and MSVC runs those after the primary thread's thread_local
-   * destructors, so a plain `thread_local` map was already gone by the time
-   * the error slot's destructor reached in to release its entry - the find faulted inside _Find_last on freed bucket
-   * storage. A TSS slot has the same lifetime shape: it outlives everything
-   * that reads it, and its contents go with the process.
-   */
-  [[nodiscard]] DiskThreadStateStringMap& DiskThreadStateStrings()
-  {
-    static thread_local auto* const strings = new DiskThreadStateStringMap();
-    return *strings;
-  }
   constexpr const char* kDiskFindFilesHelpText =
     "files = DiskFindFiles(directory, pattern)\nreturns a list of files in a directory";
   constexpr const char* kDiskGetFileInfoHelpText =
@@ -95,26 +78,50 @@ namespace
     delete value;
   }
 
+  /** Deletes a thread's error string, when the thread ends or the slot is released (0x0045C110). */
+  struct DiskThreadStateStringDeleter
+  {
+    void operator()(
+      fa::string* const value
+    ) const noexcept
+    {
+      DestroyDiskThreadStateString(value);
+    }
+  };
+
+  /**
+   * Per-thread error-string storage, standing in for the
+   * `boost::thread_specific_ptr` the binary keeps in `FWHSThreadState`: one
+   * slot per thread, whose string is deleted when the thread ends. The engine
+   * has one wait-handle set, so one slot serves it. `TssPtr`'s slot stays valid
+   * after thread storage is gone, which matters here: the wait-handle set is a
+   * function-local static whose destructor runs from atexit, after the primary
+   * thread's thread_local destructors. The slot object itself is never
+   * destroyed, so that destructor (`~FWHSThreadState`) still reaches it.
+   */
+  [[nodiscard]] gpg::core::TssPtr<fa::string, DiskThreadStateStringDeleter>& DiskThreadStateString()
+  {
+    static auto* const slot = new gpg::core::TssPtr<fa::string, DiskThreadStateStringDeleter>();
+    return *slot;
+  }
+
   void CleanupDiskThreadStateValue(
-    const moho::FWHSThreadState& runtime
+    const moho::FWHSThreadState& /*runtime*/
   )
   {
-    const auto it = DiskThreadStateStrings().find(&runtime);
-    if (it != DiskThreadStateStrings().end()) {
-      DestroyDiskThreadStateString(it->second);
-      DiskThreadStateStrings().erase(it);
-    }
+    DiskThreadStateString().reset();
   }
 
   [[nodiscard]]
   fa::string* GetOrCreateDiskThreadStateValue(
-    moho::FWHSThreadState& runtime
+    moho::FWHSThreadState& /*runtime*/
   )
   {
-    if (fa::string*& slot = DiskThreadStateStrings()[&runtime]; slot == nullptr) {
-      slot = new fa::string();
+    auto& slot = DiskThreadStateString();
+    if (slot.get() == nullptr) {
+      slot.reset(new fa::string());
     }
-    return DiskThreadStateStrings()[&runtime];
+    return slot.get();
   }
 
   /**
@@ -447,9 +454,7 @@ namespace
     }
 
     moho::DISK_TraceAccess("open", canonicalPath.c_str());
-    return fa::auto_ptr<gpg::Stream>(
-      new gpg::FileStream(canonicalPath.c_str(), gpg::Stream::ModeReceive, 0x0Bu, 4096)
-    );
+    return fa::auto_ptr<gpg::Stream>(new gpg::FileStream(canonicalPath.c_str(), gpg::Stream::ModeReceive, 0x0Bu, 4096));
   }
 
   /**
@@ -661,7 +666,7 @@ moho::FWHSThreadState::~FWHSThreadState()
  */
 moho::FWHSLock::~FWHSLock()
 {
-  boost::mutex::scoped_lock guard(mLock);
+  fa::mutex::scoped_lock guard(mLock);
 }
 
 /**
@@ -783,28 +788,6 @@ moho::SFileWaitHandle* moho::DISK_MountZipFile(
 }
 
 /**
- * Address: 0x00459B30 (FUN_00459B30, ?DISK_GetFileInfo@Moho@@YA_NVStrArg@gpg@@PAUSDiskFileInfo@1@@Z)
- *
- * gpg::StrArg,Moho::SDiskFileInfo *,bool
- *
- * What it does:
- * Forwards metadata lookup to the process wait-handle runtime.
- */
-bool moho::DISK_GetFileInfo(
-  const gpg::StrArg sourcePath,
-  SDiskFileInfo* const outInfo,
-  const bool realOnly
-)
-{
-  FILE_EnsureWaitHandleSet();
-  if (sPFWaitHandleSet == nullptr) {
-    return false;
-  }
-
-  return sPFWaitHandleSet->GetFileInfo(sourcePath, outInfo, realOnly);
-}
-
-/**
  * Address: 0x00459CD0 (FUN_00459CD0, ?DISK_ReadFile@Moho@@YA?AU?$MemBuffer@D@gpg@@VStrArg@3@@Z)
  *
  * gpg::StrArg
@@ -880,7 +863,9 @@ moho::CVirtualFileSystem* moho::DISK_GetVFS()
  * See the header for why this exists: the binary performs this store inline in
  * DISK_SetupDataAndSearchPaths, where the wait-handle set is in reach.
  */
-moho::CVirtualFileSystem* moho::DISK_ExchangeVFS(CVirtualFileSystem* const virtualFileSystem)
+moho::CVirtualFileSystem* moho::DISK_ExchangeVFS(
+  CVirtualFileSystem* const virtualFileSystem
+)
 {
   FILE_EnsureWaitHandleSet();
   if (sPFWaitHandleSet == nullptr) {
@@ -918,7 +903,9 @@ void moho::DISK_InvalidateFileInfoCache(
 /**
  * Engine addition (headless `--disk-trace`): installs or clears the access trace file.
  */
-void moho::DISK_SetAccessTrace(std::FILE* const file)
+void moho::DISK_SetAccessTrace(
+  std::FILE* const file
+)
 {
   std::lock_guard<std::mutex> guard(sAccessTraceLock);
   std::FILE* const previous = sAccessTrace.exchange(file);
@@ -938,7 +925,10 @@ bool moho::DISK_AccessTraceOn()
 /**
  * Engine addition: one `kind path` line in the access trace, when one is set.
  */
-void moho::DISK_TraceAccess(const char* const kind, const gpg::StrArg path)
+void moho::DISK_TraceAccess(
+  const char* const kind,
+  const gpg::StrArg path
+)
 {
   if (!DISK_AccessTraceOn()) {
     return;
@@ -1109,7 +1099,12 @@ int moho::cfunc_DiskGetFileInfoL(
 moho::CScrLuaInitForm* moho::func_DiskGetFileInfo_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_CoreLuaInitSet(), "DiskGetFileInfo", &moho::cfunc_DiskGetFileInfo, nullptr, "<global>", kDiskGetFileInfoHelpText
+    moho::SCR_CoreLuaInitSet(),
+    "DiskGetFileInfo",
+    &moho::cfunc_DiskGetFileInfo,
+    nullptr,
+    "<global>",
+    kDiskGetFileInfoHelpText
   );
   return &binder;
 }
@@ -1271,7 +1266,9 @@ int moho::cfunc_DirnameL(
  */
 moho::CScrLuaInitForm* moho::func_Dirname_LuaFuncDef()
 {
-  static CScrLuaBinder binder(moho::SCR_CoreLuaInitSet(), "Dirname", &moho::cfunc_Dirname, nullptr, "<global>", kDirnameHelpText);
+  static CScrLuaBinder binder(
+    moho::SCR_CoreLuaInitSet(), "Dirname", &moho::cfunc_Dirname, nullptr, "<global>", kDirnameHelpText
+  );
   return &binder;
 }
 
@@ -1325,7 +1322,12 @@ int moho::cfunc_FileCollapsePathL(
 moho::CScrLuaInitForm* moho::func_FileCollapsePath_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_CoreLuaInitSet(), "FileCollapsePath", &moho::cfunc_FileCollapsePath, nullptr, "<global>", kFileCollapsePathHelpText
+    moho::SCR_CoreLuaInitSet(),
+    "FileCollapsePath",
+    &moho::cfunc_FileCollapsePath,
+    nullptr,
+    "<global>",
+    kFileCollapsePathHelpText
   );
   return &binder;
 }
@@ -1408,7 +1410,6 @@ namespace
   const FileWaitHandleSetLuaFunctionBootstrap gFileWaitHandleSetLuaFunctionBootstrap{};
 } // namespace
 
-
 /**
  * Address: 0x00413F90 (FUN_00413F90, Moho::FWaitHandleSet::Wait)
  *
@@ -1418,7 +1419,7 @@ namespace
  */
 void moho::FWHSLock::Wait()
 {
-  boost::mutex::scoped_lock guard(mLock);
+  fa::mutex::scoped_lock guard(mLock);
   while (mIsLocked != 0 || mWaitingLevel != 0) {
     mObjectSender.wait(guard);
   }
@@ -1434,7 +1435,7 @@ void moho::FWHSLock::Wait()
  */
 void moho::FWHSLock::Notify()
 {
-  boost::mutex::scoped_lock guard(mLock);
+  fa::mutex::scoped_lock guard(mLock);
   --mLockLevel;
   if (mWaitingLevel != 0 && mLockLevel == 0) {
     mObjectSender.notify_all();
@@ -1450,7 +1451,7 @@ void moho::FWHSLock::Notify()
  */
 void moho::FWHSLock::Lock()
 {
-  boost::mutex::scoped_lock guard(mLock);
+  fa::mutex::scoped_lock guard(mLock);
   if (mLockLevel != 0 || mIsLocked != 0) {
     ++mWaitingLevel;
     while (mLockLevel != 0 || mIsLocked != 0) {
@@ -1469,7 +1470,7 @@ void moho::FWHSLock::Lock()
  */
 void moho::FWHSLock::NotifyAll()
 {
-  boost::mutex::scoped_lock guard(mLock);
+  fa::mutex::scoped_lock guard(mLock);
   mIsLocked = 0;
   mObjectSender.notify_all();
 }
@@ -1792,7 +1793,7 @@ gpg::MemBuffer<const char> moho::FWaitHandleSet::MemoryMapFile(
 
   const char* const begin = static_cast<const char*>(mappedView);
   const char* const end = begin + fileSize;
-  boost::shared_ptr<const char> mappedOwner(begin, &UnmapFileView);
+  std::shared_ptr<const char> mappedOwner(begin, &UnmapFileView);
   DISK_TraceAccess("map", canonicalPath.c_str());
   return gpg::MemBuffer<const char>(mappedOwner, begin, end);
 }
@@ -1821,7 +1822,7 @@ void moho::FWaitHandleSet::InvalidateFileInfoCache(
 }
 
 /**
-  * Alias of FUN_00458D30 (non-canonical helper lane).
+ * Alias of FUN_00458D30 (non-canonical helper lane).
  *
  * What it does:
  * Resolves file metadata through the wait-handle/VFS runtime when available.

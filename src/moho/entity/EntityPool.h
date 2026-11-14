@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <mutex>
 
-#include "faf/memory/MemoryPool.h"
+#include "moho/core/MemoryPool.h"
 
 namespace moho
 {
@@ -24,13 +24,12 @@ namespace moho
     EntityPool();
 
     void* Allocate(std::size_t size);
-    void* TryAllocate(std::size_t size) noexcept;
     void Dellocate(void* ptr, std::size_t size) noexcept;
 
   private:
     [[nodiscard]] static bool Active() noexcept;
 
-    faf::MultiMemoryPool mPool;
+    MultiMemoryPool mPool;
     std::mutex mLock;
   };
 } // namespace moho

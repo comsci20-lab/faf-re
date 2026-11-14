@@ -4,7 +4,8 @@
 
 #include "gpg/core/containers/String.h"
 #include "gpg/core/reflection/SerializationError.h"
-#include "moho/sim/STIMap.h"
+#include "moho/sim/STIMap.h"
+
 #include "gpg/core/reflection/StaticInitPhase.h"
 
 namespace
@@ -48,36 +49,6 @@ namespace
     return CachedSTIMapTypeVariant1();
   }
 
-  /**
-   * Address: 0x005099E0 (FUN_005099E0, STIMap RRef fill helper)
-   */
-  [[maybe_unused]] gpg::RRef* FillSTIMapRef(moho::STIMap* const value, gpg::RRef* const outRef)
-  {
-    return gpg::RRef_STIMap(outRef, value);
-  }
-
-  /**
-    * Alias of FUN_005096E0 (non-canonical helper lane).
-   */
-  [[maybe_unused]] gpg::ReadArchive* ReadPointerSTIMapVariant1(
-    moho::STIMap** const outValue, gpg::ReadArchive* const archive, const gpg::RRef& ownerRef
-  )
-  {
-    if (outValue) {
-      *outValue = gpg::ReadPointerSTIMap(archive, ownerRef);
-    }
-    return archive;
-  }
-
-  /**
-    * Alias of FUN_005097F0 (non-canonical helper lane).
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteUnownedPointerSTIMapVariant1(
-    moho::STIMap* const value, gpg::WriteArchive* const archive, const gpg::RRef& ownerRef
-  )
-  {
-    return gpg::WriteUnownedPointerSTIMap(value, archive, ownerRef);
-  }
 } // namespace
 
 namespace moho
@@ -102,7 +73,10 @@ namespace gpg
    * Address: 0x00509AC0 (FUN_00509AC0, gpg::RRef_STIMap)
    * Address: 0x007561F0 (FUN_007561F0)
    */
-  gpg::RRef* RRef_STIMap(gpg::RRef* const outRef, moho::STIMap* const value)
+  gpg::RRef* RRef_STIMap(
+    gpg::RRef* const outRef,
+    moho::STIMap* const value
+  )
   {
     if (!outRef) {
       return nullptr;
@@ -114,18 +88,12 @@ namespace gpg
   }
 
   /**
-   * Address: 0x005099A0 (FUN_005099A0, STIMap RRef upcast helper)
+   * Alias of FUN_005096E0 (non-canonical helper lane).
    */
-  void* UpcastPointerToSTIMap(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, CachedSTIMapTypeVariant1());
-    return upcast.mObj;
-  }
-
-  /**
-    * Alias of FUN_005096E0 (non-canonical helper lane).
-   */
-  moho::STIMap* ReadPointerSTIMap(gpg::ReadArchive* const archive, const gpg::RRef& ownerRef)
+  moho::STIMap* ReadPointerSTIMap(
+    gpg::ReadArchive* const archive,
+    const gpg::RRef& ownerRef
+  )
   {
     if (!archive) {
       return nullptr;
@@ -161,7 +129,9 @@ namespace gpg
    * Address: 0x005097F0 (FUN_005097F0, STIMap unowned pointer write helper)
    */
   gpg::WriteArchive* WriteUnownedPointerSTIMap(
-    moho::STIMap* const value, gpg::WriteArchive* const archive, const gpg::RRef& ownerRef
+    moho::STIMap* const value,
+    gpg::WriteArchive* const archive,
+    const gpg::RRef& ownerRef
   )
   {
     if (!archive) {
@@ -175,7 +145,9 @@ namespace gpg
   }
 } // namespace gpg
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_STIMapTypeInfo_f195ea, moho::preregister_STIMapTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_STIMapTypeInfo_f195ea,
+  moho::preregister_STIMapTypeInfo
+)

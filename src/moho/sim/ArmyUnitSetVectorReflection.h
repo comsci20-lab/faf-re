@@ -71,16 +71,14 @@ namespace gpg
   private:
     // Canonical RVectorType<T> callbacks; emitted template addresses are
     // documented in the reconstruction report.
-    static void SerLoad(ReadArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
-    static void SerSave(WriteArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
+    static void SerLoad(ReadArchive* archive, void* objectPtr, int version, RRef* ownerRef);
+    static void SerSave(WriteArchive* archive, void* objectPtr, int version, RRef* ownerRef);
   };
 
   static_assert(
     sizeof(RVectorType<moho::EntitySetTemplate<moho::Unit>>) == 0x68,
     "RVectorType<EntitySetTemplate<Unit>> size must be 0x68"
   );
-
-  gpg::RRef* RRef_UnitSetBase(gpg::RRef* outRef, moho::EntitySetTemplate<moho::Unit>* value);
 
   /**
    * Address: 0x00705320 (FUN_00705320, gpg::MakeUnitSetDerivedRef)

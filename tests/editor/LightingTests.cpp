@@ -2,6 +2,7 @@
 // and written.
 
 #include "editor/doc/EdLighting.h"
+#include "TestEnv.h"
 
 #include <gtest/gtest.h>
 #include <iterator>
@@ -51,7 +52,10 @@ namespace
     "FogEnd": 1500.0
 })";
 
-  TEST(Lighting, ReadsFafmesFile)
+  TEST(
+    Lighting,
+    ReadsFafmesFile
+  )
   {
     faf::editor::LightingState lighting;
     std::string error;
@@ -66,19 +70,27 @@ namespace
     EXPECT_FLOAT_EQ(lighting.fogEnd, 1500.0f);
   }
 
-  TEST(Lighting, WritesWhatItReads)
+  TEST(
+    Lighting,
+    WritesWhatItReads
+  )
   {
     faf::editor::LightingState lighting;
     std::string error;
     ASSERT_TRUE(faf::editor::LightingFromScmlighting(kFafme, lighting, error)) << error;
     faf::editor::LightingState again;
-    ASSERT_TRUE(faf::editor::LightingFromScmlighting(faf::editor::LightingToScmlighting(lighting), again, error)) << error;
+    ASSERT_TRUE(faf::editor::LightingFromScmlighting(faf::editor::LightingToScmlighting(lighting), again, error))
+      << error;
     EXPECT_TRUE(again == lighting);
     EXPECT_FALSE(faf::editor::LightingFromScmlighting("{ \"SurfaceColor\": 1 }", again, error));
   }
-  TEST(Lighting, ReadsEveryRetailMapsLighting)
+  TEST(
+    Lighting,
+    ReadsEveryRetailMapsLighting
+  )
   {
-    const char* const folder = std::getenv("FAF_RETAIL_MAPS");
+    const std::string folderText = faf::editor::test::EnvText("FAF_RETAIL_MAPS");
+    const char* const folder = folderText.empty() ? nullptr : folderText.c_str();
     if (folder == nullptr) {
       GTEST_SKIP() << "FAF_RETAIL_MAPS is not set";
     }
@@ -94,8 +106,10 @@ namespace
       std::string error;
       ASSERT_TRUE(faf::editor::LightingFromScmap(bytes, lighting, error)) << file << ": " << error;
       // A unit sun direction and a multiplier in the game's range: the read landed on the block.
-      const float length = std::sqrt(lighting.sunDirection[0] * lighting.sunDirection[0] + lighting.sunDirection[1] * lighting.sunDirection[1] +
-                                     lighting.sunDirection[2] * lighting.sunDirection[2]);
+      const float length = std::sqrt(
+        lighting.sunDirection[0] * lighting.sunDirection[0] + lighting.sunDirection[1] * lighting.sunDirection[1] +
+        lighting.sunDirection[2] * lighting.sunDirection[2]
+      );
       EXPECT_NEAR(length, 1.0f, 0.02f) << file;
       EXPECT_GT(lighting.multiplier, 0.0f) << file;
       EXPECT_LT(lighting.multiplier, 10.0f) << file;

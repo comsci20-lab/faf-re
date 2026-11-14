@@ -3,6 +3,7 @@
 // to the game's maps folder, every retail map's wave section reads and writes back byte for byte.
 
 #include "editor/tools/EdWaves.h"
+#include "TestEnv.h"
 
 #include <gtest/gtest.h>
 
@@ -42,7 +43,10 @@ namespace
     return wave;
   }
 
-  TEST(Waves, BytesAndFafmesFileRoundTrip)
+  TEST(
+    Waves,
+    BytesAndFafmesFileRoundTrip
+  )
   {
     const std::vector<WaveRecord> waves = {Sample(), WaveRecord{}};
     const std::string bytes = faf::editor::WaveRecordsToBytes(waves);
@@ -61,9 +65,13 @@ namespace
     EXPECT_FALSE(faf::editor::WavesFromScmwaves("{ \"Units\": [] }", again, error));
   }
 
-  TEST(Waves, RetailMapsWaveSectionsRoundTrip)
+  TEST(
+    Waves,
+    RetailMapsWaveSectionsRoundTrip
+  )
   {
-    const char* const folder = std::getenv("FAF_RETAIL_MAPS");
+    const std::string folderText = faf::editor::test::EnvText("FAF_RETAIL_MAPS");
+    const char* const folder = folderText.empty() ? nullptr : folderText.c_str();
     if (folder == nullptr) {
       GTEST_SKIP() << "FAF_RETAIL_MAPS is not set";
     }
@@ -96,7 +104,10 @@ namespace
     std::printf("[ waves    ] %d retail maps, %zu wave generators round-tripped\n", maps, generators);
   }
 
-  TEST(Waves, ReadsAPatternsFile)
+  TEST(
+    Waves,
+    ReadsAPatternsFile
+  )
   {
     // The GPG editor's pattern format (as FAForeverMapEditor's wavepatterns.lua has it), with made-up values.
     const char* const lua = R"(
@@ -146,7 +157,10 @@ patterns = {
     EXPECT_FALSE(faf::editor::ParseWavePatterns("x = 1", patterns, error));
   }
 
-  TEST(Waves, ShorePointsFaceUphillAndWavesTravelThere)
+  TEST(
+    Waves,
+    ShorePointsFaceUphillAndWavesTravelThere
+  )
   {
     // A slope rising to +x: 0 at x = 0, 32 at x = 32; the water at 16, the waves where the ground is 2 below it: the
     // cell from x 14 to 15.

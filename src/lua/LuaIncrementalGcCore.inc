@@ -436,8 +436,8 @@ namespace
 
 		// The "wants finaliser" bit is clear, so the destructor has run if the
 		// type has one at all.
-		const auto* const type = reinterpret_cast<const gpg::RType*>(object->u.len);
-		return type != nullptr && type->dtrFunc_ != nullptr;
+    const auto* const type = object->u.type;
+    return type != nullptr && type->dtrFunc_ != nullptr;
 	}
 
 	// Ported from Lua 5.1.5 lgc.c: iscleared().
@@ -537,10 +537,8 @@ namespace
 				continue;
 			}
 
-			deadMemory += static_cast<size_t>(
-				LuaX86PayloadSize(reinterpret_cast<gpg::RType*>(current->u.len))
-			);
-			*link = current->gch.next;
+      deadMemory += static_cast<size_t>(LuaX86PayloadSize(current->u.type));
+      *link = current->gch.next;
 			current->gch.next = nullptr;
 			*movedTail = current;
 			movedTail = &current->gch.next;
@@ -583,8 +581,8 @@ namespace
 		slot->tt = static_cast<int>(object->gch.tt);
 
 		RunLuaCallGate(nullptr);
-		auto* const type = reinterpret_cast<gpg::RType*>(object->u.len);
-		if (type->dtrFunc_ != nullptr) {
+    auto* const type = object->u.type;
+    if (type->dtrFunc_ != nullptr) {
 			type->dtrFunc_(static_cast<void*>(&object->u + 1));
 		}
 		--L->top;
@@ -1185,10 +1183,6 @@ extern "C" void faf_lua51_gc_barrier_value(
 	IncrBarrierValue(L, object, value);
 }
 
-extern "C" bool faf_lua51_gc_is_active(global_State* const g)
-{
-	return Active(g);
-}
 
 extern "C" void faf_lua51_gc_mark_object(global_State* const g, GCObject* const object)
 {

@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/animation/CAniPose.h"
 #include "moho/audio/CSndParams.h"
@@ -27,6 +28,7 @@
 #include "moho/sim/SimDriver.h"
 #include "moho/unit/core/Unit.h"
 #include "remote/FrameBuilder.h"
+#include "legacy/thread/Mutex.h"
 
 // Engine addition, server mode: see SyncRebuilder.h.
 
@@ -35,7 +37,8 @@ namespace faf::remote::client
   namespace
   {
     void AppendBlueprints(
-      const moho::RRuleGameRulesBlueprintMap& map, const wire::COrdinalTable& table,
+      const moho::RRuleGameRulesBlueprintMap& map,
+      const wire::COrdinalTable& table,
       std::vector<const moho::REntityBlueprint*>& out
     )
     {
@@ -50,14 +53,19 @@ namespace faf::remote::client
       }
     }
 
-    [[nodiscard]] bool SameTransform(const moho::VTransform& a, const moho::VTransform& b) noexcept
+    [[nodiscard]] bool SameTransform(
+      const moho::VTransform& a,
+      const moho::VTransform& b
+    ) noexcept
     {
-      return a.pos_.x == b.pos_.x && a.pos_.y == b.pos_.y && a.pos_.z == b.pos_.z && a.orient_.w == b.orient_.w
-        && a.orient_.x == b.orient_.x && a.orient_.y == b.orient_.y && a.orient_.z == b.orient_.z;
+      return a.pos_.x == b.pos_.x && a.pos_.y == b.pos_.y && a.pos_.z == b.pos_.z && a.orient_.w == b.orient_.w &&
+        a.orient_.x == b.orient_.x && a.orient_.y == b.orient_.y && a.orient_.z == b.orient_.z;
     }
 
     template <class Entry>
-    [[nodiscard]] std::unordered_map<std::uint32_t, const Entry*> IndexById(const fa::vector<Entry>& entries)
+    [[nodiscard]] std::unordered_map<std::uint32_t, const Entry*> IndexById(
+      const fa::vector<Entry>& entries
+    )
     {
       std::unordered_map<std::uint32_t, const Entry*> index;
       index.reserve(entries.size());
@@ -67,7 +75,9 @@ namespace faf::remote::client
       return index;
     }
 
-    [[nodiscard]] std::unordered_set<std::uint32_t> IdSet(const fa::vector<moho::EntId>& ids)
+    [[nodiscard]] std::unordered_set<std::uint32_t> IdSet(
+      const fa::vector<moho::EntId>& ids
+    )
     {
       std::unordered_set<std::uint32_t> set;
       for (const moho::EntId id : ids) {
@@ -76,14 +86,17 @@ namespace faf::remote::client
       return set;
     }
 
-    [[nodiscard]] bool IsOrphaned(const wire::SEntityRecord& record) noexcept
+    [[nodiscard]] bool IsOrphaned(
+      const wire::SEntityRecord& record
+    ) noexcept
     {
       return (record.flags & kEntityFlagOrphaned) != 0u;
     }
   } // namespace
 
   std::vector<const moho::REntityBlueprint*> ResolveBlueprints(
-    moho::RRuleGameRules& rules, const wire::SContentTables& tables
+    moho::RRuleGameRules& rules,
+    const wire::SContentTables& tables
   )
   {
     std::vector<const moho::REntityBlueprint*> blueprints(tables.blueprints.Size(), nullptr);
@@ -93,7 +106,10 @@ namespace faf::remote::client
     return blueprints;
   }
 
-  std::vector<moho::RMeshBlueprint*> ResolveMeshes(moho::RRuleGameRules& rules, const wire::SContentTables& tables)
+  std::vector<moho::RMeshBlueprint*> ResolveMeshes(
+    moho::RRuleGameRules& rules,
+    const wire::SContentTables& tables
+  )
   {
     std::vector<moho::RMeshBlueprint*> meshes(tables.meshes.Size(), nullptr);
     for (const auto& [id, blueprint] : rules.GetMeshBlueprints()) {
@@ -109,7 +125,8 @@ namespace faf::remote::client
   }
 
   CSyncRebuilder::CSyncRebuilder(
-    const wire::SFrameCodec& codec, std::vector<const moho::REntityBlueprint*> blueprints,
+    const wire::SFrameCodec& codec,
+    std::vector<const moho::REntityBlueprint*> blueprints,
     std::vector<moho::RMeshBlueprint*> meshes
   )
     : mCodec(codec)
@@ -121,7 +138,10 @@ namespace faf::remote::client
   namespace
   {
     template <class Vector>
-    void AssignAll(Vector& to, const std::vector<std::int32_t>& from)
+    void AssignAll(
+      Vector& to,
+      const std::vector<std::int32_t>& from
+    )
     {
       to.clear();
       for (const std::int32_t value : from) {
@@ -129,7 +149,11 @@ namespace faf::remote::client
       }
     }
 
-    void AssignCategories(moho::EntityCategorySet& set, const wire::SCategoryBits& bits, moho::RRuleGameRules* const rules)
+    void AssignCategories(
+      moho::EntityCategorySet& set,
+      const wire::SCategoryBits& bits,
+      moho::RRuleGameRules* const rules
+    )
     {
       set.mUniverse.mRules = rules;
       set.mBits.mFirstWordIndex = bits.firstWord;
@@ -139,7 +163,10 @@ namespace faf::remote::client
       }
     }
 
-    [[nodiscard]] bool SameCategories(const moho::EntityCategorySet& a, const moho::EntityCategorySet& b) noexcept
+    [[nodiscard]] bool SameCategories(
+      const moho::EntityCategorySet& a,
+      const moho::EntityCategorySet& b
+    ) noexcept
     {
       if (a.mBits.mFirstWordIndex != b.mBits.mFirstWordIndex || a.mBits.mWords.size() != b.mBits.mWords.size()) {
         return false;
@@ -147,71 +174,80 @@ namespace faf::remote::client
       return std::equal(a.mBits.mWords.begin(), a.mBits.mWords.end(), b.mBits.mWords.begin());
     }
 
-    [[nodiscard]] bool SameBits(const float a, const float b) noexcept
+    [[nodiscard]] bool SameBits(
+      const float a,
+      const float b
+    ) noexcept
     {
       return std::bit_cast<std::uint32_t>(a) == std::bit_cast<std::uint32_t>(b);
     }
   } // namespace
 
-  bool CSyncRebuilder::SameUnitData(const moho::SSTIUnitVariableData& a, const moho::SSTIUnitVariableData& b) const
+  bool CSyncRebuilder::SameUnitData(
+    const moho::SSTIUnitVariableData& a,
+    const moho::SSTIUnitVariableData& b
+  ) const
   {
     // Every field but the poses (still the packet's) and the pad bytes.
     const moho::UnitAttributes& x = a.mAttributes;
     const moho::UnitAttributes& y = b.mAttributes;
-    bool same = a.mCreator == b.mCreator && a.mCreationTick == b.mCreationTick && a.mAutoMode == b.mAutoMode
-             && a.mAutoSurfaceMode == b.mAutoSurfaceMode && a.mIsBusy == b.mIsBusy
-             && SameBits(a.mFuelRatio, b.mFuelRatio) && SameBits(a.mShieldRatio, b.mShieldRatio)
-             && a.mStunTicks == b.mStunTicks && a.mIsPaused == b.mIsPaused && a.mIsValidTarget == b.mIsValidTarget
-             && a.mRepeatQueue == b.mRepeatQueue && a.mJobType == b.mJobType && a.mFireState == b.mFireState
-             && SameBits(a.mWorkProgress, b.mWorkProgress) && a.mTacticalSiloBuildCount == b.mTacticalSiloBuildCount
-             && a.mNukeSiloBuildCount == b.mNukeSiloBuildCount
-             && a.mTacticalSiloStorageCount == b.mTacticalSiloStorageCount
-             && a.mNukeSiloStorageCount == b.mNukeSiloStorageCount
-             && a.mTacticalSiloMaxStorageCount == b.mTacticalSiloMaxStorageCount
-             && a.mNukeSiloMaxStorageCount == b.mNukeSiloMaxStorageCount
-             && a.mSelectionInheritorId == b.mSelectionInheritorId && a.mCustomName.view() == b.mCustomName.view()
-             && SameBits(a.mProduced.ENERGY, b.mProduced.ENERGY) && SameBits(a.mProduced.MASS, b.mProduced.MASS)
-             && SameBits(a.mResourcesSpent.ENERGY, b.mResourcesSpent.ENERGY)
-             && SameBits(a.mResourcesSpent.MASS, b.mResourcesSpent.MASS)
-             && SameBits(a.mMaintainenceCost.ENERGY, b.mMaintainenceCost.ENERGY)
-             && SameBits(a.mMaintainenceCost.MASS, b.mMaintainenceCost.MASS) && a.mFocusUnit == b.mFocusUnit
-             && a.mGuardedUnit == b.mGuardedUnit && a.mTargetBlip == b.mTargetBlip
-             && a.mCommands.size() == b.mCommands.size()
-             && std::equal(a.mCommands.begin(), a.mCommands.end(), b.mCommands.begin())
-             && a.mBuildQueue.size() == b.mBuildQueue.size()
-             && std::equal(a.mBuildQueue.begin(), a.mBuildQueue.end(), b.mBuildQueue.begin())
-             && a.mScriptbits == b.mScriptbits && a.mUnitStates == b.mUnitStates && a.mDidRefresh == b.mDidRefresh
-             && a.mOverchargePaused == b.mOverchargePaused && x.blueprint == y.blueprint
-             && x.unknown_0004 == y.unknown_0004 && SameCategories(x.restrictionCategory, y.restrictionCategory)
-             && SameBits(x.spawnElevationOffset, y.spawnElevationOffset) && SameBits(x.moveSpeedMult, y.moveSpeedMult)
-             && SameBits(x.accelerationMult, y.accelerationMult) && SameBits(x.turnMult, y.turnMult)
-             && SameBits(x.breakOffTriggerMult, y.breakOffTriggerMult)
-             && SameBits(x.breakOffDistanceMult, y.breakOffDistanceMult)
-             && SameBits(x.consumptionPerSecondEnergy, y.consumptionPerSecondEnergy)
-             && SameBits(x.consumptionPerSecondMass, y.consumptionPerSecondMass)
-             && SameBits(x.productionPerSecondEnergy, y.productionPerSecondEnergy)
-             && SameBits(x.productionPerSecondMass, y.productionPerSecondMass) && SameBits(x.buildRate, y.buildRate)
-             && SameBits(x.regenRate, y.regenRate) && x.commandCapsMask == y.commandCapsMask
-             && x.toggleCapsMask == y.toggleCapsMask && x.mReclaimable == y.mReclaimable
-             && x.mCapturable == y.mCapturable && x.unknown_006A == y.unknown_006A && x.unknown_006B == y.unknown_006B
-             && x.unknown_006C == y.unknown_006C && a.mWeaponInfo.size() == b.mWeaponInfo.size();
+    bool same = a.mCreator == b.mCreator && a.mCreationTick == b.mCreationTick && a.mAutoMode == b.mAutoMode &&
+      a.mAutoSurfaceMode == b.mAutoSurfaceMode && a.mIsBusy == b.mIsBusy && SameBits(a.mFuelRatio, b.mFuelRatio) &&
+      SameBits(a.mShieldRatio, b.mShieldRatio) && a.mStunTicks == b.mStunTicks && a.mIsPaused == b.mIsPaused &&
+      a.mIsValidTarget == b.mIsValidTarget && a.mRepeatQueue == b.mRepeatQueue && a.mJobType == b.mJobType &&
+      a.mFireState == b.mFireState && SameBits(a.mWorkProgress, b.mWorkProgress) &&
+      a.mTacticalSiloBuildCount == b.mTacticalSiloBuildCount && a.mNukeSiloBuildCount == b.mNukeSiloBuildCount &&
+      a.mTacticalSiloStorageCount == b.mTacticalSiloStorageCount &&
+      a.mNukeSiloStorageCount == b.mNukeSiloStorageCount &&
+      a.mTacticalSiloMaxStorageCount == b.mTacticalSiloMaxStorageCount &&
+      a.mNukeSiloMaxStorageCount == b.mNukeSiloMaxStorageCount && a.mSelectionInheritorId == b.mSelectionInheritorId &&
+      a.mCustomName.view() == b.mCustomName.view() && SameBits(a.mProduced.ENERGY, b.mProduced.ENERGY) &&
+      SameBits(a.mProduced.MASS, b.mProduced.MASS) && SameBits(a.mResourcesSpent.ENERGY, b.mResourcesSpent.ENERGY) &&
+      SameBits(a.mResourcesSpent.MASS, b.mResourcesSpent.MASS) &&
+      SameBits(a.mMaintainenceCost.ENERGY, b.mMaintainenceCost.ENERGY) &&
+      SameBits(a.mMaintainenceCost.MASS, b.mMaintainenceCost.MASS) && a.mFocusUnit == b.mFocusUnit &&
+      a.mGuardedUnit == b.mGuardedUnit && a.mTargetBlip == b.mTargetBlip && a.mCommands.size() == b.mCommands.size() &&
+      std::equal(a.mCommands.begin(), a.mCommands.end(), b.mCommands.begin()) &&
+      a.mBuildQueue.size() == b.mBuildQueue.size() &&
+      std::equal(a.mBuildQueue.begin(), a.mBuildQueue.end(), b.mBuildQueue.begin()) && a.mScriptbits == b.mScriptbits &&
+      a.mUnitStates == b.mUnitStates && a.mDidRefresh == b.mDidRefresh && a.mOverchargePaused == b.mOverchargePaused &&
+      x.blueprint == y.blueprint && x.unknown_0004 == y.unknown_0004 &&
+      SameCategories(x.restrictionCategory, y.restrictionCategory) &&
+      SameBits(x.spawnElevationOffset, y.spawnElevationOffset) && SameBits(x.moveSpeedMult, y.moveSpeedMult) &&
+      SameBits(x.accelerationMult, y.accelerationMult) && SameBits(x.turnMult, y.turnMult) &&
+      SameBits(x.breakOffTriggerMult, y.breakOffTriggerMult) &&
+      SameBits(x.breakOffDistanceMult, y.breakOffDistanceMult) &&
+      SameBits(x.consumptionPerSecondEnergy, y.consumptionPerSecondEnergy) &&
+      SameBits(x.consumptionPerSecondMass, y.consumptionPerSecondMass) &&
+      SameBits(x.productionPerSecondEnergy, y.productionPerSecondEnergy) &&
+      SameBits(x.productionPerSecondMass, y.productionPerSecondMass) && SameBits(x.buildRate, y.buildRate) &&
+      SameBits(x.regenRate, y.regenRate) && x.commandCapsMask == y.commandCapsMask &&
+      x.toggleCapsMask == y.toggleCapsMask && x.mReclaimable == y.mReclaimable && x.mCapturable == y.mCapturable &&
+      x.unknown_006A == y.unknown_006A && x.unknown_006B == y.unknown_006B && x.unknown_006C == y.unknown_006C &&
+      a.mWeaponInfo.size() == b.mWeaponInfo.size();
     if (!same) {
       return false;
     }
     auto bw = b.mWeaponInfo.begin();
     for (const moho::UnitWeaponInfo& w : a.mWeaponInfo) {
       const moho::UnitWeaponInfo& v = *bw++;
-      if (!SameCategories(w.mCat1, v.mCat1) || !SameCategories(w.mCat2, v.mCat2) || w.mLayer != v.mLayer
-          || !SameBits(w.mMinRadius, v.mMinRadius) || !SameBits(w.mMaxRadius, v.mMaxRadius)
-          || !SameBits(w.mEffectiveRadius, v.mEffectiveRadius) || w.mUIMinRangeVisualId.view() != v.mUIMinRangeVisualId.view()
-          || w.mUIMaxRangeVisualId.view() != v.mUIMaxRangeVisualId.view()) {
+      if (
+        !SameCategories(w.mCat1, v.mCat1) || !SameCategories(w.mCat2, v.mCat2) || w.mLayer != v.mLayer ||
+        !SameBits(w.mMinRadius, v.mMinRadius) || !SameBits(w.mMaxRadius, v.mMaxRadius) ||
+        !SameBits(w.mEffectiveRadius, v.mEffectiveRadius) ||
+        w.mUIMinRangeVisualId.view() != v.mUIMinRangeVisualId.view() ||
+        w.mUIMaxRangeVisualId.view() != v.mUIMaxRangeVisualId.view()
+      ) {
         return false;
       }
     }
     return true;
   }
 
-  void CSyncRebuilder::UnpackUnitDetail(const wire::SUnitDetail& detail, moho::SSTIUnitVariableData& data)
+  void CSyncRebuilder::UnpackUnitDetail(
+    const wire::SUnitDetail& detail,
+    moho::SSTIUnitVariableData& data
+  )
   {
     const auto name = [&](const std::uint32_t id) -> fa::string {
       if (id == wire::COrdinalTable::kNone) {
@@ -258,8 +294,8 @@ namespace faf::remote::client
     const wire::SUnitAttributes& source = detail.attributes;
     moho::UnitAttributes& attributes = data.mAttributes;
     attributes.blueprint = source.blueprint < mBlueprints.size()
-                           ? static_cast<const moho::RUnitBlueprint*>(mBlueprints[source.blueprint])
-                           : nullptr;
+      ? static_cast<const moho::RUnitBlueprint*>(mBlueprints[source.blueprint])
+      : nullptr;
     attributes.unknown_0004 = source.reserved04;
     AssignCategories(attributes.restrictionCategory, source.restriction, mRules);
     attributes.spawnElevationOffset = source.scalars[0];
@@ -283,7 +319,10 @@ namespace faf::remote::client
     attributes.unknown_006C = source.reserved6C;
   }
 
-  void CSyncRebuilder::ApplyUnitStats(const std::vector<wire::SUnitStat>& stats, moho::Stats<moho::StatItem>& tree)
+  void CSyncRebuilder::ApplyUnitStats(
+    const std::vector<wire::SUnitStat>& stats,
+    moho::Stats<moho::StatItem>& tree
+  )
   {
     for (const wire::SUnitStat& stat : stats) {
       const std::string* const path = mSession != nullptr ? mSession->Names().Find(stat.name) : nullptr;
@@ -314,11 +353,14 @@ namespace faf::remote::client
   }
 
   void CSyncRebuilder::UpdatePoses(
-    const wire::SEntityRecord& record, SHeldEntity& held, const wire::SUnitPose* const bones, moho::SSTIUnitVariableData& data
+    const wire::SEntityRecord& record,
+    SHeldEntity& held,
+    const wire::SUnitPose* const bones,
+    moho::SSTIUnitVariableData& data
   )
   {
     // The skeleton of the unit's mesh as this client resolved it, and its blueprint's scale (`Unit::SetMesh`).
-    boost::shared_ptr<const moho::CAniSkel> skeleton;
+    std::shared_ptr<const moho::CAniSkel> skeleton;
     if (moho::RScmResource* const mesh = held.data.mScmResource.get(); mesh != nullptr) {
       skeleton = mesh->GetSkeleton();
     }
@@ -332,7 +374,8 @@ namespace faf::remote::client
       data.mPriorSharedPose.reset();
       return;
     }
-    if (!held.pose || held.poseSkeleton != skeleton.get()) {
+    const bool made = !held.pose || held.poseSkeleton != skeleton.get();
+    if (made) {
       float scale = 1.0f;
       if (record.blueprint < mBlueprints.size() && mBlueprints[record.blueprint] != nullptr) {
         scale = static_cast<const moho::RUnitBlueprint*>(mBlueprints[record.blueprint])->Display.UniformScale;
@@ -342,10 +385,19 @@ namespace faf::remote::client
       held.poseBones.clear();
       ++mStats.posesMade;
     }
-    boost::shared_ptr<moho::CAniPose> prior = held.pose;
-    if (bones != nullptr) {
+    // Plan WP8.4: a pose carries the unit's world transform, and the mesh draws every bone through it (the skinning
+    // palette takes the bones' composites), blending the prior pose into the current one. In lockstep every tick
+    // steps a unit's poses, so the prior one stands where the unit stood a beat ago. Here a unit that moved steps its
+    // poses too, with or without bones: otherwise one pose stands at both ends, and the body jumps a beat's way at
+    // each beat while the unit's transforms glide.
+    const bool moved = !SameTransform(held.data.mCurTransform, held.data.mLastTransform);
+    std::shared_ptr<moho::CAniPose> prior = held.pose;
+    if (bones == nullptr && moved) {
+      held.pose.reset(new moho::CAniPose(*held.pose)); // the same bones, a beat on
+      held.poseMoving = true;
+    } else if (bones != nullptr) {
       // A new current pose, as `CAniActor` steps: a copy of the last one with the lane's bones over it.
-      boost::shared_ptr<moho::CAniPose> next(new moho::CAniPose(*held.pose));
+      std::shared_ptr<moho::CAniPose> next(new moho::CAniPose(*held.pose));
       moho::CAniPoseBone* const first = next->mBones.begin();
       const std::size_t count = next->mBones.size();
       if (bones->whole) {
@@ -398,16 +450,24 @@ namespace faf::remote::client
       held.poseMoving = false; // still: the session interpolates nothing
     }
     held.pose->SetWorldTransform(held.data.mCurTransform);
-    if (prior == held.pose) {
+    if (made) {
+      // A unit new to this client (made, or come into sight): nothing to blend from but where it stood a beat ago.
+      // The pose just made was never placed (it stands at the map's corner) and holds the bind pose; lockstep's prior
+      // pose is the unit's own a tick before. So both ends get these bones, the prior one at the last transform.
+      prior.reset(new moho::CAniPose(*held.pose));
+      prior->SetWorldTransform(held.data.mLastTransform);
+    } else if (prior == held.pose) {
       prior->SetWorldTransform(held.data.mCurTransform);
     }
     data.mPriorSharedPose = prior;
     data.mSharedPose = held.pose;
   }
 
-  void CSyncRebuilder::ApplyDeposits(moho::SSyncData& packet)
+  void CSyncRebuilder::ApplyDeposits(
+    moho::SSyncData& packet
+  )
   {
-    if (mSession == nullptr || (packet.mSimResources.px == nullptr && !mNoSim)) {
+    if (mSession == nullptr || (packet.mSimResources.get() == nullptr && !mNoSim)) {
       return; // no session record, or a beat without the sim's deposits: the packet's stays
     }
     if (!mResources) {
@@ -423,32 +483,32 @@ namespace faf::remote::client
       footprint.z1 = deposit.z1;
       mResources->AddDeposit(static_cast<moho::EDepositType>(deposit.type), &footprint);
     }
-    if (packet.mSimResources.px != nullptr) {
+    if (packet.mSimResources.get() != nullptr) {
       // Check: the client's deposits are the sim's, in order.
-      moho::CSimResources& sim = *packet.mSimResources.px;
-      boost::mutex::scoped_lock simLock(sim.lock_);
-      boost::mutex::scoped_lock ownLock(mResources->lock_);
+      moho::CSimResources& sim = *packet.mSimResources.get();
+      fa::mutex::scoped_lock simLock(sim.lock_);
+      fa::mutex::scoped_lock ownLock(mResources->lock_);
       bool same = sim.deposits_.size() == mResources->deposits_.size();
       for (std::size_t i = 0; same && i < sim.deposits_.size(); ++i) {
         const moho::ResourceDeposit& a = sim.deposits_[i];
         const moho::ResourceDeposit& b = mResources->deposits_[i];
-        same = a.depositType == b.depositType && a.footprintRect.x0 == b.footprintRect.x0
-            && a.footprintRect.z0 == b.footprintRect.z0 && a.footprintRect.x1 == b.footprintRect.x1
-            && a.footprintRect.z1 == b.footprintRect.z1;
+        same = a.depositType == b.depositType && a.footprintRect.x0 == b.footprintRect.x0 &&
+          a.footprintRect.z0 == b.footprintRect.z0 && a.footprintRect.x1 == b.footprintRect.x1 &&
+          a.footprintRect.z1 == b.footprintRect.z1;
       }
       mStats.depositMismatches += same ? 0u : 1u;
     }
-    packet.mSimResources.reset_from_owner(mResources);
+    packet.mSimResources = mResources;
   }
 
   CSyncRebuilder::~CSyncRebuilder()
   {
-    mSimTerrain.release();
+    mSimTerrain.reset();
   }
 
   std::uint64_t CSyncRebuilder::TerrainCellsDiffering() const noexcept
   {
-    const moho::CHeightField* const sim = mSimTerrain.px;
+    const moho::CHeightField* const sim = mSimTerrain.get();
     if (sim == nullptr || !mTerrain) {
       return 0u;
     }
@@ -463,18 +523,24 @@ namespace faf::remote::client
     return differing;
   }
 
-  void CSyncRebuilder::SeedTerrain(const moho::CHeightField& heights)
+  void CSyncRebuilder::SeedTerrain(
+    const moho::CHeightField& heights
+  )
   {
     if (mTerrain) {
       return;
     }
     mTerrain.reset(new moho::CHeightField(heights.width - 1, heights.height - 1));
-    std::copy_n(heights.data, static_cast<std::size_t>(heights.width) * static_cast<std::size_t>(heights.height), mTerrain->data);
+    std::copy_n(
+      heights.data, static_cast<std::size_t>(heights.width) * static_cast<std::size_t>(heights.height), mTerrain->data
+    );
   }
 
-  void CSyncRebuilder::ApplyTerrain(moho::SSyncData& packet)
+  void CSyncRebuilder::ApplyTerrain(
+    moho::SSyncData& packet
+  )
   {
-    const moho::CHeightField* const sim = packet.mTerrainUpdate.px;
+    const moho::CHeightField* const sim = packet.mTerrainUpdate.get();
     if (mSession != nullptr && sim == nullptr && mNoSim && !mTerrain) {
       mStats.terrainEdits += mSession->TakeTerrainEdits().size(); // no heights to apply them to (the probe): counted
       return;
@@ -486,7 +552,9 @@ namespace faf::remote::client
       // The heights as the map loads them. A networked client loads them from the map file
       // (WP12); in loopback the first beat's field is that, before any edit.
       mTerrain.reset(new moho::CHeightField(sim->width - 1, sim->height - 1));
-      std::copy_n(sim->data, static_cast<std::size_t>(sim->width) * static_cast<std::size_t>(sim->height), mTerrain->data);
+      std::copy_n(
+        sim->data, static_cast<std::size_t>(sim->width) * static_cast<std::size_t>(sim->height), mTerrain->data
+      );
     }
     const std::vector<wire::STerrainEdit> edits = mSession->TakeTerrainEdits();
     fa::vector<gpg::Rect2i> rects;
@@ -497,8 +565,10 @@ namespace faf::remote::client
       rect.x1 = edit.dirty.x1;
       rect.z1 = edit.dirty.z1;
       rects.push_back(rect);
-      if (edit.cells.x0 > edit.cells.x1 || edit.cells.x0 < 0 || edit.cells.z0 < 0 || edit.cells.x1 >= mTerrain->width
-          || edit.cells.z1 >= mTerrain->height) {
+      if (
+        edit.cells.x0 > edit.cells.x1 || edit.cells.x0 < 0 || edit.cells.z0 < 0 || edit.cells.x1 >= mTerrain->width ||
+        edit.cells.z1 >= mTerrain->height
+      ) {
         continue; // outside this field: nothing to write
       }
       const std::ptrdiff_t rowCells = edit.cells.x1 - edit.cells.x0 + 1;
@@ -518,13 +588,15 @@ namespace faf::remote::client
         sameRects = a.x0 == b.x0 && a.z0 == b.z0 && a.x1 == b.x1 && a.z1 == b.z1;
       }
       mStats.terrainRectMismatches += sameRects ? 0u : 1u;
-      mSimTerrain.reset_from(packet.mTerrainUpdate); // for `TerrainCellsDiffering`
+      mSimTerrain = packet.mTerrainUpdate; // for `TerrainCellsDiffering`
     }
     packet.mPlayableRectUpdates.swap(rects);
-    packet.mTerrainUpdate.reset_from_owner(mTerrain);
+    packet.mTerrainUpdate = mTerrain;
   }
 
-  moho::CSndParams* CSyncRebuilder::ResolveSound(const std::uint32_t id)
+  moho::CSndParams* CSyncRebuilder::ResolveSound(
+    const std::uint32_t id
+  )
   {
     if (id == wire::COrdinalTable::kNone || mSession == nullptr) {
       return nullptr;
@@ -542,13 +614,17 @@ namespace faf::remote::client
     }
     // The process's interned params for these names, as `Sound{...}` makes them.
     mSounds[id] = moho::SND_FindOrCreateParams(
-      fa::string(entry->bank.c_str()), fa::string(entry->cue.c_str()), fa::string(entry->lodCutoff.c_str()),
+      fa::string(entry->bank.c_str()),
+      fa::string(entry->cue.c_str()),
+      fa::string(entry->lodCutoff.c_str()),
       fa::string(entry->rpcLoop.c_str())
     );
     return mSounds[id];
   }
 
-  boost::shared_ptr<moho::CD3DBatchTexture> CSyncRebuilder::ResolveUnderlay(const std::uint32_t id)
+  std::shared_ptr<moho::CD3DBatchTexture> CSyncRebuilder::ResolveUnderlay(
+    const std::uint32_t id
+  )
   {
     if (id == wire::COrdinalTable::kNone || mSession == nullptr) {
       return {};
@@ -568,12 +644,15 @@ namespace faf::remote::client
     // Through the client's texture hook (CD3DBatchTexture.h): a build without a client (the
     // sim-only headless) loads no texture, as its sim holds none.
     mUnderlays[id].texture = moho::sBatchTextureFromFile != nullptr ? moho::sBatchTextureFromFile(path->c_str(), 0u)
-                                                                     : boost::shared_ptr<moho::CD3DBatchTexture>{};
+                                                                    : std::shared_ptr<moho::CD3DBatchTexture>{};
     mUnderlays[id].resolved = true;
     return mUnderlays[id].texture;
   }
 
-  void CSyncRebuilder::ResolveMesh(const std::uint32_t ordinal, moho::SSTIEntityVariableData& data)
+  void CSyncRebuilder::ResolveMesh(
+    const std::uint32_t ordinal,
+    moho::SSTIEntityVariableData& data
+  )
   {
     // As `Entity::SetMesh`: the blueprint and its LOD-resolved mesh, looked up once per mesh.
     if (ordinal >= mMeshes.size() || mMeshes[ordinal] == nullptr) {
@@ -590,7 +669,10 @@ namespace faf::remote::client
     data.mScmResource = cached.resource;
   }
 
-  moho::VTransform CSyncRebuilder::ShownTransform(const wire::SEntityRecord& record, const std::uint32_t beat) const
+  moho::VTransform CSyncRebuilder::ShownTransform(
+    const wire::SEntityRecord& record,
+    const std::uint32_t beat
+  ) const
   {
     const wire::QuantizedPosition position =
       mCodec.deadReckoning ? wire::PredictPosition(record, beat, mCodec) : record.position;
@@ -598,16 +680,19 @@ namespace faf::remote::client
                                                   : wire::UnpackQuaternion(record.orientation);
     moho::VTransform transform{};
     transform.orient_ = Wm3::Quatf(q[3], q[0], q[1], q[2]);
-    transform.pos_ = record.farPosition
-                       ? Wm3::Vec3f(record.farValue[0], record.farValue[1], record.farValue[2])
-                       : Wm3::Vec3f(
-                           mCodec.position.x.Decode(position[0]), mCodec.position.y.Decode(position[1]),
-                           mCodec.position.z.Decode(position[2])
-                         );
+    transform.pos_ = record.farPosition ? Wm3::Vec3f(record.farValue[0], record.farValue[1], record.farValue[2])
+                                        : Wm3::Vec3f(
+                                            mCodec.position.x.Decode(position[0]),
+                                            mCodec.position.y.Decode(position[1]),
+                                            mCodec.position.z.Decode(position[2])
+                                          );
     return transform;
   }
 
-  bool CSyncRebuilder::Apply(const std::span<const std::uint8_t> frameBytes, moho::SSyncData& packet)
+  bool CSyncRebuilder::Apply(
+    const std::span<const std::uint8_t> frameBytes,
+    moho::SSyncData& packet
+  )
   {
     using Clock = std::chrono::steady_clock;
     const Clock::time_point start = Clock::now();
@@ -630,13 +715,20 @@ namespace faf::remote::client
     return ApplyFrame(std::move(frame), frameBytes.size(), packet, start);
   }
 
-  bool CSyncRebuilder::ApplyFrame(wire::SViewFrame frame, const std::size_t wireBytes, moho::SSyncData& packet)
+  bool CSyncRebuilder::ApplyFrame(
+    wire::SViewFrame frame,
+    const std::size_t wireBytes,
+    moho::SSyncData& packet
+  )
   {
     return ApplyFrame(std::move(frame), wireBytes, packet, std::chrono::steady_clock::now());
   }
 
   bool CSyncRebuilder::ApplyFrame(
-    wire::SViewFrame frame, const std::size_t wireBytes, moho::SSyncData& packet, const std::chrono::steady_clock::time_point start
+    wire::SViewFrame frame,
+    const std::size_t wireBytes,
+    moho::SSyncData& packet,
+    const std::chrono::steady_clock::time_point start
   )
   {
     using Clock = std::chrono::steady_clock;
@@ -674,8 +766,12 @@ namespace faf::remote::client
       held.live = true;
       if (record.isUnit) {
         // The unit's constants from the frame and a stats tree of the client's own, filled from
-        // the frame's stats (below).
-        held.stats.reset(new moho::Stats<moho::StatItem>());
+        // the frame's stats (below). `Stats<StatItem>` keeps the binary's non-virtual destructor
+        // (its vftable holds only `Delete`), so the deleter deletes the exact type, as
+        // `SSTIUnitConstantData`'s constructor does.
+        held.stats.reset(new moho::Stats<moho::StatItem>(), [](moho::Stats<moho::StatItem>* const root) {
+          GPG_NONVIRTUAL_DESTROY(delete root);
+        });
         moho::SCreateUnitParams params{};
         params.mEntityId = record.id;
         params.mBlueprint = blueprint;
@@ -685,10 +781,10 @@ namespace faf::remote::client
         params.mConstDat.mStatsRoot = held.stats;
         if (const auto it = packetUnits.find(record.id); it != packetUnits.end()) {
           mStats.blueprintMismatches += it->second->mBlueprint != blueprint ? 1u : 0u;
-          mStats.unitConstantsMissing += it->second->mConstDat.mBuildStateTag != record.unit.buildStateTag
-                                           || it->second->mConstDat.mFake != record.unit.fake
-                                         ? 1u
-                                         : 0u;
+          mStats.unitConstantsMissing += it->second->mConstDat.mBuildStateTag != record.unit.buildStateTag ||
+              it->second->mConstDat.mFake != record.unit.fake
+            ? 1u
+            : 0u;
           mStats.tickMismatches += it->second->mTickCreated != params.mTickCreated ? 1u : 0u;
         } else {
           ++mStats.createdNotInPacket;
@@ -713,12 +809,22 @@ namespace faf::remote::client
 
     // Removals: a live entity goes (delete); an orphaned record leaving the frame has no
     // entity in the id map any more.
+    mRemoved.clear();
     for (const std::uint32_t id : delta.removed) {
       const auto it = mHeld.find(id);
       if (it != mHeld.end() && it->second.live) {
         deleteIds.push_back(static_cast<moho::EntId>(id));
         ++mStats.deleted;
         mStats.deleteMismatches += packetDeleted.count(id) == 0u ? 1u : 0u;
+        if (mKeepRemoved) {
+          // Plan WP9.3: an effect placed at it in this same beat (an impact) still finds its last state.
+          SRemoved& removed = mRemoved[id];
+          removed.data = std::move(it->second.data);
+          if (const wire::SEntityRecord* const record = ShownRecord(id); record != nullptr) {
+            removed.blueprint = record->blueprint < mBlueprints.size() ? mBlueprints[record->blueprint] : nullptr;
+            removed.isUnit = record->isUnit;
+          }
+        }
       }
       mHeld.erase(id);
     }
@@ -745,13 +851,14 @@ namespace faf::remote::client
       }
     }
     for (const std::uint32_t id : packetErased) {
-      mStats.eraseMismatches += std::find(eraseIds.begin(), eraseIds.end(), static_cast<moho::EntId>(id)) == eraseIds.end()
-        ? 1u
-        : 0u;
+      mStats.eraseMismatches +=
+        std::find(eraseIds.begin(), eraseIds.end(), static_cast<moho::EntId>(id)) == eraseIds.end() ? 1u : 0u;
     }
     for (const std::uint32_t id : packetDeleted) {
       const bool transient = packetEntities.count(id) != 0u || packetUnits.count(id) != 0u;
-      if (!transient && std::find(deleteIds.begin(), deleteIds.end(), static_cast<moho::EntId>(id)) == deleteIds.end()) {
+      if (
+        !transient && std::find(deleteIds.begin(), deleteIds.end(), static_cast<moho::EntId>(id)) == deleteIds.end()
+      ) {
         ++mStats.deleteMismatches;
       }
     }
@@ -786,9 +893,8 @@ namespace faf::remote::client
       const bool created = createdNow.count(record.id) != 0u;
       const auto packetIt = packetEntityUpdates.find(record.id);
       const bool fromPacket = packetIt != packetEntityUpdates.end();
-      const bool moving = mCodec.deadReckoning
-                       && (record.velocity != std::array<std::int32_t, 3>{} || record.verticalAcceleration != 0
-                           || record.yawRate != 0);
+      const bool moving = mCodec.deadReckoning &&
+        (record.velocity != std::array<std::int32_t, 3>{} || record.verticalAcceleration != 0 || record.yawRate != 0);
       const bool settling = !created && !SameTransform(held.data.mCurTransform, held.data.mLastTransform);
       if (!created && !fromPacket && !moving && !settling && !changed) {
         continue;
@@ -820,27 +926,32 @@ namespace faf::remote::client
         const moho::SSTIEntityVariableData& sim = packetIt->second->mVariableData;
         mStats.meshMismatches += data.mMeshBlueprint != sim.mMeshBlueprint ? 1u : 0u;
         mStats.meshResourceMismatches += data.mScmResource.get() != sim.mScmResource.get() ? 1u : 0u;
-        mStats.soundMismatches += (data.mAmbientSound != sim.mAmbientSound ? 1u : 0u)
-                                + (data.mRumbleSound != sim.mRumbleSound ? 1u : 0u);
+        mStats.soundMismatches +=
+          (data.mAmbientSound != sim.mAmbientSound ? 1u : 0u) + (data.mRumbleSound != sim.mRumbleSound ? 1u : 0u);
         mStats.underlayMismatches += data.mUnderlayTexture.get() != sim.mUnderlayTexture.get() ? 1u : 0u;
         const Wm3::Vec3f& actual = sim.mCurTransform.pos_;
         const double error = std::max(
-          {std::fabs(static_cast<double>(actual.x - shown.pos_.x)), std::fabs(static_cast<double>(actual.y - shown.pos_.y)),
+          {std::fabs(static_cast<double>(actual.x - shown.pos_.x)),
+           std::fabs(static_cast<double>(actual.y - shown.pos_.y)),
            std::fabs(static_cast<double>(actual.z - shown.pos_.z))}
         );
         mStats.maxPositionError = std::max(mStats.maxPositionError, error);
         const moho::VTransform& simTransform = sim.mCurTransform;
         const double dot = std::fabs(
-          static_cast<double>(simTransform.orient_.w) * shown.orient_.w + static_cast<double>(simTransform.orient_.x) * shown.orient_.x
-          + static_cast<double>(simTransform.orient_.y) * shown.orient_.y
-          + static_cast<double>(simTransform.orient_.z) * shown.orient_.z
+          static_cast<double>(simTransform.orient_.w) * shown.orient_.w +
+          static_cast<double>(simTransform.orient_.x) * shown.orient_.x +
+          static_cast<double>(simTransform.orient_.y) * shown.orient_.y +
+          static_cast<double>(simTransform.orient_.z) * shown.orient_.z
         );
         const double norms = std::sqrt(
-          (static_cast<double>(simTransform.orient_.w) * simTransform.orient_.w + static_cast<double>(simTransform.orient_.x) * simTransform.orient_.x
-           + static_cast<double>(simTransform.orient_.y) * simTransform.orient_.y
-           + static_cast<double>(simTransform.orient_.z) * simTransform.orient_.z)
-          * (static_cast<double>(shown.orient_.w) * shown.orient_.w + static_cast<double>(shown.orient_.x) * shown.orient_.x
-             + static_cast<double>(shown.orient_.y) * shown.orient_.y + static_cast<double>(shown.orient_.z) * shown.orient_.z)
+          (static_cast<double>(simTransform.orient_.w) * simTransform.orient_.w +
+           static_cast<double>(simTransform.orient_.x) * simTransform.orient_.x +
+           static_cast<double>(simTransform.orient_.y) * simTransform.orient_.y +
+           static_cast<double>(simTransform.orient_.z) * simTransform.orient_.z) *
+          (static_cast<double>(shown.orient_.w) * shown.orient_.w +
+           static_cast<double>(shown.orient_.x) * shown.orient_.x +
+           static_cast<double>(shown.orient_.y) * shown.orient_.y +
+           static_cast<double>(shown.orient_.z) * shown.orient_.z)
         );
         if (norms > 0.0) {
           const double degrees = 2.0 * std::acos(std::min(1.0, dot / norms)) * 57.29577951308232;
@@ -852,8 +963,12 @@ namespace faf::remote::client
             const moho::REntityBlueprint* const blueprint =
               record.blueprint < mBlueprints.size() ? mBlueprints[record.blueprint] : nullptr;
             gpg::Logf(
-              "loopback: entity 0x%08x (%s) at (%.1f, %.1f, %.1f) is outside the position quantiser", record.id,
-              blueprint != nullptr ? blueprint->mBlueprintId.c_str() : "no blueprint", actual.x, actual.y, actual.z
+              "loopback: entity 0x%08x (%s) at (%.1f, %.1f, %.1f) is outside the position quantiser",
+              record.id,
+              blueprint != nullptr ? blueprint->mBlueprintId.c_str() : "no blueprint",
+              actual.x,
+              actual.y,
+              actual.z
             );
           }
         }
@@ -882,13 +997,14 @@ namespace faf::remote::client
         while (changeIt != delta.changed.end() && changeIt->record.id < record.id) {
           ++changeIt;
         }
-        const bool unitChanged = changeIt != delta.changed.end() && changeIt->record.id == record.id
-                              && (changeIt->fields & wire::kUnitFields) != 0u;
+        const bool unitChanged = changeIt != delta.changed.end() && changeIt->record.id == record.id &&
+          (changeIt->fields & wire::kUnitFields) != 0u;
         const bool created = createdNow.count(record.id) != 0u;
         const auto packetIt = packetUnitUpdates.find(record.id);
         const bool fromPacket = packetIt != packetUnitUpdates.end();
         const wire::SUnitPose* bones = nullptr;
         bool poseMoving = false;
+        bool moved = false; // plan WP8.4: its poses step with its transform (`UpdatePoses`)
         if (mNoSim && record.isUnit) {
           while (mPoseLane != nullptr && poseAt < mPoseLane->size() && (*mPoseLane)[poseAt].id < record.id) {
             ++poseAt;
@@ -898,9 +1014,13 @@ namespace faf::remote::client
           }
           if (const auto found = mHeld.find(record.id); found != mHeld.end()) {
             poseMoving = found->second.poseMoving;
+            moved = !SameTransform(found->second.data.mCurTransform, found->second.data.mLastTransform);
           }
         }
-        if (!record.isUnit || !updatable(record.id) || (!created && !unitChanged && !fromPacket && bones == nullptr && !poseMoving)) {
+        if (
+          !record.isUnit || !updatable(record.id) ||
+          (!created && !unitChanged && !fromPacket && bones == nullptr && !poseMoving && !moved)
+        ) {
           continue;
         }
         SHeldEntity& held = mHeld[record.id];
@@ -921,7 +1041,8 @@ namespace faf::remote::client
           entry.mReserved04 = packetIt->second->mReserved04;
           entry.mReserved234 = packetIt->second->mReserved234;
           ++mStats.unitPosesBorrowed;
-          mStats.unitDataMismatches += SameUnitData(data, sim) && entry.mReconFlags == packetIt->second->mReconFlags ? 0u : 1u;
+          mStats.unitDataMismatches +=
+            SameUnitData(data, sim) && entry.mReconFlags == packetIt->second->mReconFlags ? 0u : 1u;
         } else if (mNoSim) {
           UpdatePoses(record, held, bones, data);
         }
@@ -941,8 +1062,8 @@ namespace faf::remote::client
         while (changeIt != delta.changed.end() && changeIt->record.id < record.id) {
           ++changeIt;
         }
-        const bool statsChanged = changeIt != delta.changed.end() && changeIt->record.id == record.id
-                               && (changeIt->fields & wire::kFieldUnitStats) != 0u;
+        const bool statsChanged = changeIt != delta.changed.end() && changeIt->record.id == record.id &&
+          (changeIt->fields & wire::kFieldUnitStats) != 0u;
         if (!record.isUnit || (!statsChanged && createdNow.count(record.id) == 0u)) {
           continue;
         }
@@ -968,5 +1089,102 @@ namespace faf::remote::client
     mStats.rebuildSeconds += std::chrono::duration<double>(rebuilt - compared).count();
     mHasShown = true;
     return true;
+  }
+
+  const wire::SEntityRecord* CSyncRebuilder::ShownRecord(
+    const std::uint32_t id
+  ) const noexcept
+  {
+    if (!mHasShown) {
+      return nullptr;
+    }
+    const auto found = std::lower_bound(
+      mShown.entities.begin(),
+      mShown.entities.end(),
+      id,
+      [](const wire::SEntityRecord& record, const std::uint32_t at) {
+      return record.id < at;
+    }
+    );
+    return found != mShown.entities.end() && found->id == id ? &*found : nullptr;
+  }
+
+  bool CSyncRebuilder::FindHeld(
+    const std::uint32_t id,
+    const bool orRemoved,
+    SHeldView& out
+  ) const
+  {
+    out = SHeldView{};
+    if (const auto it = mHeld.find(id); it != mHeld.end() && it->second.live) {
+      const wire::SEntityRecord* const record = ShownRecord(id);
+      if (record == nullptr) {
+        return false;
+      }
+      out.data = &it->second.data;
+      out.blueprint = record->blueprint < mBlueprints.size() ? mBlueprints[record->blueprint] : nullptr;
+      out.pose = it->second.pose;
+      out.isUnit = record->isUnit;
+      return true;
+    }
+    if (orRemoved) {
+      if (const auto it = mRemoved.find(id); it != mRemoved.end()) {
+        out.data = &it->second.data;
+        out.blueprint = it->second.blueprint;
+        out.isUnit = it->second.isUnit;
+        out.removed = true;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void CSyncRebuilder::ForEachLive(
+    const std::function<void(std::uint32_t, const moho::SSTIEntityVariableData&)>& visit
+  ) const
+  {
+    for (const auto& [id, held] : mHeld) {
+      if (held.live && ShownRecord(id) != nullptr) {
+        visit(id, held.data);
+      }
+    }
+  }
+
+  void CSyncRebuilder::HeldPoseUpdates(
+    const fa::vector<moho::SEntityVariableUpdateEntry>& moved,
+    fa::vector<moho::SUnitVariableUpdateEntry>& out
+  ) const
+  {
+    std::unordered_map<std::uint32_t, const moho::SEntityVariableUpdateEntry*> movedById;
+    movedById.reserve(moved.size());
+    for (const moho::SEntityVariableUpdateEntry& entry : moved) {
+      movedById.emplace(static_cast<std::uint32_t>(entry.mEntityId), &entry);
+    }
+    for (const auto& [id, held] : mHeld) {
+      if (!held.live || !held.poseMoving || !held.unit || !held.pose) {
+        continue;
+      }
+      const wire::SEntityRecord* const record = ShownRecord(id);
+      if (record == nullptr || !record->isUnit) {
+        continue;
+      }
+      // As the next beat without bones gives it (`UpdatePoses`): the current pose's bones at both ends, so no bone
+      // moves. Plan WP8.4: a unit the made-up beat carries on gets them where its transforms are (the body is drawn
+      // through the poses' world transforms), on copies: the next real beat steps from the held pose as before.
+      moho::SUnitVariableUpdateEntry& entry = out.emplace_back();
+      entry.mEntityId = static_cast<moho::EntId>(id);
+      entry.mVariableData = *held.unit;
+      entry.mVariableData.mPriorSharedPose = held.pose;
+      entry.mVariableData.mSharedPose = held.pose;
+      if (const auto it = movedById.find(id); it != movedById.end()) {
+        std::shared_ptr<moho::CAniPose> prior(new moho::CAniPose(*held.pose));
+        prior->SetWorldTransform(it->second->mVariableData.mLastTransform);
+        std::shared_ptr<moho::CAniPose> pose(new moho::CAniPose(*held.pose));
+        pose->SetWorldTransform(it->second->mVariableData.mCurTransform);
+        entry.mVariableData.mPriorSharedPose = std::move(prior);
+        entry.mVariableData.mSharedPose = std::move(pose);
+      }
+      entry.mReconFlags = record->unit.detail->reconFlags;
+    }
   }
 } // namespace faf::remote::client

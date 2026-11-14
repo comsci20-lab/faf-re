@@ -1,33 +1,33 @@
 // Part of Sim.cpp, included there: debug and stat helpers.
 
-  [[nodiscard]] float ConvertSignedStorageLaneToFloat(const std::uint64_t lane) noexcept
-  {
-    double value = static_cast<double>(lane & kInt64MagnitudeMask);
-    if ((lane & kInt64SignBitMask) != 0ull) {
-      value += kSignedInt64HighBitContribution;
-    }
-    return static_cast<float>(value);
+[[nodiscard]] float ConvertSignedStorageLaneToFloat(
+  const std::uint64_t lane
+) noexcept
+{
+  double value = static_cast<double>(lane & kInt64MagnitudeMask);
+  if ((lane & kInt64SignBitMask) != 0ull) {
+    value += kSignedInt64HighBitContribution;
   }
-
-  /**
-   * Address: 0x0064BA60 (FUN_0064BA60)
-   *
-   * What it does:
-   * Converts `SEconTotals::mMaxStorage` signed 64-bit ENERGY/MASS lanes into a
-   * pair of float lanes using the original sign-bit split conversion path.
-   */
-  [[nodiscard]] SEconPair* BuildSignedMaxStorageFloatPair(
-    SEconPair* const outPair,
-    const SEconTotals& totals
-  ) noexcept
-  {
-    outPair->ENERGY = ConvertSignedStorageLaneToFloat(totals.mMaxStorage.ENERGY);
-    outPair->MASS = ConvertSignedStorageLaneToFloat(totals.mMaxStorage.MASS);
-    return outPair;
-  }
+  return static_cast<float>(value);
 }
 
-
+/**
+ * Address: 0x0064BA60 (FUN_0064BA60)
+ *
+ * What it does:
+ * Converts `SEconTotals::mMaxStorage` signed 64-bit ENERGY/MASS lanes into a
+ * pair of float lanes using the original sign-bit split conversion path.
+ */
+[[nodiscard]] SEconPair* BuildSignedMaxStorageFloatPair(
+  SEconPair* const outPair,
+  const SEconTotals& totals
+) noexcept
+{
+  outPair->ENERGY = ConvertSignedStorageLaneToFloat(totals.mMaxStorage.ENERGY);
+  outPair->MASS = ConvertSignedStorageLaneToFloat(totals.mMaxStorage.MASS);
+  return outPair;
+}
+}
 
 /**
  * Address: 0x0064BBE0 (FUN_0064BBE0, Moho::Sim::BlingBling)
@@ -55,7 +55,7 @@ int Sim::BlingBling(
     return 0;
   }
 
-  CSimArmyEconomyInfo* const economyInfo = focusArmy->GetEconomy();
+  CEconomy* const economyInfo = focusArmy->GetEconomy();
   CEconStorage* const storage = GetArmyEconStorage(*focusArmy);
   if (economyInfo == nullptr || storage == nullptr) {
     return 0;
@@ -69,9 +69,9 @@ int Sim::BlingBling(
   // 0x0064BC79..0x0064BC96 adds into economy-info +0x08 (this tick's banked
   // resources), not the stored totals; the next economy tick moves it into storage.
   SEconPair grantedStorage{};
-  (void)BuildSignedMaxStorageFloatPair(&grantedStorage, economyInfo->economy);
-  economyInfo->mResources.ENERGY += grantedStorage.ENERGY;
-  economyInfo->mResources.MASS += grantedStorage.MASS;
+  (void)BuildSignedMaxStorageFloatPair(&grantedStorage, economyInfo->mTotals);
+  economyInfo->mResources.energy += grantedStorage.ENERGY;
+  economyInfo->mResources.mass += grantedStorage.MASS;
 
   return 0;
 }
@@ -314,7 +314,9 @@ int Sim::DestroyAll(
  * What it does:
  * Returns the effect-manager pointer lane stored on one `Sim` runtime object.
  */
-[[nodiscard]] CEffectManagerImpl* ReadEffectManagerLane(const Sim* const sim)
+[[nodiscard]] CEffectManagerImpl* ReadEffectManagerLane(
+  const Sim* const sim
+)
 {
   return sim->mEffectManager;
 }

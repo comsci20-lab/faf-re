@@ -173,6 +173,9 @@ type Expect struct {
 	NoDesync bool `yaml:"noDesync"`
 	// NoCrash: no game or adapter exited unless mpemu killed it.
 	NoCrash bool `yaml:"noCrash"`
+	// CleanExitOK: with NoCrash, a game that ends itself with exit code 0 passes (the coverage tour quits its game to
+	// write the counters); any other code still fails.
+	CleanExitOK bool `yaml:"cleanExitOk"`
 	// Present / Absent: journal records that must / must not exist.
 	Present []Match `yaml:"present"`
 	Absent  []Match `yaml:"absent"`
@@ -190,6 +193,11 @@ type Expect struct {
 	LogsContain []LogsAgree `yaml:"logsContain"`
 	// LogsAbsent: no listed player's game log holds a matching line.
 	LogsAbsent []LogsAgree `yaml:"logsAbsent"`
+	// OwnServerTokenOnly (mode server): every game was handed its own
+	// connection string and never another player's token: not in what it was
+	// sent, its command line or its log; the journal holds token tags only
+	// (launcher.CheckServerTokens, plan WP2.9).
+	OwnServerTokenOnly bool `yaml:"ownServerTokenOnly"`
 }
 
 // LogsAgree requires every listed player's game log (<run>/game-<uid>.log,

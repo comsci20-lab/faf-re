@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 
 namespace moho
 {
@@ -33,8 +33,8 @@ namespace moho
    */
   struct SUnitUpdateOverrides
   {
-    const boost::shared_ptr<CAniPose>* mPriorPose = nullptr; // with mPose: replace both handles
-    const boost::shared_ptr<CAniPose>* mPose = nullptr;
+    const std::shared_ptr<CAniPose>* mPriorPose = nullptr; // with mPose: replace both handles
+    const std::shared_ptr<CAniPose>* mPose = nullptr;
     bool mHasStunTicks = false;
     std::int32_t mStunTicks = 0;
   };
@@ -100,9 +100,8 @@ namespace moho
    * The copy takes `variableData` as it is at `Finish`, except `mRequestRefreshUI`, which is
    * taken now (`Entity::Sync` clears it right after queueing).
    */
-  [[nodiscard]] SEntityVariableUpdateEntry* QueueEntityVariableUpdateDeferred(
-    SSyncData* syncData, EntId entityId, const SSTIEntityVariableData& variableData
-  );
+  [[nodiscard]] SEntityVariableUpdateEntry*
+  QueueEntityVariableUpdateDeferred(SSyncData* syncData, EntId entityId, const SSTIEntityVariableData& variableData);
 
   /**
    * Captures scroll endpoints into the newest queued entity record. When that

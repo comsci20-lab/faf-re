@@ -9,6 +9,7 @@
 #include "gpg/core/containers/WriteArchive.h"
 #include "gpg/core/reflection/SerializationError.h"
 #include "gpg/core/utils/Global.h"
+#include "moho/ai/CAiFormationInstance.h"
 #include "moho/ai/IFormationInstance.h"
 #include "moho/math/Vector3f.h"
 #include "moho/misc/WeakPtr.h"
@@ -36,7 +37,9 @@ namespace
     return sInstance;
   }
 
-  [[nodiscard]] gpg::RType* CachedRType(const std::type_info& typeInfo)
+  [[nodiscard]] gpg::RType* CachedRType(
+    const std::type_info& typeInfo
+  )
   {
     return gpg::LookupRType(typeInfo);
   }
@@ -52,7 +55,9 @@ namespace
   }
 
   template <class TObject>
-  [[nodiscard]] gpg::RRef MakeTrackedRef(const TObject* const object)
+  [[nodiscard]] gpg::RRef MakeTrackedRef(
+    const TObject* const object
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -83,15 +88,16 @@ namespace
       return out;
     }
 
-    out.mObj = reinterpret_cast<void*>(
-      reinterpret_cast<std::uintptr_t>(const_cast<TObject*>(object)) - static_cast<std::uintptr_t>(baseOffset)
-    );
+    out.mObj = gpg::CompleteObject(object, baseOffset);
     out.mType = runtimeType;
     return out;
   }
 
   template <class TObject>
-  [[nodiscard]] TObject* ReadTrackedPointer(gpg::ReadArchive* const archive, const gpg::RRef& ownerRef)
+  [[nodiscard]] TObject* ReadTrackedPointer(
+    gpg::ReadArchive* const archive,
+    const gpg::RRef& ownerRef
+  )
   {
     gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(archive, ownerRef);
     if (!tracked.object) {
@@ -111,7 +117,8 @@ namespace
     const char* const expected = expectedType ? expectedType->GetName() : "null";
     const char* const actual = tracked.type ? tracked.type->GetName() : "null";
     const fa::string message = gpg::STR_Printf(
-      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" instead",
+      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
+      "instead",
       expected,
       actual
     );
@@ -190,7 +197,6 @@ namespace moho
     Finish();
   }
 
-
   /**
    * Address: 0x006B04B0 (FUN_006B04B0, Moho::SInfoCacheSerializer::Deserialize)
    *
@@ -198,7 +204,11 @@ namespace moho
    * Loads the raw formation pointer, reflected weak unit pointer, and trailing
    * scalar/vector lanes for `SInfoCache`.
    */
-  void SInfoCache::MemberDeserialize(gpg::ReadArchive* const archive, const int, const gpg::RRef& ownerRef)
+  void SInfoCache::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int,
+    const gpg::RRef& ownerRef
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -212,7 +222,7 @@ namespace moho
       SIM_NoteKeyframeFormationPointer(reinterpret_cast<void**>(&mFormationLayer), saved);
     } else {
       mFormationLayer =
-        reinterpret_cast<moho::CFormationInstance*>(ReadTrackedPointer<moho::IFormationInstance>(archive, ownerRef));
+        static_cast<moho::CFormationInstance*>(ReadTrackedPointer<moho::IFormationInstance>(archive, ownerRef));
     }
 
     archive->Read(gpg::RTypeOf<moho::WeakPtr<moho::IUnit>>(), &mFormationLeadRef, ownerRef);
@@ -230,7 +240,11 @@ namespace moho
    * Saves the raw formation pointer, reflected weak unit pointer, and trailing
    * scalar/vector lanes for `SInfoCache`.
    */
-  void SInfoCache::MemberSerialize(gpg::WriteArchive* const archive, const int, const gpg::RRef& ownerRef) const
+  void SInfoCache::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int,
+    const gpg::RRef& ownerRef
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -245,7 +259,7 @@ namespace moho
     } else {
       WriteTrackedPointer(
         archive,
-        reinterpret_cast<const moho::IFormationInstance*>(mFormationLayer),
+        static_cast<const moho::IFormationInstance*>(mFormationLayer),
         gpg::TrackedPointerState::Unowned,
         ownerRef
       );

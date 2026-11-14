@@ -44,19 +44,7 @@ namespace
 
   constexpr float kMaxTextScale = 64.0f;
 
-  /**
-   * Address: 0x0078EBF0 (FUN_0078EBF0)
-   *
-   * What it does:
-   * Returns one font descent metric lane.
-   */
-  [[maybe_unused]] float ReadFontDescentLane(
-    const CD3DFont* const font
-  ) noexcept
-  {
-    return font->mDescent;
-  }
-}
+} // namespace
 
 gpg::RType* moho::CMauiText::sType = nullptr;
 
@@ -186,7 +174,7 @@ void moho::CMauiText::SetNewFont(
     const float advance = mFont->GetAdvance(mText.c_str(), 0);
     CScriptLazyVar_float::SetValue(&mTextAdvanceLV, advance);
     CScriptLazyVar_float::SetValue(&mFontAscentLV, mFont->mAscent);
-    CScriptLazyVar_float::SetValue(&mFontDescentLV, ReadFontDescentLane(mFont));
+    CScriptLazyVar_float::SetValue(&mFontDescentLV, mFont->mDescent);
     CScriptLazyVar_float::SetValue(&mFontExternalLeadingLV, mFont->mExternalLeading);
   } else {
     CScriptLazyVar_float::SetValue(&mTextAdvanceLV, 0.0f);
@@ -266,7 +254,10 @@ void moho::CMauiText::DoRender(
   // this control with the default font's, so the values Lua reads catch up here.
   if (font->IsModFont()) {
     const float advance = font->GetAdvance(text, 0);
-    if (advance != CScriptLazyVar_float::GetValue(&mTextAdvanceLV) || font->mAscent != CScriptLazyVar_float::GetValue(&mFontAscentLV)) {
+    if (
+      advance != CScriptLazyVar_float::GetValue(&mTextAdvanceLV) ||
+      font->mAscent != CScriptLazyVar_float::GetValue(&mFontAscentLV)
+    ) {
       SetNewFont(font);
     }
   }
@@ -303,8 +294,10 @@ void moho::CMauiText::DoRender(
       if (textScale <= 0.0f) {
         return;
       }
-      pivotX = CScriptLazyVar_float::GetValue(&mLeftLV) + CScriptLazyVar_float::GetValue(&mWidthLV) * scaled->second.mPivotX;
-      pivotY = CScriptLazyVar_float::GetValue(&mTopLV) + CScriptLazyVar_float::GetValue(&mHeightLV) * scaled->second.mPivotY;
+      pivotX =
+        CScriptLazyVar_float::GetValue(&mLeftLV) + CScriptLazyVar_float::GetValue(&mWidthLV) * scaled->second.mPivotX;
+      pivotY =
+        CScriptLazyVar_float::GetValue(&mTopLV) + CScriptLazyVar_float::GetValue(&mHeightLV) * scaled->second.mPivotY;
       originX = pivotX + (originX - pivotX) * textScale;
       baselineY = pivotY + (baselineY - pivotY) * textScale;
     }
@@ -316,15 +309,13 @@ void moho::CMauiText::DoRender(
   // Optional drop shadow, offset by (+1, +1).
   if (mDropShadow) {
     const std::uint32_t shadowColor = this->AdjustARGBAlpha(mColor & 0xFF000000u);
-    const float shadowMaxAdvance = mClipToWidth ? CScriptLazyVar_float::GetValue(&mWidthLV)
-                                                          : gpg::NaN;
+    const float shadowMaxAdvance = mClipToWidth ? CScriptLazyVar_float::GetValue(&mWidthLV) : gpg::NaN;
     const Wm3::Vector3f shadowOrigin{originX + textScale, baselineY + textScale, 0.0f};
     (void)font->Render(text, primBatcher, shadowOrigin, xAxis, yAxis, shadowColor, 1.0f, shadowMaxAdvance);
   }
 
   // Main text run.
-  const float maxAdvance = mClipToWidth ? CScriptLazyVar_float::GetValue(&mWidthLV)
-                                                  : gpg::NaN;
+  const float maxAdvance = mClipToWidth ? CScriptLazyVar_float::GetValue(&mWidthLV) : gpg::NaN;
 
   // Alpha byte derived from mAlpha exactly as the binary does: negate-scale,
   // truncate toward zero, then subtract the shifted magnitude.
@@ -396,16 +387,15 @@ int moho::cfunc_CMauiTextSetNewFontL(
   }
   const int pointSize = static_cast<int>(lua_tonumber(state->m_state, 3));
 
-  boost::SharedPtrRaw<CD3DFont> createdFont = CD3DFont::Create(pointSize, familyName);
-  if (createdFont.px != nullptr) {
-    textControl->SetNewFont(createdFont.px);
+  moho::CountedPtr<CD3DFont> createdFont = CD3DFont::Create(pointSize, familyName);
+  if (createdFont.tex != nullptr) {
+    textControl->SetNewFont(createdFont.tex);
     lua_settop(state->m_state, 1);
   } else {
     lua_pushnil(state->m_state);
     (void)lua_gettop(state->m_state);
   }
 
-  createdFont.release();
   return 1;
 }
 
@@ -676,8 +666,7 @@ int moho::cfunc_CMauiTextSetCenteredHorizontallyL(
   CMauiText* const textControl = SCR_FromLua_CMauiText(textObject, state);
 
   LuaPlus::LuaStackObject centeredArg(state, 2);
-  textControl->mCenteredHorizontally =
-    LuaPlus::LuaStackObject::GetBoolean(&centeredArg);
+  textControl->mCenteredHorizontally = LuaPlus::LuaStackObject::GetBoolean(&centeredArg);
   lua_settop(state->m_state, 1);
   return 1;
 }
@@ -960,12 +949,7 @@ int moho::cfunc_LoadFont(
 moho::CScrLuaInitForm* moho::func_LoadFont_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "LoadFont",
-    &moho::cfunc_LoadFont,
-    nullptr,
-    "<global>",
-    kLoadFontHelpText
+    moho::SCR_UserLuaInitSet(), "LoadFont", &moho::cfunc_LoadFont, nullptr, "<global>", kLoadFontHelpText
   );
   return &binder;
 }
@@ -1005,7 +989,8 @@ int moho::cfunc_LoadFontL(
       if (fontBytes.mBegin == nullptr) {
         gpg::Warnf("MSDF: mod font %s refused: it can't be read", path);
       } else {
-        family = MSDF_RegisterModFont(path, fontBytes.mBegin, static_cast<std::size_t>(fontBytes.mEnd - fontBytes.mBegin));
+        family =
+          MSDF_RegisterModFont(path, fontBytes.mBegin, static_cast<std::size_t>(fontBytes.mEnd - fontBytes.mBegin));
       }
     }
   }

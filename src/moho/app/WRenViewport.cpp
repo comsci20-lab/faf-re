@@ -1,7 +1,12 @@
-#include "moho/app/WxPrivate.h"
+#include "gpg/gal/PipelineDefer.h"
 #include "moho/app/NetworkPanel.h"
+#include "moho/app/AppPrivate.h"
 #include "moho/render/AmbientOcclusionRenderer.h"
+#include "moho/render/Atmosphere.h"
+#include "moho/render/BounceLight.h"
+#include "moho/render/DynamicLights.h"
 #include "moho/render/FxaaRenderer.h"
+#include "moho/render/TemporalAA.h"
 #include "moho/render/PostRenderer.h"
 #include "moho/render/WideBloomRenderer.h"
 #include "moho/sim/STIMap.h"
@@ -12,7 +17,7 @@
 
 namespace
 {
-  /**
+  /*
    * Address: 0x007FB7C0 (FUN_007FB7C0, boost::shared_ptr_IRenTerrain::operator=)
    * Address: 0x007FBA60 (FUN_007FBA60, boost::detail::shared_count_IRenTerrain::shared_count_IRenTerrain)
    *
@@ -22,17 +27,14 @@ namespace
    * this delegates to internally constructs a fresh `shared_count(T*)`
    * control block (0x007FBA60) before releasing the old one; this single
    * call covers both.
+   *
+   * Callers call `mTerrain.reset(IRenTerrain::Create())`.
    */
-  boost::shared_ptr<moho::TerrainCommon>* AssignSharedTerrainFromRaw(
-    boost::shared_ptr<moho::TerrainCommon>* const outTerrain,
-    moho::TerrainCommon* const terrain
-  )
-  {
-    outTerrain->reset(terrain);
-    return outTerrain;
-  }
-}
+} // namespace
 
+bool moho::gViewportLeaveKeepsFocus = false;
+void (*moho::gViewportBeforeFrame)(int head) = nullptr;
+moho::IRenderWorldView* moho::gViewportOnlyView = nullptr;
 
 // ---------------------------------------------------------------------------
 // WRenViewport construction
@@ -40,9 +42,16 @@ namespace
 
 // Table 0x00DFE950 = {&WD3DViewport::sm_eventTable (0x00DFFC84), rows
 // 0x00F5AB58}; GetEventTable (0x007F6690) comes with it.
-BEGIN_EVENT_TABLE(moho::WRenViewport, moho::WD3DViewport)
-  EVT_ENTER_WINDOW(moho::WRenViewport::OnMouseEnter)
-  EVT_LEAVE_WINDOW(moho::WRenViewport::OnMouseLeave)
+BEGIN_EVENT_TABLE(
+  moho::WRenViewport,
+  moho::WD3DViewport
+)
+EVT_ENTER_WINDOW(
+  moho::WRenViewport::OnMouseEnter
+)
+EVT_LEAVE_WINDOW(
+  moho::WRenViewport::OnMouseLeave
+)
 END_EVENT_TABLE()
 
 /**
@@ -55,12 +64,12 @@ END_EVENT_TABLE()
  * as it is, and the head count comes from the second-head flag.
  */
 moho::WRenViewport::WRenViewport(
-  wxWindow* const parent,
+  ShellWindow* const parent,
   const gpg::StrArg title,
-  const wxSize& size,
+  const ShellSize& size,
   const bool hasSecondHead
 )
-  : WD3DViewport(parent, title, wxDefaultPosition, size)
+  : WD3DViewport(parent, title, kShellDefaultPosition, size)
   , mHasSecondaryHead(hasSecondHead)
   , mSession(nullptr)
   , mCam(nullptr)
@@ -93,19 +102,19 @@ namespace moho
   extern float fog_OffsetMultiplier;
   extern bool ren_PlayableBoundary;
   extern bool ren_FogOfWar;
+  extern bool ren_FogOfWarHidden;
 
   // Save/restore triple read and cleared by WRenViewport::RenderPreviewImage
   // (0x007F7590-0x007F75FB) around the strategic-map preview render pass,
   // alongside ren_Ui/ren_Fx/fog_DistanceFog/ren_Shadows above. Defined (with
   // byte-verified defaults) in RuntimeTuningGlobals.cpp.
-  extern bool ren_WorldBorder;  // 0x00F57E48 = 0x01
-  extern bool ren_Select;       // 0x00F57E4C = 0x01
-  extern bool ren_fog;          // 0x00F57E4D = 0x01
-  extern bool ren_Shadows;      // 0x00F57E53 = 0x01
+  extern bool ren_WorldBorder; // 0x00F57E48 = 0x01
+  extern bool ren_Select;      // 0x00F57E4C = 0x01
+  extern bool ren_fog;         // 0x00F57E4D = 0x01
+  extern bool ren_Shadows;     // 0x00F57E53 = 0x01
   extern float ren_ShadowCoeff;
   extern std::int32_t shadow_Fidelity;
-}
-
+} // namespace moho
 
 /**
  * Address: 0x007F6530 (FUN_007F6530, Moho::REN_ShowSkeletons)
@@ -129,7 +138,9 @@ moho::CWldMap* moho::sWldMap = nullptr;
 /**
  * Address: 0x007FA150 (FUN_007FA150)
  */
-void moho::REN_SetWldMap(CWldMap* const map)
+void moho::REN_SetWldMap(
+  CWldMap* const map
+)
 {
   sWldMap = map;
 }
@@ -154,13 +165,13 @@ moho::IWldTerrainRes* moho::REN_GetTerrainRes()
  * `new WRenViewport` (0x21A8 bytes) with the size copied into a wxSize.
  */
 moho::WD3DViewport* moho::REN_CreateGameViewport(
-  wxWindow* const parent,
+  ShellWindow* const parent,
   const gpg::StrArg title,
   const Wm3::Vector2i& size,
   const bool hasSecondHead
 )
 {
-  return new WRenViewport(parent, title, wxSize(size.X(), size.Y()), hasSecondHead);
+  return new WRenViewport(parent, title, ShellSize(size.X(), size.Y()), hasSecondHead);
 }
 
 /**
@@ -171,7 +182,7 @@ moho::WD3DViewport* moho::REN_CreateGameViewport(
  * Returns the dynamic texture sheet RenderPreviewImage renders into (the
  * converting shared_ptr copy is the interlocked increment the binary shows).
  */
-boost::shared_ptr<moho::ID3DTextureSheet> moho::WRenViewport::GetPreviewImage()
+std::shared_ptr<moho::ID3DTextureSheet> moho::WRenViewport::GetPreviewImage()
 {
   return mDynamicTextureSheet;
 }
@@ -196,7 +207,9 @@ moho::CD3DPrimBatcher* moho::WRenViewport::GetPrimBatcher() const
  * Once the GAL device is ready, focuses the first head's window so keyboard
  * input follows the mouse into the viewport.
  */
-void moho::WRenViewport::OnMouseEnter(wxMouseEvent& event)
+void moho::WRenViewport::OnMouseEnter(
+  ShellMouseEvent& event
+)
 {
   (void)event;
 
@@ -228,11 +241,13 @@ void moho::WRenViewport::OnMouseEnter(wxMouseEvent& event)
  * Once the GAL device is ready and there is a second head, focuses that
  * head's window as the mouse leaves the viewport.
  */
-void moho::WRenViewport::OnMouseLeave(wxMouseEvent& event)
+void moho::WRenViewport::OnMouseLeave(
+  ShellMouseEvent& event
+)
 {
   (void)event;
 
-  if (!gpg::gal::Device::IsReady()) {
+  if (!gpg::gal::Device::IsReady() || gViewportLeaveKeepsFocus) {
     return;
   }
 
@@ -280,7 +295,7 @@ void moho::WRenViewport::AddWorldView(
   entry.mView = view;
   entry.mHead = head;
   entry.mDepth = depth;
-  (void)AssignSharedTerrainFromRaw(&entry.mTerrain, IRenTerrain::Create());
+  entry.mTerrain.reset(IRenTerrain::Create());
   if (entry.mTerrain) {
     (void)entry.mTerrain->Create(REN_GetTerrainRes());
   }
@@ -295,7 +310,9 @@ void moho::WRenViewport::AddWorldView(
  * What it does:
  * Erases the first entry for `view`.
  */
-void moho::WRenViewport::RemoveWorldView(IRenderWorldView* const view)
+void moho::WRenViewport::RemoveWorldView(
+  IRenderWorldView* const view
+)
 {
   for (SWorldViewInfo* it = mWorldViews.begin(); it != mWorldViews.end(); ++it) {
     if (it->mView == view) {
@@ -321,11 +338,11 @@ namespace
    * previous sheet as its `currentSheet` argument and returning the (possibly
    * recreated) destination that is stored back into the lane.
    */
-  boost::shared_ptr<moho::CD3DDynamicTextureSheet>& RenDumpFrameSheetLane() noexcept
+  std::shared_ptr<moho::CD3DDynamicTextureSheet>& RenDumpFrameSheetLane() noexcept
   {
     // Function-local static: constructed empty on first use and released once
     // at process exit, matching the binary's init-once + atexit semantics.
-    static boost::shared_ptr<moho::CD3DDynamicTextureSheet> sDumpFrameSheet{};
+    static std::shared_ptr<moho::CD3DDynamicTextureSheet> sDumpFrameSheet{};
     return sDumpFrameSheet;
   }
 
@@ -340,7 +357,7 @@ namespace
   //   dump_frameDumpName     @ 0x00F5A8C0 (fa::string)                      empty
   // The timestamp / base-name strings are populated by the frame-dump console
   // command elsewhere; here they are only consumed to build the output path.
-}
+} // namespace
 
 namespace moho
 {
@@ -375,8 +392,7 @@ namespace moho
   fa::string dump_frameDumpName{};
 
   void REN_MaybeDumpFrame(ID3DRenderTarget* renderTarget);
-}
-
+} // namespace moho
 
 /**
  * Address: 0x007F5970 (FUN_007F5970)
@@ -397,7 +413,9 @@ namespace moho
  * accumulated sheet's texture back and saves it to a numbered `.bmp` file
  * built from the frame-dump name + timestamp, warning on save failure.
  */
-void moho::REN_MaybeDumpFrame(moho::ID3DRenderTarget* const renderTarget)
+void moho::REN_MaybeDumpFrame(
+  moho::ID3DRenderTarget* const renderTarget
+)
 {
   if (moho::dump_frameRate == 0) {
     return;
@@ -413,24 +431,21 @@ void moho::REN_MaybeDumpFrame(moho::ID3DRenderTarget* const renderTarget)
 
   // Copy the current head's screen writer-lock surface into the caller's
   // render target (whole-surface StretchRect: null source/dest rectangles).
-  boost::shared_ptr<moho::ID3DRenderTarget> screenLock{};
+  std::shared_ptr<moho::ID3DRenderTarget> screenLock{};
   device->GetWriterLock1(screenLock, 0);
   device->SetViewRect(screenLock.get(), renderTarget, nullptr, nullptr);
 
   // Accumulate the render target into the persistent dump sheet. Func10 takes
   // the previous sheet as `currentSheet` (reused/recreated as needed) and
   // returns the destination sheet, which we store back into the static lane.
-  boost::shared_ptr<moho::CD3DDynamicTextureSheet>& dumpSheet = RenDumpFrameSheetLane();
+  std::shared_ptr<moho::CD3DDynamicTextureSheet>& dumpSheet = RenDumpFrameSheetLane();
   moho::ID3DDeviceResources* const resources = device->GetResources();
   resources->Func10(dumpSheet, renderTarget, dumpSheet);
 
   // Build the numbered output path: "<name>\SCFrame_<timestamp>_<NNNNN>.bmp".
   const int frameNumber = moho::dump_outputFrameNumber++;
   const fa::string dest = gpg::STR_Printf(
-    "%s\\SCFrame_%s_%05d.bmp",
-    moho::dump_frameDumpName.c_str(),
-    moho::dump_Timestamp.c_str(),
-    frameNumber
+    "%s\\SCFrame_%s_%05d.bmp", moho::dump_frameDumpName.c_str(), moho::dump_Timestamp.c_str(), frameNumber
   );
 
   // Save the accumulated sheet's texture to file. The binary reads the sheet's
@@ -439,7 +454,7 @@ void moho::REN_MaybeDumpFrame(moho::ID3DRenderTarget* const renderTarget)
   // image format and no in-memory output buffer. A GAL error is caught and
   // reported rather than propagated, matching the binary's inline EH funclet.
   if (device9 != nullptr) {
-    boost::shared_ptr<gpg::gal::Texture> texture{};
+    std::shared_ptr<gpg::gal::Texture> texture{};
     dumpSheet->GetTexture(texture);
     try {
       device9->SaveTexture(texture, dest, 0, nullptr);
@@ -453,15 +468,15 @@ namespace moho
   // Console-tuning debug globals consumed by the render/debug HUD pass. All are
   // defined in the unrecovered console-vars TU; extern-declared here per the
   // established frontier pattern. Types byte-verified from the referencing .asm.
-  extern bool ren_Ui;                        // ?ren_Ui@Moho@@3_NA (1-byte bool)
-  extern bool ren_UnitSilhouette;            // ?ren_UnitSilhouette@Moho@@3_NA (1-byte bool)
-  extern bool ren_ShowFrameTimes;            // ?ren_ShowFrameTimes@Moho@@3_NA
-  extern bool ren_ShowNetworkStats;          // ?ren_ShowNetworkStats@Moho@@3_NA
-  extern bool ren_ShowBandwidthUsage;        // ?ren_ShowBandwidthUsage@Moho@@3_NA
-  extern bool UI_ShowControlUnderMouse;      // ?UI_ShowControlUnderMouse@Moho@@3_NA
-  extern bool ed_EnableHook;                 // ?ed_EnableHook@Moho@@3_NA
-  extern float ren_BandwidthDisplaySeconds;  // ?ren_BandwidthDisplaySeconds@Moho@@3MA
-  extern float ren_BandwidthDisplayKernel;   // ?ren_BandwidthDisplayKernel@Moho@@3MA
+  extern bool ren_Ui;                       // ?ren_Ui@Moho@@3_NA (1-byte bool)
+  extern bool ren_UnitSilhouette;           // ?ren_UnitSilhouette@Moho@@3_NA (1-byte bool)
+  extern bool ren_ShowFrameTimes;           // ?ren_ShowFrameTimes@Moho@@3_NA
+  extern bool ren_ShowNetworkStats;         // ?ren_ShowNetworkStats@Moho@@3_NA
+  extern bool ren_ShowBandwidthUsage;       // ?ren_ShowBandwidthUsage@Moho@@3_NA
+  extern bool UI_ShowControlUnderMouse;     // ?UI_ShowControlUnderMouse@Moho@@3_NA
+  extern bool ed_EnableHook;                // ?ed_EnableHook@Moho@@3_NA
+  extern float ren_BandwidthDisplaySeconds; // ?ren_BandwidthDisplaySeconds@Moho@@3MA
+  extern float ren_BandwidthDisplayKernel;  // ?ren_BandwidthDisplayKernel@Moho@@3MA
 
   // ed_EnableHook (0x00F57E55) gates ED_Render at the end of RenderUI
   // (asm 0x007F89FB..0x007F8A13); RenderPreviewImage clears it while it draws.
@@ -469,17 +484,17 @@ namespace moho
   // Frame-driver tuning globals read by WRenViewport::D3DWindowOnDeviceRender /
   // WRenViewport::Render. Types byte-verified from the referencing .asm
   // (FUN_007F7B30 and FUN_007F90D0 all use `cmp <sym>, 0` on a 1-byte lane).
-  extern bool ren_RenderNothing;   // ?ren_RenderNothing@Moho@@3_NA @0x010A6416
-  extern bool ren_ShowWireframe;   // ?ren_ShowWireframe@Moho@@3_NA @0x010A641C
-  extern bool ren_OnlyFirstView;   // ?ren_OnlyFirstView@Moho@@3_NA @0x010A641D
+  extern bool ren_RenderNothing; // ?ren_RenderNothing@Moho@@3_NA @0x010A6416
+  extern bool ren_ShowWireframe; // ?ren_ShowWireframe@Moho@@3_NA @0x010A641C
+  extern bool ren_OnlyFirstView; // ?ren_OnlyFirstView@Moho@@3_NA @0x010A641D
 
   // Sound-frame sequence counter bumped once per rendered frame by the
   // frame driver (asm 0x007F7CD7 `add snd_index, 1`). Defined in the audio TU.
   extern int snd_index;
 
   // Defined below, called from WRenViewport::RenderUI.
-  void REN_DebugStuff(boost::shared_ptr<CD3DPrimBatcher> batcher, int head);
-}
+  void REN_DebugStuff(std::shared_ptr<CD3DPrimBatcher> batcher, int head);
+} // namespace moho
 
 namespace
 {
@@ -489,18 +504,22 @@ namespace
   // graph does not flicker. Both live in engine .data in the shipped binary
   // (dword_F57E8C @0x00F57E8C, ren_bandwidth_time1 @0x010BF070, constructed via
   // CRT static-init) and persist across frames.
-  int gRenBandwidthPeakScale = 1024;              // dword_F57E8C (shipped .data: 1024)
-  gpg::time::Timer gRenBandwidthPeakScaleTimer;   // ren_bandwidth_time1
+  int gRenBandwidthPeakScale = 1024;            // dword_F57E8C (shipped .data: 1024)
+  gpg::time::Timer gRenBandwidthPeakScaleTimer; // ren_bandwidth_time1
 
   // Round-toward-zero + carry helpers matching the binary's frndint/cmov idiom.
   // ceil form (cmova, +1 when x > trunc(x)); floor form (cmovb, -1 when
   // x < trunc(x)). Preserves the exact integer the .asm computes.
-  [[nodiscard]] int RenCeilTowardZero(const float x) noexcept
+  [[nodiscard]] int RenCeilTowardZero(
+    const float x
+  ) noexcept
   {
     const float truncated = std::trunc(x);
     return static_cast<int>(truncated) + (x > truncated ? 1 : 0);
   }
-  [[nodiscard]] int RenFloorTowardZero(const float x) noexcept
+  [[nodiscard]] int RenFloorTowardZero(
+    const float x
+  ) noexcept
   {
     const float truncated = std::trunc(x);
     return static_cast<int>(truncated) - (x < truncated ? 1 : 0);
@@ -531,11 +550,11 @@ namespace
    *    strokes each series as connected outbound/inbound line strips.
    */
   void func_ren_BandwidthUsage(
-    const int graphHeightBase,             // ecx0 (== headHeight/3 at the call site)
-    const int graphLeftBase,               // edx0 (== headWidth - 3*headWidth/4 - 25)
-    moho::CD3DPrimBatcher* const batcher,  // a3 (target of every Draw* call; `info`)
-    const int graphRightExtent,            // a4  (== 3*headWidth/4)
-    const int graphHalfHeight              // arg8 (== (headHeight - headHeight/3)/2)
+    const int graphHeightBase,            // ecx0 (== headHeight/3 at the call site)
+    const int graphLeftBase,              // edx0 (== headWidth - 3*headWidth/4 - 25)
+    moho::CD3DPrimBatcher* const batcher, // a3 (target of every Draw* call; `info`)
+    const int graphRightExtent,           // a4  (== 3*headWidth/4)
+    const int graphHalfHeight             // arg8 (== (headHeight - headHeight/3)/2)
   )
   {
     using moho::CD3DFont;
@@ -563,8 +582,8 @@ namespace
     const int graphBottomY = graphHalfHeight + graphHeightBase;
 
     // 0x007F411A..0x007F413C: retained 10pt Courier New font handle.
-    boost::SharedPtrRaw<CD3DFont> rawFont = CD3DFont::Create(10, "Courier New");
-    CD3DFont* const font = rawFont.px;
+    moho::CountedPtr<CD3DFont> fontHandle = CD3DFont::Create(10, "Courier New");
+    CD3DFont* const font = fontHandle.tex;
 
     // 0x007F414F..0x007F41B8: vertical extents from font metrics (ceil + 1).
     const int ascentCeil = RenCeilTowardZero(font->mAscent) + 1;   // v11
@@ -576,7 +595,7 @@ namespace
 
     // ---- Backdrop quad, asm 0x007F421B..0x007F4393. Color 0x80000000 --------
     {
-      const boost::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);
+      const std::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);
       batcher->SetTexture(whiteTex);
 
       constexpr std::uint32_t kBackdropColor = 0x80000000u; // 0x007F4297
@@ -593,9 +612,9 @@ namespace
     }
 
     // ---- Time-range parameters, asm 0x007F4398..0x007F443E. -----------------
-    const int rangeSpanMs = RenFloorTowardZero(moho::ren_BandwidthDisplaySeconds * 1000.0f);    // v23
-    const int windowUs = RenFloorTowardZero(moho::ren_BandwidthDisplayKernel * 1000000.0f);     // v27
-    const int kernelMs = RenFloorTowardZero(moho::ren_BandwidthDisplayKernel * 1000.0f);        // v28-derived
+    const int rangeSpanMs = RenFloorTowardZero(moho::ren_BandwidthDisplaySeconds * 1000.0f); // v23
+    const int windowUs = RenFloorTowardZero(moho::ren_BandwidthDisplayKernel * 1000000.0f);  // v27
+    const int kernelMs = RenFloorTowardZero(moho::ren_BandwidthDisplayKernel * 1000.0f);     // v28-derived
 
     // 0x007F443E..0x007F4451: local send-stamp window (vtable GetBetween, slot 23).
     SSendStampWindow localStamps = clientMgr->GetBetween(rangeSpanMs + kernelMs);
@@ -606,21 +625,31 @@ namespace
     SSendStampWindow connectorStamps = connector->SnapshotSendStamps(connectorSinceMs);
 
     // ---- Build the two smoothed byte-rate series, asm 0x007F44A3..0x007F4547.
-    const int sampleCount = rangeSpanMs;                                     // v63
-    const int64_t spanUs = 1000LL * static_cast<int64_t>(rangeSpanMs);       // v35
+    const int sampleCount = rangeSpanMs;                               // v63
+    const int64_t spanUs = 1000LL * static_cast<int64_t>(rangeSpanMs); // v35
 
-    SBandwidthUsageSeries localSeries;      // &a2
-    SBandwidthUsageSeries connectorSeries;  // &v87
+    SBandwidthUsageSeries localSeries;     // &a2
+    SBandwidthUsageSeries connectorSeries; // &v87
 
     const uint64_t localEndUs = localStamps.windowEndTimeUs;
     moho::NET_BuildBandwidthUsageSeries(
-      localSeries, localStamps, sampleCount,
-      localEndUs - static_cast<uint64_t>(spanUs), localEndUs, static_cast<uint64_t>(windowUs));
+      localSeries,
+      localStamps,
+      sampleCount,
+      localEndUs - static_cast<uint64_t>(spanUs),
+      localEndUs,
+      static_cast<uint64_t>(windowUs)
+    );
 
     const uint64_t connEndUs = connectorStamps.windowEndTimeUs;
     moho::NET_BuildBandwidthUsageSeries(
-      connectorSeries, connectorStamps, sampleCount,
-      connEndUs - static_cast<uint64_t>(spanUs), connEndUs, static_cast<uint64_t>(windowUs));
+      connectorSeries,
+      connectorStamps,
+      sampleCount,
+      connEndUs - static_cast<uint64_t>(spanUs),
+      connEndUs,
+      static_cast<uint64_t>(windowUs)
+    );
 
     // ---- Peak-scale auto-range (power of two), asm 0x007F454C..0x007F462C. --
     int peakScale = 128; // esi, seeded 0x80 (0x007F454C)
@@ -678,9 +707,9 @@ namespace
 
     // ---- Y-axis scale labels: 5 rows of "%5d", asm 0x007F469A..0x007F4775. --
     {
-      int labelValue = 0;            // ebp (v50), steps by axisStep
-      unsigned int rowYAccum = 0;    // esi (v49), steps by the row-height slot y_low
-      for (int row = 0; row < 5; ++row) { // var_138 == 5
+      int labelValue = 0;                                           // ebp (v50), steps by axisStep
+      unsigned int rowYAccum = 0;                                   // esi (v49), steps by the row-height slot y_low
+      for (int row = 0; row < 5; ++row) {                           // var_138 == 5
         const fa::string text = gpg::STR_Printf("%5d", labelValue); // 0x007F46B0
         // Baseline Y = (peakScale-derived base) - (rowYAccum >> 2), fild + the
         // MSVC unsigned->float fixup (0x007F46BC..0x007F46E1).
@@ -691,16 +720,17 @@ namespace
         // index; not pinnable to Render's origin.x from this frame. Anchoring at
         // the reserved label gutter (graphLeftBase - labelAdvanceCeil).
         const Vector3f origin{static_cast<float>(graphLeftBase - labelAdvanceCeil), labelY, 0.0f};
-        (void)font->Render(text.c_str(), batcher, origin, textXAxis, textYAxis,
-                           0xFFFFFFFFu, kNoGlyphScale, kNoMaxAdvance);
-        labelValue += axisStep;                               // 0x007F475F
-        rowYAccum += static_cast<unsigned int>(graphHalfHeight);  // 0x007F4763 (y_low/var_D4)
+        (void)font->Render(
+          text.c_str(), batcher, origin, textXAxis, textYAxis, 0xFFFFFFFFu, kNoGlyphScale, kNoMaxAdvance
+        );
+        labelValue += axisStep;                                  // 0x007F475F
+        rowYAccum += static_cast<unsigned int>(graphHalfHeight); // 0x007F4763 (y_low/var_D4)
       }
     }
 
     // ---- Grid frame + horizontal grid lines, asm 0x007F4775..0x007F4AC9. ----
     {
-      const boost::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);
+      const std::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);
       batcher->SetTexture(whiteTex); // 0x007F4799
 
       // UNRESOLVED: the four frame-rectangle corner scalars (v72.info,
@@ -709,10 +739,10 @@ namespace
       // after the label texture temp is torn down; their producing stores are the
       // heavily-aliased entry-block writes (~0x007F4410..0x007F447C) that could
       // not be pinned. Using the plainly derived plot bounds.
-      const float rectLeftX = static_cast<float>(graphLeftBase - labelAdvanceCeil);  // v72.info
-      const float rectRightX = static_cast<float>(rightEdgeX);                       // v72.count.pi_
+      const float rectLeftX = static_cast<float>(graphLeftBase - labelAdvanceCeil);          // v72.info
+      const float rectRightX = static_cast<float>(rightEdgeX);                               // v72.count.pi_
       const float rectTopY = static_cast<float>(graphHeightBase - descentCeil - ascentCeil); // v73
-      const float rectBottomY = static_cast<float>(graphHalfHeight);                 // v74
+      const float rectBottomY = static_cast<float>(graphHalfHeight);                         // v74
 
       constexpr std::uint32_t kLineColor = 0xFFFFFFFFu; // eax0 == -1 on every vertex
       const auto lineVertex = [](const float x, const float y) {
@@ -761,29 +791,31 @@ namespace
     // Local series: inbound 0xFF0000FF (x0/ebx @0x007F4AE8), outbound 0xFFFF0000
     // (x1 @0x007F4ADA).
     moho::REN_DrawBandwidthUsageLinePair(
-      *batcher, localSeries,
-      /*xOffset=*/ seriesXOffset,
-      /*yBase=*/ seriesYBase,
-      /*yScale=*/ yScale,
-      /*inboundColor=*/ 0xFF0000FFu,
-      /*outboundColor=*/ 0xFFFF0000u);
+      *batcher,
+      localSeries,
+      /*xOffset=*/seriesXOffset,
+      /*yBase=*/seriesYBase,
+      /*yScale=*/yScale,
+      /*inboundColor=*/0xFF0000FFu,
+      /*outboundColor=*/0xFFFF0000u
+    );
 
     // Connector series: inbound 0xFF8080FF (x0/ebx @0x007F4B1E), outbound
     // 0xFFFF8080 (x1 @0x007F4B0E).
     moho::REN_DrawBandwidthUsageLinePair(
-      *batcher, connectorSeries,
-      /*xOffset=*/ seriesXOffset,
-      /*yBase=*/ seriesYBase,
-      /*yScale=*/ yScale,
-      /*inboundColor=*/ 0xFF8080FFu,
-      /*outboundColor=*/ 0xFFFF8080u);
+      *batcher,
+      connectorSeries,
+      /*xOffset=*/seriesXOffset,
+      /*yBase=*/seriesYBase,
+      /*yScale=*/yScale,
+      /*inboundColor=*/0xFF8080FFu,
+      /*outboundColor=*/0xFFFF8080u
+    );
 
     // ---- Teardown, asm 0x007F4B2F..0x007F4BE9. localSeries/connectorSeries and
     // the two send-stamp views destruct here; release the retained font handle.
-    rawFont.release();
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x007FA730 (FUN_007FA730, Moho::REN_DebugStuff)
@@ -801,12 +833,17 @@ namespace
  * screen-space orthographic projection on the prim batcher, renders every armed
  * overlay, then flushes. A no-op when every flag is clear.
  */
-void moho::REN_DebugStuff(boost::shared_ptr<CD3DPrimBatcher> batcher, const int head)
+void moho::REN_DebugStuff(
+  std::shared_ptr<CD3DPrimBatcher> batcher,
+  const int head
+)
 {
   // 0x007FA756..0x007FA778: bail (releasing the batcher) when nothing is armed.
   // Engine addition (issue #322): the network panel is one more overlay.
-  if (!moho::ren_ShowFrameTimes && !moho::ren_ShowNetworkStats
-      && !moho::ren_ShowBandwidthUsage && !moho::UI_ShowControlUnderMouse && !moho::net_ShowPanel) {
+  if (
+    !moho::ren_ShowFrameTimes && !moho::ren_ShowNetworkStats && !moho::ren_ShowBandwidthUsage &&
+    !moho::UI_ShowControlUnderMouse && !moho::net_ShowPanel
+  ) {
     return; // batcher shared_ptr destructs here (asm 0x007FA77A..0x007FA786)
   }
 
@@ -833,19 +870,13 @@ void moho::REN_DebugStuff(boost::shared_ptr<CD3DPrimBatcher> batcher, const int 
   projection.r[0] = {2.0f / widthF, 0.0f, 0.0f, 0.0f};
   projection.r[1] = {0.0f, 2.0f / (-0.0f - heightF), 0.0f, 0.0f};
   projection.r[2] = {0.0f, 0.0f, -0.5f, 0.0f};
-  projection.r[3] = {
-    (widthF / (-0.0f - widthF)) - (1.0f / widthF),
-    (heightF / heightF) + (1.0f / heightF),
-    0.5f,
-    1.0f
-  };
-  primBatcher->SetProjectionMatrix(projection);      // 0x007FA8D2
-  primBatcher->SetViewMatrix(VMatrix4::Identity());  // 0x007FA8DE (sIdentity)
+  projection.r[3] = {(widthF / (-0.0f - widthF)) - (1.0f / widthF), (heightF / heightF) + (1.0f / heightF), 0.5f, 1.0f};
+  primBatcher->SetProjectionMatrix(projection);     // 0x007FA8D2
+  primBatcher->SetViewMatrix(VMatrix4::Identity()); // 0x007FA8DE (sIdentity)
 
   // 0x007FA8E3..0x007FA93E: frame-time bars over the top-left quadrant.
   if (moho::ren_ShowFrameTimes) {
-    moho::TIME_RenderTimeBars(
-      primBatcher, widthF * 0.25f, heightF * 0.25f, widthF * 0.5f, heightF * 0.5f);
+    moho::TIME_RenderTimeBars(primBatcher, widthF * 0.25f, heightF * 0.25f, widthF * 0.5f, heightF * 0.5f);
   }
 
   // 0x007FA941..0x007FA982: network-stats HUD, right-anchored.
@@ -870,11 +901,12 @@ void moho::REN_DebugStuff(boost::shared_ptr<CD3DPrimBatcher> batcher, const int 
   if (moho::ren_ShowBandwidthUsage) {
     const int threeQuarterWidth = 3 * headWidth / 4; // edi (sar 2 of esi+esi*2)
     func_ren_BandwidthUsage(
-      /*graphHeightBase=*/  headHeight / 3,
-      /*graphLeftBase=*/    headWidth - threeQuarterWidth - 25,
-      /*batcher=*/          primBatcher,
-      /*graphRightExtent=*/ threeQuarterWidth,
-      /*graphHalfHeight=*/  (headHeight - headHeight / 3) / 2);
+      /*graphHeightBase=*/headHeight / 3,
+      /*graphLeftBase=*/headWidth - threeQuarterWidth - 25,
+      /*batcher=*/primBatcher,
+      /*graphRightExtent=*/threeQuarterWidth,
+      /*graphHalfHeight=*/(headHeight - headHeight / 3) / 2
+    );
   }
 
   // 0x007FA9C4..0x007FA9EB: control-under-mouse debug highlight.
@@ -912,13 +944,17 @@ namespace
 
   /**
    * Engine addition (issue #215): gpg::diag::BuildLabel ("FAF-RE, Draiget & contributors,
-   * build <version or commit> <arch>") in small gray text, centred at the bottom of the first head, while
+   * build <version or commit> <arch>") in small light text with a dark outline (so it reads on the
+   * lobby's striped bottom bar), centred at the bottom of the first head, while
    * the lobby screen is up (a CLobby exists and no game session runs). In a game the
    * same line heads the network-stats panel (F11) instead. The engine draws it after the UI, from
    * the commit compiled into the exe, so no Lua code can change or hide it; there is
    * deliberately no console variable for it either, since Lua can set those.
    */
-  void DrawLobbyBuildLabel(moho::CD3DPrimBatcher* const primBatcher, const int head)
+  void DrawLobbyBuildLabel(
+    moho::CD3DPrimBatcher* const primBatcher,
+    const int head
+  )
   {
     if (head != 0 || !moho::LOBBY_IsActive() || moho::WLD_GetActiveSession() != nullptr) {
       return;
@@ -926,9 +962,9 @@ namespace
 
     const char* const label = gpg::diag::BuildLabel();
     const float uiScale = BuildLabelUiScale();
-    const int fontPoints = std::max(1, static_cast<int>(std::lround(9.0f * uiScale)));
-    boost::SharedPtrRaw<moho::CD3DFont> rawFont = moho::CD3DFont::Create(fontPoints, "Arial");
-    moho::CD3DFont* const font = rawFont.px;
+    const int fontPoints = std::max(1, static_cast<int>(std::lround(10.0f * uiScale)));
+    moho::CountedPtr<moho::CD3DFont> fontHandle = moho::CD3DFont::Create(fontPoints, "Arial");
+    moho::CD3DFont* const font = fontHandle.tex;
     if (font == nullptr) {
       return;
     }
@@ -945,7 +981,9 @@ namespace
     projection.r[0] = {2.0f / widthF, 0.0f, 0.0f, 0.0f};
     projection.r[1] = {0.0f, 2.0f / (-0.0f - heightF), 0.0f, 0.0f};
     projection.r[2] = {0.0f, 0.0f, -0.5f, 0.0f};
-    projection.r[3] = {(widthF / (-0.0f - widthF)) - (1.0f / widthF), (heightF / heightF) + (1.0f / heightF), 0.5f, 1.0f};
+    projection.r[3] = {
+      (widthF / (-0.0f - widthF)) - (1.0f / widthF), (heightF / heightF) + (1.0f / heightF), 0.5f, 1.0f
+    };
     primBatcher->SetProjectionMatrix(projection);
     primBatcher->SetViewMatrix(moho::VMatrix4::Identity());
 
@@ -953,21 +991,29 @@ namespace
     const float advance = font->GetAdvance(label, -1);
     const float descent = font->mHeight - font->mAscent;
     const moho::Vector3f origin{
-      std::floor((widthF - advance) * 0.5f), std::floor(heightF - descent - 4.0f * uiScale), 0.0f};
+      std::floor((widthF - advance) * 0.5f), std::floor(heightF - descent - 4.0f * uiScale), 0.0f
+    };
     const moho::Vector3f xAxis{1.0f, 0.0f, 0.0f};
     const moho::Vector3f yAxis{0.0f, -1.0f, 0.0f};
-    constexpr std::uint32_t kGray = 0xB0A0A0A0u; // ARGB: light gray, partly transparent
-    (void)font->Render(label, primBatcher, origin, xAxis, yAxis, kGray, 0.0f, gpg::NaN);
+    // ARGB. The lobby's bottom bar is striped dark and light blue, so the light text gets a
+    // one-pixel dark outline: drawn four times offset first, then the text over it.
+    constexpr std::uint32_t kOutline = 0xE0000000u;
+    constexpr std::uint32_t kText = 0xF0E6E6E6u;
+    constexpr float kOffsets[4][2] = {{-1.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, -1.0f}, {0.0f, 1.0f}};
+    for (const auto& offset : kOffsets) {
+      const moho::Vector3f shifted{origin.x + offset[0], origin.y + offset[1], 0.0f};
+      (void)font->Render(label, primBatcher, shifted, xAxis, yAxis, kOutline, 0.0f, gpg::NaN);
+    }
+    (void)font->Render(label, primBatcher, origin, xAxis, yAxis, kText, 0.0f, gpg::NaN);
 
     primBatcher->Flush();
-    rawFont.release();
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x007F88B0 (FUN_007F88B0)
- * Mangled: ?RenderUI@WRenViewport@Moho@@AAEXABV?$vector@USWorldViewInfo@Moho@@V?$allocator@USWorldViewInfo@Moho@@@std@@@std@@@Z
+ * Mangled:
+ * ?RenderUI@WRenViewport@Moho@@AAEXABV?$vector@USWorldViewInfo@Moho@@V?$allocator@USWorldViewInfo@Moho@@@std@@@std@@@Z
  *
  * What it does:
  * The UI and debug-HUD pass for the active head: binds the head's target,
@@ -976,7 +1022,9 @@ namespace
  * ren_Ui is set, then the debug overlays (REN_DebugStuff) and the editor
  * render hook.
  */
-void moho::WRenViewport::RenderUI(const fa::vector<SWorldViewInfo>& worldViews)
+void moho::WRenViewport::RenderUI(
+  const fa::vector<SWorldViewInfo>& worldViews
+)
 {
   // 0x007F88CA..0x007F88FD: bind the head render target, disable secondary
   // color write.
@@ -1037,7 +1085,10 @@ namespace
    * function-local `static const` here is equivalent and simpler than the
    * binary's explicit `invalid_vec_static_guard` byte).
    */
-  [[nodiscard]] Wm3::Vec3f IntersectCameraRayWithGroundPlane(const moho::GeomLine3& ray, const float groundY) noexcept
+  [[nodiscard]] Wm3::Vec3f IntersectCameraRayWithGroundPlane(
+    const moho::GeomLine3& ray,
+    const float groundY
+  ) noexcept
   {
     static const Wm3::Vec3f kInvalidVec{
       std::numeric_limits<float>::quiet_NaN(),
@@ -1054,14 +1105,9 @@ namespace
       return kInvalidVec;
     }
 
-    return Wm3::Vec3f{
-      ray.pos.x + (ray.dir.x * t),
-      ray.pos.y + (ray.dir.y * t),
-      ray.pos.z + (ray.dir.z * t)
-    };
+    return Wm3::Vec3f{ray.pos.x + (ray.dir.x * t), ray.pos.y + (ray.dir.y * t), ray.pos.z + (ray.dir.z * t)};
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x007F98A0 (FUN_007F98A0)
@@ -1100,10 +1146,7 @@ void moho::WRenViewport::RenderCameraOutline(
   primBatcher->SetViewMatrix(mCam->view);
 
   const Wm3::Vector2f kNdcCorners[4] = {
-    Wm3::Vector2f{0.0f, 0.0f},
-    Wm3::Vector2f{1.0f, 0.0f},
-    Wm3::Vector2f{1.0f, 1.0f},
-    Wm3::Vector2f{0.0f, 1.0f}
+    Wm3::Vector2f{0.0f, 0.0f}, Wm3::Vector2f{1.0f, 0.0f}, Wm3::Vector2f{1.0f, 1.0f}, Wm3::Vector2f{0.0f, 1.0f}
   };
 
   CD3DPrimBatcher::Vertex corners[4];
@@ -1128,7 +1171,8 @@ void moho::WRenViewport::RenderCameraOutline(
 
 /**
  * Address: 0x007F8BA0 (FUN_007F8BA0, 0x007F8BA0..0x007F90C4)
- * Mangled: ?RenderCartographic@WRenViewport@Moho@@AAEIHAAV?$vector@USWorldViewInfo@Moho@@V?$allocator@USWorldViewInfo@Moho@@@std@@@std@@@Z
+ * Mangled:
+ * ?RenderCartographic@WRenViewport@Moho@@AAEIHAAV?$vector@USWorldViewInfo@Moho@@V?$allocator@USWorldViewInfo@Moho@@@std@@@std@@@Z
  *
  * The shipped body is `retn 0Ch`: LTCG moved `this` onto the stack next to
  * `head` and the vector (the one call site, WRenViewport::Render
@@ -1208,7 +1252,9 @@ unsigned int moho::WRenViewport::RenderCartographic(
 
   moho::Cartographic& cartographic = terrain->GetCartographic();
   // Engine addition (water bodies): built again once the session has installed the map's bodies.
-  if (!cartographic.IsInitialized() || (terrain->mMap != nullptr && moho::CartographicWaterBodiesStale(*terrain->mMap))) {
+  if (
+    !cartographic.IsInitialized() || (terrain->mMap != nullptr && moho::CartographicWaterBodiesStale(*terrain->mMap))
+  ) {
     // The five hypsometric-color lanes the mangled Initialize() declares are
     // never read by its shipped body (it re-reads them off the terrain
     // itself) - see Cartographic::Initialize's own doc comment.
@@ -1226,9 +1272,9 @@ unsigned int moho::WRenViewport::RenderCartographic(
 
   moho::CWldSession* const activeSession = moho::WLD_GetActiveSession();
   VisionRenderer* const visionRenderer =
-    (moho::ren_FogOfWar && activeSession != nullptr && activeSession->FocusArmy != -1)
-      ? &mVisionRenderer
-      : nullptr;
+    (moho::ren_FogOfWar && !moho::ren_FogOfWarHidden && activeSession != nullptr && activeSession->FocusArmy != -1)
+    ? &mVisionRenderer
+    : nullptr;
 
   unsigned int outlineDrawCount = 0;
 
@@ -1331,8 +1377,7 @@ namespace
   constexpr int kViewportDynamicSheetFormat = 2;
   constexpr int kViewportHeadTargetFormat = 2;
   constexpr int kViewportHeadDepthStencilFormat = 3;
-}
-
+} // namespace
 
 /**
  * Address: 0x007F6B60 (FUN_007F6B60, Moho::WRenViewport::D3DWindowOnDeviceInit)
@@ -1347,26 +1392,22 @@ namespace
  * the declaration for how `createBatchers` splits the first-bind path from the
  * device-rebind path.
  */
-void moho::WRenViewport::D3DWindowOnDeviceInit(const bool createBatchers)
+void moho::WRenViewport::D3DWindowOnDeviceInit(
+  const bool createBatchers
+)
 {
   moho::snd_index = 0;
 
   if (createBatchers) {
+    // Address: 0x007FC170 (FUN_007FC170) and 0x007FC1C0 (FUN_007FC1C0) -- the `dispose` of these two shared_ptrs'
+    // `sp_counted_impl_p<CD3DTextureBatcher>` and `<CD3DPrimBatcher>` (delete the batcher); formerly unused
+    // hand-written copies in CD3DTextureBatcher.cpp and CD3DPrimBatcher.cpp.
     mTexBatcher.reset(new moho::CD3DTextureBatcher());
     mPrimBatcher.reset(new moho::CD3DPrimBatcher(mTexBatcher.get()));
 
-    // mFont = CD3DFont::Create(12, "Courier New"): the binary's Create returns
-    // a CountedPtr that already owns one reference; the assignment takes
-    // mFont's own and the temporary's destructor drops the returned one. This
-    // tree's Create hands back a raw handle instead, so the returned reference
-    // is adopted into a CountedPtr to give it the same lifetime. (An earlier
-    // revision dropped it with CD3DFont::Release(1), which is the deleting
-    // destructor, not a release - mFont was left dangling.)
-    const boost::SharedPtrRaw<moho::CD3DFont> fontHandle =
-      moho::CD3DFont::Create(kViewportDebugFontPointSize, kViewportDebugFontFace);
-    CountedPtr<CD3DFont> createdFont;
-    createdFont.tex = fontHandle.px;
-    mFont = createdFont;
+    // The binary's Create returns a CountedPtr that already owns one reference; the assignment takes mFont's own and
+    // the temporary's destructor drops the returned one.
+    mFont = moho::CD3DFont::Create(kViewportDebugFontPointSize, kViewportDebugFontFace);
   }
 
   mRangeRenderer.Init();
@@ -1384,10 +1425,7 @@ void moho::WRenViewport::D3DWindowOnDeviceInit(const bool createBatchers)
 
   if (!mDynamicTextureSheet) {
     (void)resources->NewDynamicTextureSheet(
-      mDynamicTextureSheet,
-      kViewportDynamicSheetExtent,
-      kViewportDynamicSheetExtent,
-      kViewportDynamicSheetFormat
+      mDynamicTextureSheet, kViewportDynamicSheetExtent, kViewportDynamicSheetExtent, kViewportDynamicSheetFormat
     );
   }
 
@@ -1405,14 +1443,10 @@ void moho::WRenViewport::D3DWindowOnDeviceInit(const bool createBatchers)
     // Each slot is filled only when empty, so a device rebind restores just
     // the targets that were released rather than reallocating all of them.
     if (!mPrimaryTargetLocks[headSlot]) {
-      resources->CreateRenderTarget(
-        mPrimaryTargetLocks[headSlot], headWidth, headHeight, kViewportHeadTargetFormat
-      );
+      resources->CreateRenderTarget(mPrimaryTargetLocks[headSlot], headWidth, headHeight, kViewportHeadTargetFormat);
     }
     if (!mSecondaryTargetLocks[headSlot]) {
-      resources->CreateRenderTarget(
-        mSecondaryTargetLocks[headSlot], headWidth, headHeight, kViewportHeadTargetFormat
-      );
+      resources->CreateRenderTarget(mSecondaryTargetLocks[headSlot], headWidth, headHeight, kViewportHeadTargetFormat);
     }
     if (!mDepthStencilLocks[headSlot]) {
       resources->CreateDepthStencil(
@@ -1435,7 +1469,9 @@ void moho::WRenViewport::D3DWindowOnDeviceInit(const bool createBatchers)
  * inverse of `D3DWindowOnDeviceInit`. See the declaration for how
  * `fullShutdown` splits the device-rebind path from the app-shutdown path.
  */
-void moho::WRenViewport::D3DWindowOnDeviceExit(const bool fullShutdown)
+void moho::WRenViewport::D3DWindowOnDeviceExit(
+  const bool fullShutdown
+)
 {
 
   // The singleton is fetched before the branch in the binary, because both
@@ -1548,8 +1584,21 @@ void moho::WRenViewport::D3DWindowOnDeviceRender()
   // binary open-codes both stores here; the recovered helper is byte-identical.
   moho::MeshInstance::SetCurrentInterpolant();
 
+  // Engine addition (moho::gViewportOnlyView): only that view drawn, the others kept registered (the map editor's
+  // own view in front of a play's session).
+  fa::vector<SWorldViewInfo> onlyView{};
+  if (moho::gViewportOnlyView != nullptr) {
+    for (const SWorldViewInfo& worldView : mWorldViews) {
+      if (worldView.mView == moho::gViewportOnlyView) {
+        onlyView.push_back(worldView);
+      }
+    }
+  }
+
   for (int head = 0; head < mNumHeads; ++head) {
-    if (moho::ren_OnlyFirstView && !mWorldViews.empty()) {
+    if (!onlyView.empty()) {
+      Render(head, onlyView);
+    } else if (moho::ren_OnlyFirstView && !mWorldViews.empty()) {
       // Debug mode: render only the first registered world view. The binary
       // copy-constructs a fresh one-element vector from the first entry for
       // the duration of the call rather than passing the live vector.
@@ -1595,7 +1644,7 @@ void moho::WRenViewport::D3DWindowOnDeviceRender()
  *   `_InterlockedExchangeAdd` refcount bookkeeping and a `dtr_sp_counted_base`
  *   virtual call on the camera pointer. Both are decompiler artifacts: the
  *   shared_count calls are boost's own `shared_ptr<TerrainCommon>` machinery
- *   (mirrored below through `AssignSharedTerrainFromRaw`, exactly as
+ *   (written below as `mTerrain.reset(...)`, exactly as
  *   `WRenViewport::AddWorldView` already uses it for the identical
  *   `IRenTerrain::Create()` + `Create(terrainRes)` pair), and
  *   `dtr_sp_counted_base(camera, 1)` is CameraImpl's own scalar-deleting
@@ -1616,7 +1665,9 @@ void moho::WRenViewport::D3DWindowOnDeviceRender()
  *   by value through a hidden return pointer; the raw decompile's apparent
  *   second argument is that hidden pointer, not a real parameter.
  */
-void moho::WRenViewport::RenderPreviewImage([[maybe_unused]] const bool forceRegenerate)
+void moho::WRenViewport::RenderPreviewImage(
+  [[maybe_unused]] const bool forceRegenerate
+)
 {
   moho::ed_EnableHook = false;
 
@@ -1675,14 +1726,17 @@ void moho::WRenViewport::RenderPreviewImage([[maybe_unused]] const bool forceReg
 
   SWorldViewInfo worldViewEntry{};
   worldViewEntry.mView = &previewView;
-  (void)AssignSharedTerrainFromRaw(&worldViewEntry.mTerrain, moho::IRenTerrain::Create());
+  worldViewEntry.mTerrain.reset(moho::IRenTerrain::Create());
   if (worldViewEntry.mTerrain) {
     (void)worldViewEntry.mTerrain->Create(terrainRes);
   }
 
   fa::vector<SWorldViewInfo> previewWorldViews{};
   previewWorldViews.push_back(worldViewEntry);
+  // Engine addition (ren_Taa): a preview is a one-off picture, not the next frame of the game's view.
+  moho::TemporalAA::Get().SetPreviewRender(true);
   Render(0, previewWorldViews);
+  moho::TemporalAA::Get().SetPreviewRender(false);
 
   moho::ren_Ui = savedUi;
   moho::ren_WorldBorder = savedWorldBorder;
@@ -1700,19 +1754,17 @@ void moho::WRenViewport::RenderPreviewImage([[maybe_unused]] const bool forceReg
   mFrame.SetTexture(0, mPrimaryTargetLocks[0]);
   mFrame.Render(headWidth, headHeight);
 
-  boost::shared_ptr<moho::ID3DRenderTarget> screenLock{};
+  std::shared_ptr<moho::ID3DRenderTarget> screenLock{};
   device->GetWriterLock1(screenLock, 0);
   device->SetViewRect(screenLock.get(), mPrimaryTargetLocks[0].get(), nullptr, nullptr);
 
   moho::ID3DDeviceResources* const resources = device->GetResources();
-  boost::shared_ptr<moho::CD3DDynamicTextureSheet> previewSheet{};
-  resources->Func10(
-    previewSheet, mPrimaryTargetLocks[0].get(), moho::ID3DDeviceResources::DynamicTextureSheetHandle{}
-  );
+  std::shared_ptr<moho::CD3DDynamicTextureSheet> previewSheet{};
+  resources->Func10(previewSheet, mPrimaryTargetLocks[0].get(), moho::ID3DDeviceResources::DynamicTextureSheetHandle{});
   moho::CD3DDynamicTextureSheet* const resolvedSheet = previewSheet.get();
 
   const RECT sourceRect{0, 0, 256, 256};
-  const boost::shared_ptr<moho::ID3DTextureSheet> previewImage = GetPreviewImage();
+  const std::shared_ptr<moho::ID3DTextureSheet> previewImage = GetPreviewImage();
   device->UpdateSurface(
     resolvedSheet, static_cast<moho::CD3DDynamicTextureSheet*>(previewImage.get()), &sourceRect, nullptr
   );
@@ -1767,13 +1819,12 @@ namespace
     static const bool disabled = [] {
       std::size_t length = 0u;
       char value[8] = {};
-      return ::getenv_s(&length, value, sizeof(value), "FAF_NO_RENDER_ADDITIONS") == 0
-             && length != 0u && value[0] == '1';
+      return ::getenv_s(&length, value, sizeof(value), "FAF_NO_RENDER_ADDITIONS") == 0 && length != 0u &&
+        value[0] == '1';
     }();
     return disabled;
   }
-}
-
+} // namespace
 
 /**
  * Engine addition: one world view of `Render`'s per-view loop (0x007F9253..0x007F9779), in the
@@ -1792,6 +1843,14 @@ void moho::WRenViewport::RenderWorldViewPostEffects()
     return;
   }
   moho::CD3DDevice* const device = moho::D3D_GetDevice();
+  // Engine addition (ren_RenderScale): the world may have been drawn into a smaller area; the post passes cover the
+  // whole view.
+  if (moho::TemporalAA& taa = moho::TemporalAA::Get(); taa.Pending()) {
+    const int* const full = taa.FullRect();
+    Wm3::Vector2i fullPos{full[0], full[1]};
+    Wm3::Vector2i fullSize{full[2], full[3]};
+    device->SetViewport(&fullPos, &fullSize, 0.0f, 1.0f);
+  }
   const auto overHeadCopy = [&](const char* const profileName, auto&& render) {
     const gpg::gal::RenderProfileScope profile(profileName);
     Wm3::Vector2i viewPos{};
@@ -1799,7 +1858,7 @@ void moho::WRenViewport::RenderWorldViewPostEffects()
     float viewMinZ = 0.0f;
     float viewMaxZ = 1.0f;
     device->GetView(&viewPos, &viewSize, &viewMinZ, &viewMaxZ);
-    boost::shared_ptr<moho::ID3DRenderTarget> headTarget{};
+    std::shared_ptr<moho::ID3DRenderTarget> headTarget{};
     device->GetWriterLock1(headTarget, mHead);
     device->SetViewRect(headTarget.get(), mPrimaryTargetLocks[mHead].get(), nullptr, nullptr);
     moho::ID3DRenderTarget::SurfaceHandle copy{};
@@ -1810,10 +1869,26 @@ void moho::WRenViewport::RenderWorldViewPostEffects()
     // The passes read pixel positions of the whole head (SV_Position over the head's size) and
     // write only inside the view.
     device->SetViewport(&viewPos, &viewSize, viewMinZ, viewMaxZ);
-    render(*copy, device->GetHeadWidth(static_cast<unsigned int>(mHead)), device->GetHeadHeight(static_cast<unsigned int>(mHead)));
+    render(
+      *copy,
+      device->GetHeadWidth(static_cast<unsigned int>(mHead)),
+      device->GetHeadHeight(static_cast<unsigned int>(mHead))
+    );
     device->SetViewport(&viewPos, &viewSize, viewMinZ, viewMaxZ);
   };
-  if (moho::FxaaRenderer& fxaa = moho::FxaaRenderer::Get(); fxaa.IsActive()) {
+  // Engine addition (ren_Taa): temporal anti-aliasing replaces FXAA while it runs.
+  bool temporal = false;
+  if (moho::TemporalAA& taa = moho::TemporalAA::Get(); taa.Pending()) {
+    overHeadCopy("Taa", [&](gpg::gal::RenderTarget& copy, const int, const int) {
+      Wm3::Vector2i viewPos{};
+      Wm3::Vector2i viewSize{};
+      float viewMinZ = 0.0f;
+      float viewMaxZ = 1.0f;
+      device->GetView(&viewPos, &viewSize, &viewMinZ, &viewMaxZ);
+      temporal = taa.Resolve(copy, viewPos.x, viewPos.y, viewSize.x, viewSize.y);
+    });
+  }
+  if (moho::FxaaRenderer& fxaa = moho::FxaaRenderer::Get(); !temporal && fxaa.IsActive()) {
     overHeadCopy("Fxaa", [&](gpg::gal::RenderTarget& copy, const int width, const int height) {
       fxaa.Render(copy, width, height);
     });
@@ -1826,7 +1901,10 @@ void moho::WRenViewport::RenderWorldViewPostEffects()
 }
 
 void moho::WRenViewport::RenderWorldView(
-  const SWorldViewInfo* const worldView, const int head, const SWorldViewInfo* const begin, const bool regenerateShoreline
+  const SWorldViewInfo* const worldView,
+  const int head,
+  const SWorldViewInfo* const begin,
+  const bool regenerateShoreline
 )
 {
   if (worldView->mView == nullptr) {
@@ -1838,8 +1916,10 @@ void moho::WRenViewport::RenderWorldView(
   // orthographic flag, so every minimap is left to the cartographic pass and
   // never gets the 3D world/fog pass), when it belongs to another head, and,
   // under `ren_HideSecondary` (0x010A6421), when it is not the first view.
-  if (worldView->mView->Func2() || worldView->mView->CanShake() || worldView->mHead != head
-      || (moho::ren_HideSecondary && worldView != begin)) {
+  if (
+    worldView->mView->Func2() || worldView->mView->CanShake() || worldView->mHead != head ||
+    (moho::ren_HideSecondary && worldView != begin)
+  ) {
     return;
   }
 
@@ -1864,6 +1944,15 @@ void moho::WRenViewport::RenderWorldView(
   mCam = worldView->mView->GetCameraView();
   if (mCam == nullptr) {
     return;
+  }
+  // Engine addition (ren_Taa): the world passes of the first view draw with the camera moved by this frame's
+  // sub-pixel offset; the view's overlay below draws with the unmoved one.
+  moho::GeomCamera3* const unjitteredCamera = mCam;
+  if (
+    moho::TemporalAA& taa = moho::TemporalAA::Get();
+    worldView == begin && !RenderAdditionsDisabled() && !taa.PreviewRender() && taa.IsActive()
+  ) {
+    mCam = taa.Jitter(*mCam, static_cast<bool>(mPrimaryTargetLocks[mHead]));
   }
 
   // Ground clutter, refreshed once per frame off the primary world view.
@@ -1899,7 +1988,6 @@ void moho::WRenViewport::RenderWorldView(
   // this view's own CameraSetViewport-pushed one.
   UpdateRenderViewportCoordinates();
 
-
   // Render the atmosphere/cloud sky dome for this world view before the
   // terrain composite pass (binary order: WRenViewport::Render @0x007F90D0
   // dispatches the sky dome pass right after the per-view camera bind,
@@ -1910,7 +1998,6 @@ void moho::WRenViewport::RenderWorldView(
   }
 
   moho::TerrainCommon* const terrain = worldView->mTerrain.get();
-
 
   if (moho::ren_Terrain && terrain != nullptr) {
     // Per-frame render-context update (TerrainCommon slot 5), dispatched
@@ -1942,8 +2029,8 @@ void moho::WRenViewport::RenderWorldView(
     // (0x007F93DF slot 6 CameraGetTargetZoom, then 0x007F93F1).
     {
       const gpg::gal::RenderProfileScope profileShadows("Shadows");
-      mShadowRenderer.RenderFrameShadows(
-        terrain, *mCam, worldView->mView->CameraGetTargetZoom());
+      // ren_Taa: the shadow map is fitted to the unmoved camera, so its texels don't move with the offset.
+      mShadowRenderer.RenderFrameShadows(terrain, *unjitteredCamera, worldView->mView->CameraGetTargetZoom());
     }
 
     FogOn(worldView->mView->CameraGetZoom());
@@ -1978,9 +2065,7 @@ void moho::WRenViewport::RenderWorldView(
     moho::CameraImpl* const rangeCamera = worldView->mView->GetCamera();
     if (rangeCamera != nullptr && moho::ren_Ranges && moho::ren_Ui) {
       const gpg::gal::RenderProfileScope profileRanges("Ranges");
-      mRangeRenderer.Render(
-        rangeSession, rangeCamera, static_cast<unsigned int>(head), moho::REN_GetSimDeltaSeconds()
-      );
+      mRangeRenderer.Render(rangeSession, rangeCamera, static_cast<unsigned int>(head), moho::REN_GetSimDeltaSeconds());
     }
   }
 
@@ -1994,12 +2079,7 @@ void moho::WRenViewport::RenderWorldView(
   moho::MeshRenderer* const meshRenderer = moho::MeshRenderer::GetInstance();
   {
     const gpg::gal::RenderProfileScope profileMeshBatch("MeshBatch");
-    meshRenderer->Batch(
-      moho::REN_GetGameTick(),
-      moho::REN_GetSimDeltaSeconds(),
-      *mCam,
-      mCam->viewport.r[1]
-    );
+    meshRenderer->Batch(moho::REN_GetGameTick(), moho::REN_GetSimDeltaSeconds(), *mCam, mCam->viewport.r[1]);
   }
 
   {
@@ -2016,10 +2096,47 @@ void moho::WRenViewport::RenderWorldView(
     const gpg::gal::RenderProfileScope profileOcclusion("AmbientOcclusion");
     // How far the shadow map reaches: terrain shadows take over beyond it, and stay off with shadows off.
     const float shadowReach = (!moho::ren_Shadows || moho::shadow_Fidelity == 0) ? -1.0f
-      : mShadowRenderer.mShadowCameraValid                                      ? moho::ren_ShadowCoeff * worldView->mView->CameraGetTargetZoom()
-                                                                                 : 0.0f;
-    occlusion.Render(*mCam, mScreenPos.x, mScreenPos.y, mScreenSize.x, mScreenSize.y, shadowReach,
-                     shadowReach > 0.0f ? &mShadowRenderer : nullptr);
+      : mShadowRenderer.mShadowCameraValid ? moho::ren_ShadowCoeff * worldView->mView->CameraGetTargetZoom()
+                                           : 0.0f;
+    occlusion.Render(
+      *mCam,
+      mScreenPos.x,
+      mScreenPos.y,
+      mScreenSize.x,
+      mScreenSize.y,
+      shadowReach,
+      shadowReach > 0.0f ? &mShadowRenderer : nullptr
+    );
+  }
+  // Engine addition (ren_DynamicLights): light from explosions, weapons and engines on the ground and the opaque
+  // meshes, from the same depth, before effects and water draw over it.
+  if (moho::DynamicLights& lights = moho::DynamicLights::Get(); lights.IsActive()) {
+    const gpg::gal::RenderProfileScope profileLights("DynamicLights");
+    lights.Render(*mCam, mScreenPos.x, mScreenPos.y, mScreenSize.x, mScreenSize.y);
+  }
+  // Engine addition (ren_RayBounce): one bounce of diffuse light by ray, from the lit frame so far (copied into the
+  // refraction copy, which the water copies again later), before effects and water draw over it.
+  // Only when the terrain pass ran (it publishes this frame's ray scene through the shadow renderer) and at high
+  // fidelity (where the water copies the frame into the refraction copy again before it draws).
+  if (
+    moho::BounceLight& bounce = moho::BounceLight::Get(); moho::ren_Terrain && terrain != nullptr &&
+    moho::graphics_Fidelity >= 2 && bounce.IsActive() && mPrimaryTargetLocks[mHead]
+  ) {
+    const gpg::gal::RenderProfileScope profileBounce("BounceLight");
+    moho::CD3DDevice* const bounceDevice = moho::D3D_GetDevice();
+    std::shared_ptr<moho::ID3DRenderTarget> headTarget{};
+    bounceDevice->GetWriterLock1(headTarget, mHead);
+    bounceDevice->SetViewRect(headTarget.get(), mPrimaryTargetLocks[mHead].get(), nullptr, nullptr);
+    moho::ID3DRenderTarget::SurfaceHandle frameCopy{};
+    (void)mPrimaryTargetLocks[mHead]->GetSurface(frameCopy);
+    bounceDevice->SetRenderTarget2(mHead, false, 0, 1.0f, 0);
+    SetViewportToLocalScreen();
+    if (frameCopy) {
+      const moho::IWldTerrainRes* const bounceMap = moho::REN_GetTerrainRes();
+      const float waterLevel =
+        (bounceMap != nullptr && bounceMap->IsWaterEnabled()) ? bounceMap->GetWaterElevation() : -1.0e9f;
+      bounce.Render(*mCam, *frameCopy, waterLevel, mScreenPos.x, mScreenPos.y, mScreenSize.x, mScreenSize.y);
+    }
   }
   {
     const gpg::gal::RenderProfileScope profileEffects("Effects");
@@ -2040,6 +2157,14 @@ void moho::WRenViewport::RenderWorldView(
     // 0x007F94B8..0x007F94C8, it is not a constant.
     FogOn(worldView->mView->CameraGetZoom());
     RenderWater(terrain);
+  }
+  // Engine addition (ren_Atmosphere): height fog lit by the sun over everything drawn so far, water included,
+  // from the same depth (the water's surface is found from its height).
+  if (moho::Atmosphere& atmosphere = moho::Atmosphere::Get(); terrain != nullptr && atmosphere.IsActive()) {
+    const gpg::gal::RenderProfileScope profileAtmosphere("Atmosphere");
+    atmosphere.Render(
+      *mCam, worldView->mView->CameraGetZoom(), mScreenPos.x, mScreenPos.y, mScreenSize.x, mScreenSize.y
+    );
   }
 
   // The playable-boundary pass and the UI selection pass, in that order,
@@ -2074,20 +2199,13 @@ void moho::WRenViewport::RenderWorldView(
   // into a stack local ahead of the loop (`v79 = Moho::sWldSession`).
   moho::CWldSession* const renderSession = moho::WLD_GetActiveSession();
   if (moho::ren_PlayableBoundary && renderSession != nullptr && worldView->mView != nullptr) {
-    moho::RenderPlayableBoundary(
-      static_cast<unsigned int>(head), mBoundaryRenderer, *renderSession,
-      *mCam
-    );
+    moho::RenderPlayableBoundary(static_cast<unsigned int>(head), mBoundaryRenderer, *renderSession, *mCam);
   }
 
   if (moho::ren_Ui) {
     const gpg::gal::RenderProfileScope profileRenUi("WorldUi");
     moho::RenUI(
-      renderSession,
-      mCam,
-      mPrimBatcher.get(),
-      moho::REN_GetSimDeltaSeconds(),
-      moho::REN_GetWeightedFrameSeconds()
+      renderSession, mCam, mPrimBatcher.get(), moho::REN_GetSimDeltaSeconds(), moho::REN_GetWeightedFrameSeconds()
     );
   }
 
@@ -2124,12 +2242,11 @@ void moho::WRenViewport::RenderWorldView(
   //   0x007F958E  Clear(false, false, true, 0xFFFFFFFF, 1.0f, 0) through
   //               device slot +0x98: wipe the vision stencil again so it
   //               does not mask anything drawn after the fog pass.
-  if (moho::ren_FogOfWar && renderSession != nullptr &&
-      renderSession->FocusArmy != -1) {
+  // `ren_FogOfWarHidden` (engine addition): the map editor's "Hide the fog" leaves the overlay out.
+  if (moho::ren_FogOfWar && !moho::ren_FogOfWarHidden && renderSession != nullptr && renderSession->FocusArmy != -1) {
     const gpg::gal::RenderProfileScope profileFog("FogOfWar");
     moho::RenderFogOfWar(
-      *renderSession, mVisionRenderer, static_cast<unsigned int>(head),
-      *mCam, moho::REN_GetSimDeltaSeconds()
+      *renderSession, mVisionRenderer, static_cast<unsigned int>(head), *mCam, moho::REN_GetSimDeltaSeconds()
     );
     gpg::gal::Device::GetInstance()->Clear(false, false, true, 0xFFFFFFFFu, 1.0f, 0);
   }
@@ -2150,6 +2267,9 @@ void moho::WRenViewport::RenderWorldView(
   // orthographic flag is set, which is the minimap and whichever view the
   // player has toggled into cartographic mode.
   RenderWorldViewPostEffects();
+  mCam = unjitteredCamera;           // ren_Taa: overlays stay pixel-exact
+  UpdateRenderViewportCoordinates(); // ren_RenderScale: the view's full rectangle again
+  moho::TemporalAA::Get().EndView(); // a frame the resolve didn't take is not left pending for another view
 
   if (moho::ren_Ui && worldView->mView != nullptr) {
     const gpg::gal::RenderProfileScope profileViewOverlay("ViewOverlay");
@@ -2182,20 +2302,18 @@ void moho::WRenViewport::RenderWorldView(
   // cover (`[ebp+2140h]` zero, `sub_7F7AC0`). Left out rather than guessed.
   SetViewportToLocalScreen();
   if (moho::CWldSession* const activeSession = moho::WLD_GetActiveSession(); activeSession != nullptr) {
-    if (boost::SharedPtrRaw<moho::CDebugCanvas> tickCanvas = activeSession->GetTickDebugCanvas();
-        tickCanvas.px != nullptr) {
-      tickCanvas.px->Render(
-        mPrimBatcher.get(), *mCam, mScreenSize.x, mScreenSize.y
-      );
-      tickCanvas.release();
+    if (
+      std::shared_ptr<moho::CDebugCanvas> tickCanvas = activeSession->GetTickDebugCanvas(); tickCanvas.get() != nullptr
+    ) {
+      tickCanvas.get()->Render(mPrimBatcher.get(), *mCam, mScreenSize.x, mScreenSize.y);
+      tickCanvas.reset();
     }
 
-    if (boost::SharedPtrRaw<moho::CDebugCanvas> beatCanvas = activeSession->GetBeatDebugCanvas();
-        beatCanvas.px != nullptr) {
-      beatCanvas.px->Render(
-        mPrimBatcher.get(), *mCam, mScreenSize.x, mScreenSize.y
-      );
-      beatCanvas.release();
+    if (
+      std::shared_ptr<moho::CDebugCanvas> beatCanvas = activeSession->GetBeatDebugCanvas(); beatCanvas.get() != nullptr
+    ) {
+      beatCanvas.get()->Render(mPrimBatcher.get(), *mCam, mScreenSize.x, mScreenSize.y);
+      beatCanvas.reset();
     }
   }
 
@@ -2204,7 +2322,8 @@ void moho::WRenViewport::RenderWorldView(
 
 /**
  * Address: 0x007F90D0 (FUN_007F90D0)
- * Mangled: ?Render@WRenViewport@Moho@@AAEXHAAV?$vector@USWorldViewInfo@Moho@@V?$allocator@USWorldViewInfo@Moho@@@std@@@std@@@Z
+ * Mangled:
+ * ?Render@WRenViewport@Moho@@AAEXHAAV?$vector@USWorldViewInfo@Moho@@V?$allocator@USWorldViewInfo@Moho@@@std@@@std@@@Z
  *
  * What it does:
  * Makes `head` current and runs the world pass - terrain, reflections, meshes,
@@ -2216,7 +2335,10 @@ void moho::WRenViewport::RenderWorldView(
  * ren_OnlyFirstView a copy of the first view. An earlier revision walked
  * mWorldViews here, so both drew every registered view.
  */
-void moho::WRenViewport::Render(const int head, fa::vector<SWorldViewInfo>& worldViews)
+void moho::WRenViewport::Render(
+  const int head,
+  fa::vector<SWorldViewInfo>& worldViews
+)
 {
   moho::CD3DDevice* const device = moho::D3D_GetDevice();
   if (device == nullptr) {
@@ -2275,6 +2397,11 @@ void moho::WRenViewport::Render(const int head, fa::vector<SWorldViewInfo>& worl
 
   mThumbnailRenderer.ProcessPendingRequests();
 
+  // Engine addition (moho::gViewportBeforeFrame): the map editor's own offscreen views, before the head is bound.
+  if (moho::gViewportBeforeFrame != nullptr) {
+    moho::gViewportBeforeFrame(mHead);
+  }
+
   device->SetRenderTarget2(mHead, true, 0, 1.0f, 0);
 
   if (uiManager != nullptr) {
@@ -2290,8 +2417,10 @@ void moho::WRenViewport::Render(const int head, fa::vector<SWorldViewInfo>& worl
   // `sWldSession`, gates on it and on `ren_Ranges`, then passes
   // `session + 0x4D8` (`mOverlayFilters`) to the viewport's own RangeRenderer
   // at `+0x37C`.
-  if (moho::CWldSession* const session = moho::WLD_GetActiveSession();
-      session != nullptr && moho::ren_Ranges && !RenderAdditionsDisabled()) {
+  if (
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    session != nullptr && moho::ren_Ranges && !RenderAdditionsDisabled()
+  ) {
     mRangeRenderer.MoveCategories(session->mOverlayFilters);
   }
 
@@ -2320,8 +2449,10 @@ void moho::WRenViewport::Render(const int head, fa::vector<SWorldViewInfo>& worl
   // executed, the normals target's B/A channels stayed zero, and frame.fx's
   // `BasisPS` reconstructed `baseNormal.y = sqrt(1 - x*x - z*z)` from them --
   // which is why lit terrain came out near-black while meshes shaded normally.
-  if (moho::IWldTerrainRes* const terrainRes = moho::REN_GetTerrainRes();
-      terrainRes != nullptr && !RenderAdditionsDisabled()) {
+  if (
+    moho::IWldTerrainRes* const terrainRes = moho::REN_GetTerrainRes();
+    terrainRes != nullptr && !RenderAdditionsDisabled()
+  ) {
     if (!terrainRes->GetBool()) {
       ::OutputDebugStringA("[TERRDIAG] Finalize: entering\n");
       const bool finalized = terrainRes->Finalize();
@@ -2420,7 +2551,9 @@ void moho::WRenViewport::Render(const int head, fa::vector<SWorldViewInfo>& worl
     }
     // Engine addition (ren_BloomWide): a wide, soft glow from the bloom's own result, on
     // Direct3D 12 and Vulkan.
-    if (moho::WideBloomRenderer& wide = moho::WideBloomRenderer::Get(mHead); !RenderAdditionsDisabled() && wide.IsActive()) {
+    if (
+      moho::WideBloomRenderer& wide = moho::WideBloomRenderer::Get(mHead); !RenderAdditionsDisabled() && wide.IsActive()
+    ) {
       const gpg::gal::RenderProfileScope profileBloomWide("BloomWide");
       const moho::CBloomRenderer& bloom = mBloomRenderers[mHead];
       wide.Render(mHead, bloom.mRenderTargets[0], static_cast<int>(bloom.mWidth), static_cast<int>(bloom.mHeight));
@@ -2455,7 +2588,8 @@ void moho::WRenViewport::Render(const int head, fa::vector<SWorldViewInfo>& worl
 
 /**
  * Address: 0x007F80C0 (FUN_007F80C0)
- * Mangled: ?Render@SkyDome@Moho@@QAEXHMABVGeomCamera3@2@ABV?$vector@UCumulusVertex@SkyDome@Moho@@V?$allocator@UCumulusVertex@SkyDome@Moho@@@std@@@std@@@Z
+ * Mangled:
+ * ?Render@SkyDome@Moho@@QAEXHMABVGeomCamera3@2@ABV?$vector@UCumulusVertex@SkyDome@Moho@@V?$allocator@UCumulusVertex@SkyDome@Moho@@@std@@@std@@@Z
  *
  * IDA signature:
  * void __thiscall Moho::SkyDome::Render(WRenViewport *this);
@@ -2511,7 +2645,9 @@ void moho::WRenViewport::RenderSkyDome()
  * normal-composite data with optional shadow lane, then emits terrain skirt
  * geometry for the same frame.
  */
-void moho::WRenViewport::RenderCompositeTerrain(TerrainCommon* const terrain)
+void moho::WRenViewport::RenderCompositeTerrain(
+  TerrainCommon* const terrain
+)
 {
   moho::CD3DDevice* const device = moho::D3D_GetDevice();
   device->SetRenderTarget2(mHead, false, 0, 1.0f, 0);
@@ -2525,15 +2661,14 @@ void moho::WRenViewport::RenderCompositeTerrain(TerrainCommon* const terrain)
   // (0x007F8221: cmp [esi+4F8h], 0), and the normal target is
   // mPrimaryTargetLocks[mHead], retained across the call.
   moho::Shadow* const shadowContext =
-    mShadowRenderer.mShadowFidelity != 0 && !ShadowsDisabledByEnv()
-      ? &mShadowRenderer
-      : nullptr;
+    mShadowRenderer.mShadowFidelity != 0 && !ShadowsDisabledByEnv() ? &mShadowRenderer : nullptr;
 
+  // Engine addition (ren_AsyncPipelines): the terrain and its decals draw every frame, so a draw whose pipeline a
+  // worker is still building can wait a frame (gpg/gal/PipelineDefer.h); a decal or stratum shader first seen when
+  // the camera moved stalled the frame 0.4 s on the driver.
+  const gpg::gal::PipelineDeferScope deferPipelines;
   const auto drewNormals = terrain->DrawNormals(
-    moho::REN_GetGameTick(),
-    moho::REN_GetSimDeltaSeconds(),
-    mPrimaryTargetLocks[mHead],
-    shadowContext
+    moho::REN_GetGameTick(), moho::REN_GetSimDeltaSeconds(), mPrimaryTargetLocks[mHead], shadowContext
   );
   terrain->DrawTerrainSkirt();
 
@@ -2547,10 +2682,11 @@ void moho::WRenViewport::RenderCompositeTerrain(TerrainCommon* const terrain)
       ++sCompositeBudget;
       gpg::Warnf(
         "[COMPDIAG] RenderCompositeTerrain head=%d drewNormals=%d target=%p shadowCtx=%p",
-        mHead, static_cast<int>(drewNormals),
-        static_cast<const void*>(
-          mPrimaryTargetLocks[mHead].get()),
-        static_cast<const void*>(shadowContext));
+        mHead,
+        static_cast<int>(drewNormals),
+        static_cast<const void*>(mPrimaryTargetLocks[mHead].get()),
+        static_cast<const void*>(shadowContext)
+      );
     }
   }
 }
@@ -2564,7 +2700,9 @@ void moho::WRenViewport::RenderCompositeTerrain(TerrainCommon* const terrain)
  * terrain water-mask rendering for `(gameTick, simDeltaSeconds)`, then
  * restores full color-write state.
  */
-void moho::WRenViewport::RenderWaterMask(TerrainCommon* const terrain)
+void moho::WRenViewport::RenderWaterMask(
+  TerrainCommon* const terrain
+)
 {
   if (!moho::ren_Water || moho::graphics_Fidelity < 2) {
     return;
@@ -2593,7 +2731,9 @@ void moho::WRenViewport::RenderWaterMask(TerrainCommon* const terrain)
  * Copies the active writer-lock render target into the retained refraction
  * background slot, optionally clamped to the viewport's local-screen rect.
  */
-void moho::WRenViewport::RenderCopyForRefraction(const bool clampToViewportRect)
+void moho::WRenViewport::RenderCopyForRefraction(
+  const bool clampToViewportRect
+)
 {
   if (moho::graphics_Fidelity < 2) {
     return;
@@ -2601,11 +2741,10 @@ void moho::WRenViewport::RenderCopyForRefraction(const bool clampToViewportRect)
 
   moho::CD3DDevice* const device = moho::D3D_GetDevice();
 
-  boost::shared_ptr<moho::ID3DRenderTarget> sourceLock{};
+  std::shared_ptr<moho::ID3DRenderTarget> sourceLock{};
   device->GetWriterLock1(sourceLock, mHead);
 
-  boost::shared_ptr<moho::ID3DRenderTarget> destinationLock =
-    mPrimaryTargetLocks[mHead];
+  std::shared_ptr<moho::ID3DRenderTarget> destinationLock = mPrimaryTargetLocks[mHead];
 
   RECT sourceRect{};
   sourceRect.left = mScreenPos.x;
@@ -2613,12 +2752,7 @@ void moho::WRenViewport::RenderCopyForRefraction(const bool clampToViewportRect)
   sourceRect.right = mScreenPos.x + mScreenSize.x;
   sourceRect.bottom = mScreenPos.y + mScreenSize.y;
 
-  device->SetViewRect(
-    sourceLock.get(),
-    destinationLock.get(),
-    clampToViewportRect ? &sourceRect : nullptr,
-    nullptr
-  );
+  device->SetViewRect(sourceLock.get(), destinationLock.get(), clampToViewportRect ? &sourceRect : nullptr, nullptr);
 }
 
 /**
@@ -2629,7 +2763,10 @@ void moho::WRenViewport::RenderCopyForRefraction(const bool clampToViewportRect)
  * mesh pass, then dispatches either skeleton-debug rendering or the normal
  * mesh batch renderer depending on `ren_ShowSkeletons`.
  */
-void moho::WRenViewport::RenderMeshes(const int meshFlags, const bool mirrored)
+void moho::WRenViewport::RenderMeshes(
+  const int meshFlags,
+  const bool mirrored
+)
 {
   moho::GeomCamera3* const cam = mCam;
   moho::CD3DDevice* const device = moho::D3D_GetDevice();
@@ -2637,18 +2774,12 @@ void moho::WRenViewport::RenderMeshes(const int meshFlags, const bool mirrored)
   SetViewportToLocalScreen();
   device->SetColorWriteState(true, true);
 
-  moho::Shadow* const shadowRenderer = mShadowRenderer.mShadowFidelity != 0 && !ShadowsDisabledByEnv()
-    ? &mShadowRenderer
-    : nullptr;
+  moho::Shadow* const shadowRenderer =
+    mShadowRenderer.mShadowFidelity != 0 && !ShadowsDisabledByEnv() ? &mShadowRenderer : nullptr;
 
   moho::MeshRenderer* const instance = moho::MeshRenderer::GetInstance();
   if (moho::ren_ShowSkeletons) {
-    instance->RenderSkeletons(
-      mPrimBatcher.get(),
-      &mDebugCanvas,
-      *cam,
-      true
-    );
+    instance->RenderSkeletons(mPrimBatcher.get(), &mDebugCanvas, *cam, true);
     return;
   }
 
@@ -2689,10 +2820,7 @@ void moho::WRenViewport::RenderRefractingEffects()
   // the render-target binder at 0x00491280, so no cast is involved - the
   // decompiler's {px, pn.pi_} copy is just a shared_ptr copy.
   moho::sWorldParticles.RenderRefractingEffects(
-    mCam,
-    moho::REN_GetGameTick(),
-    moho::REN_GetSimDeltaSeconds(),
-    mPrimaryTargetLocks[mHead]
+    mCam, moho::REN_GetGameTick(), moho::REN_GetSimDeltaSeconds(), mPrimaryTargetLocks[mHead]
   );
 }
 
@@ -2703,7 +2831,9 @@ void moho::WRenViewport::RenderRefractingEffects()
  * Binds the viewport render target and viewport lanes for the active head,
  * configures color writes for FX, then renders world-particle effects.
  */
-void moho::WRenViewport::RenderEffects(const bool renderWaterSurface)
+void moho::WRenViewport::RenderEffects(
+  const bool renderWaterSurface
+)
 {
   if (!moho::ren_Fx) {
     return;
@@ -2715,11 +2845,7 @@ void moho::WRenViewport::RenderEffects(const bool renderWaterSurface)
   device->SetColorWriteState(true, false);
 
   (void)moho::sWorldParticles.RenderEffects(
-    mCam,
-    static_cast<char>(renderWaterSurface ? 1 : 0),
-    0,
-    moho::REN_GetGameTick(),
-    moho::REN_GetSimDeltaSeconds()
+    mCam, static_cast<char>(renderWaterSurface ? 1 : 0), 0, moho::REN_GetGameTick(), moho::REN_GetSimDeltaSeconds()
   );
 }
 
@@ -2732,7 +2858,9 @@ void moho::WRenViewport::RenderEffects(const bool renderWaterSurface)
  * viewport rectangle, and forwards the current frame lanes to terrain water
  * rendering.
  */
-void moho::WRenViewport::RenderWater(TerrainCommon* const terrain)
+void moho::WRenViewport::RenderWater(
+  TerrainCommon* const terrain
+)
 {
   if (!moho::ren_Water) {
     return;
@@ -2749,10 +2877,7 @@ void moho::WRenViewport::RenderWater(TerrainCommon* const terrain)
   // mSecondaryTargetLocks[head].
   const std::int32_t head = mHead;
   terrain->DrawWaterTerrain(
-    moho::REN_GetGameTick(),
-    moho::REN_GetSimDeltaSeconds(),
-    mPrimaryTargetLocks[head],
-    mSecondaryTargetLocks[head]
+    moho::REN_GetGameTick(), moho::REN_GetSimDeltaSeconds(), mPrimaryTargetLocks[head], mSecondaryTargetLocks[head]
   );
 }
 
@@ -2773,12 +2898,7 @@ void moho::WRenViewport::RenderReflections()
   moho::CD3DDevice* const targetDevice = moho::D3D_GetDevice();
   const std::size_t reflectionIndex = static_cast<std::size_t>(mHead);
   targetDevice->SetRenderTarget1(
-    mSecondaryTargetLocks[reflectionIndex].get(),
-    mDepthStencilLocks[reflectionIndex].get(),
-    true,
-    0,
-    1.0f,
-    0
+    mSecondaryTargetLocks[reflectionIndex].get(), mDepthStencilLocks[reflectionIndex].get(), true, 0, 1.0f, 0
   );
 
   // TEMPORARY: FAF_NO_REFLECTION=1 skips the mirrored mesh pass (black-wedge
@@ -2795,11 +2915,15 @@ void moho::WRenViewport::RenderReflections()
     if (sReflBudget < 2) {
       ++sReflBudget;
       char probe[160];
-      (void)std::snprintf(probe, sizeof(probe), "[REFLDIAG] head=%d rt=%p ds=%p ren_Reflection=%d\n",
-                          static_cast<int>(reflectionIndex),
-                          static_cast<const void*>(mSecondaryTargetLocks[reflectionIndex].get()),
-                          static_cast<const void*>(mDepthStencilLocks[reflectionIndex].get()),
-                          moho::ren_Reflection ? 1 : 0);
+      (void)std::snprintf(
+        probe,
+        sizeof(probe),
+        "[REFLDIAG] head=%d rt=%p ds=%p ren_Reflection=%d\n",
+        static_cast<int>(reflectionIndex),
+        static_cast<const void*>(mSecondaryTargetLocks[reflectionIndex].get()),
+        static_cast<const void*>(mDepthStencilLocks[reflectionIndex].get()),
+        moho::ren_Reflection ? 1 : 0
+      );
       ::OutputDebugStringA(probe);
     }
   }
@@ -2821,9 +2945,9 @@ namespace
   /// Engine addition (water bodies): a head's lake reflection and the cleared target other lakes sample.
   struct SWaterBodyReflection
   {
-    boost::shared_ptr<moho::CD3DRenderTarget> body;
-    boost::shared_ptr<moho::CD3DRenderTarget> empty;
-    boost::shared_ptr<moho::CD3DDepthStencil> emptyDepth;
+    std::shared_ptr<moho::CD3DRenderTarget> body;
+    std::shared_ptr<moho::CD3DRenderTarget> empty;
+    std::shared_ptr<moho::CD3DDepthStencil> emptyDepth;
     int width = 0;
     int height = 0;
   };
@@ -2833,7 +2957,10 @@ namespace
    * The wet body most seen through a 5 x 5 grid of view rays, ties to the one nearer the
    * centre; 0 when the rays see none.
    */
-  [[nodiscard]] std::uint8_t MostVisibleWaterBody(const moho::GeomCamera3& camera, const moho::STIMap& map)
+  [[nodiscard]] std::uint8_t MostVisibleWaterBody(
+    const moho::GeomCamera3& camera,
+    const moho::STIMap& map
+  )
   {
     const moho::CWaterBodies& bodies = *map.mWaterBodies;
     std::array<std::int32_t, 256> score{};
@@ -2845,7 +2972,8 @@ namespace
         if (!Wm3::Vec3f::IsntNaN(hit)) {
           continue;
         }
-        const std::uint8_t number = bodies.BodyOfCell(static_cast<std::int32_t>(hit.x), static_cast<std::int32_t>(hit.z));
+        const std::uint8_t number =
+          bodies.BodyOfCell(static_cast<std::int32_t>(hit.x), static_cast<std::int32_t>(hit.z));
         if (number != 0u && bodies.Body(number).elevation != moho::kWaterBodyNoWater) {
           // 4 for each hit, plus 1 more the nearer the ray is to the centre (at most 2 away).
           score[number] += 4 + (2 - std::max(std::abs(row - 2), std::abs(column - 2)));
@@ -2870,7 +2998,9 @@ namespace
  * reflect the sky). `WaterBodySurfaces::ReflectionFor` hands each lake its target. Without bodies
  * it does nothing.
  */
-void moho::WRenViewport::RenderWaterBodyReflection(const bool meshes)
+void moho::WRenViewport::RenderWaterBodyReflection(
+  const bool meshes
+)
 {
   const std::size_t head = static_cast<std::size_t>(mHead);
   moho::IWldTerrainRes* const terrainRes = moho::REN_GetTerrainRes();
@@ -2927,20 +3057,6 @@ void moho::WRenViewport::ReleaseWaterBodyReflections()
 }
 
 /**
- * Address: 0x007F7ED0 (FUN_007F7ED0, ?SetViewportToFullScreen@WRenViewport@Moho@@AAEXXZ)
- *
- * What it does:
- * Applies a full-head viewport rectangle (`(0,0)` to `mFullScreen`) to the
- * active D3D device viewport state.
- */
-void moho::WRenViewport::SetViewportToFullScreen()
-{
-  moho::CD3DDevice* const device = moho::D3D_GetDevice();
-  Wm3::Vector2i screenOrigin{0, 0};
-  device->SetViewport(&screenOrigin, &mFullScreen, 0.0f, 1.0f);
-}
-
-/**
  * Address: 0x007F7EA0 (FUN_007F7EA0, ?SetViewportToLocalScreen@WRenViewport@Moho@@AAEXXZ)
  *
  * What it does:
@@ -2988,7 +3104,9 @@ void moho::WRenViewport::UpdateRenderViewportCoordinates()
 }
 namespace
 {
-  [[nodiscard]] std::uint8_t ClampFogColorChannel(const float value) noexcept
+  [[nodiscard]] std::uint8_t ClampFogColorChannel(
+    const float value
+  ) noexcept
   {
     const int scaled = static_cast<int>(value * 255.0f);
     if (scaled <= 0) {
@@ -3000,15 +3118,16 @@ namespace
     return static_cast<std::uint8_t>(scaled);
   }
 
-  [[nodiscard]] std::uint32_t PackFogColorArgb255(const moho::SFogInfo& fogInfo) noexcept
+  [[nodiscard]] std::uint32_t PackFogColorArgb255(
+    const moho::SFogInfo& fogInfo
+  ) noexcept
   {
     const std::uint32_t red = ClampFogColorChannel(fogInfo.mStartDistance);
     const std::uint32_t green = ClampFogColorChannel(fogInfo.mCutoffDistance);
     const std::uint32_t blue = ClampFogColorChannel(fogInfo.mMinClamp);
     return 0xFF000000u | (red << 16u) | (green << 8u) | blue;
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x007F8A30 (FUN_007F8A30, ?FogOn@WRenViewport@Moho@@AAEXM@Z)
@@ -3018,7 +3137,9 @@ namespace
  * Enables fog using active terrain fog lanes and one caller-provided distance
  * offset multiplier.
  */
-void moho::WRenViewport::FogOn(const float offsetMultiplier)
+void moho::WRenViewport::FogOn(
+  const float offsetMultiplier
+)
 {
   const moho::SFogInfo& fogInfo = moho::REN_GetTerrainRes()->GetFogInfo();
   const float fogOffset = moho::fog_OffsetMultiplier * offsetMultiplier;
@@ -3066,7 +3187,9 @@ void moho::WRenViewport::FogOff()
  * Binds the viewport's terrain-normal render target and viewport lanes, then
  * dispatches terrain-normal rendering when terrain debug rendering is enabled.
  */
-void moho::WRenViewport::RenderTerrainNormals(TerrainCommon* const terrain)
+void moho::WRenViewport::RenderTerrainNormals(
+  TerrainCommon* const terrain
+)
 {
   // Guard is ren_Terrain, not a null-terrain test: 0x007F7F11
   // `cmp ren_Terrain, 0 / jz loc_7F7FB5`. The caller checks both.
@@ -3090,14 +3213,7 @@ void moho::WRenViewport::RenderTerrainNormals(TerrainCommon* const terrain)
   //   0x007F7F61  mov eax, [eax+2174h]       ; mSecondaryTargetLocks[head]
   // and dispatches SetRenderTarget1 through vtable slot 32 ([edx+80h]).
   const std::int32_t head = mHead;
-  device->SetRenderTarget1(
-    mSecondaryTargetLocks[head].get(),
-    mDepthStencilLocks[head].get(),
-    true,
-    0,
-    1.0f,
-    0
-  );
+  device->SetRenderTarget1(mSecondaryTargetLocks[head].get(), mDepthStencilLocks[head].get(), true, 0, 1.0f, 0);
   SetViewportToLocalScreen();
 
   // Slot 9 fills the buffer bound above (0x007F7FA5, call through the
@@ -3133,14 +3249,7 @@ void moho::WRenViewport::TransformTerrainNormals()
   }
 
   const std::int32_t head = mHead;
-  device->SetRenderTarget1(
-    mPrimaryTargetLocks[head].get(),
-    mDepthStencilLocks[head].get(),
-    false,
-    0,
-    1.0f,
-    0
-  );
+  device->SetRenderTarget1(mPrimaryTargetLocks[head].get(), mDepthStencilLocks[head].get(), false, 0, 1.0f, 0);
 
   const int headWidth = device->GetHeadWidth(static_cast<unsigned int>(head));
   const int headHeight = device->GetHeadHeight(static_cast<unsigned int>(head));

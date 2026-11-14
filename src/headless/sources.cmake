@@ -8,6 +8,7 @@
 # those switches (#if FAF_SERVER_MODE in the rest). The Linux build is always server mode.
 
 set(FAF_HEADLESS_SOURCES
+  headless/BotObservation.cpp
   headless/ReplayBoneStats.cpp
   headless/ReplayChangeSetCheck.cpp
   headless/ReplayCommandCheck.cpp
@@ -21,13 +22,22 @@ set(FAF_HEADLESS_SOURCES
   headless/ReplayViewPacketCheck.cpp
   headless/ReplaySyncSpy.cpp
   headless/SessionLoad.cpp
+  headless/StateDigest.cpp
   headless/ReplayViewBench.cpp
+  headless/ReplayCommandDump.cpp
+  headless/ReplayEffectDump.cpp
+  headless/ReplayPoseDump.cpp
   headless/ReplayViewFrameStats.cpp
   headless/HeadlessEntry.cpp
   headless/HeadlessMain.cpp
   headless/ReplayRunner.cpp
   headless/ReplaySyncWriters.cpp
   headless/ReplayWireStats.cpp
+  headless/ReplayEffectOps.cpp
+  # The server's effect-op encoder (plan WP9.1), which --effect-record measures.
+  server/EffectOpEncoder.cpp
+  server/EffectOpRecorder.cpp
+  server/EffectOpRouter.cpp
 )
 
 set(FAF_HEADLESS_SERVER_SOURCES
@@ -39,6 +49,9 @@ set(FAF_HEADLESS_SERVER_SOURCES
   headless/ReplayViewPacketCheck.cpp
   headless/ReplaySyncSpy.cpp
   headless/ReplayViewBench.cpp
+  headless/ReplayCommandDump.cpp
+  headless/ReplayEffectDump.cpp
+  headless/ReplayPoseDump.cpp
   headless/ReplayViewFrameStats.cpp
   headless/ReplayWireStats.cpp
 )

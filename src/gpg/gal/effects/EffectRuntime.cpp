@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <deque>
 #include <functional>
 #include <stdexcept>
@@ -44,23 +45,37 @@ namespace gpg::gal::effects
 
     constexpr char kCacheMagic[8] = {'F', 'A', 'F', 'S', 'H', 'D', 'R', '1'};
 
-    [[nodiscard]] std::string CachePath(const std::uint64_t key, const ShaderTarget target)
+    [[nodiscard]] std::string CachePath(
+      const std::uint64_t key,
+      const ShaderTarget target
+    )
     {
       const std::string& directory = ShaderCacheDirectory();
       if (directory.empty()) {
         return {};
       }
       char name[64]{};
-      std::snprintf(name, sizeof(name), "%016llx.%s", static_cast<unsigned long long>(key), target == ShaderTarget::Dxil ? "dxil" : "spv");
+      std::snprintf(
+        name,
+        sizeof(name),
+        "%016llx.%s",
+        static_cast<unsigned long long>(key),
+        target == ShaderTarget::Dxil ? "dxil" : "spv"
+      );
       return directory + name;
     }
 
-    [[nodiscard]] bool ReadCache(const std::string& path, const std::uint64_t key, std::vector<std::uint8_t>& code)
+    [[nodiscard]] bool ReadCache(
+      const std::string& path,
+      const std::uint64_t key,
+      std::vector<std::uint8_t>& code
+    )
     {
       if (path.empty()) {
         return false;
       }
-      HANDLE const file = ::CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0U, nullptr);
+      HANDLE const file =
+        ::CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0U, nullptr);
       if (file == INVALID_HANDLE_VALUE) {
         return false;
       }
@@ -80,7 +95,11 @@ namespace gpg::gal::effects
       return ok;
     }
 
-    void WriteCache(const std::string& path, const std::uint64_t key, const std::vector<std::uint8_t>& code)
+    void WriteCache(
+      const std::string& path,
+      const std::uint64_t key,
+      const std::vector<std::uint8_t>& code
+    )
     {
       if (path.empty()) {
         return;
@@ -121,7 +140,10 @@ namespace gpg::gal::effects
       }
 
       /** `first`: ahead of the queued jobs (cache reads go before compiles). */
-      void Submit(std::function<void()> job, const bool first)
+      void Submit(
+        std::function<void()> job,
+        const bool first
+      )
       {
         {
           const std::lock_guard<std::mutex> lock(mMutex);
@@ -134,7 +156,9 @@ namespace gpg::gal::effects
         std::call_once(mStarted, [this] {
           const unsigned count = std::clamp(std::thread::hardware_concurrency() / 4U, 1U, 4U);
           for (unsigned index = 0U; index < count; ++index) {
-            std::thread([this] { Run(); }).detach();
+            std::thread([this] {
+              Run();
+            }).detach();
           }
         });
         mWake.notify_one();
@@ -148,7 +172,9 @@ namespace gpg::gal::effects
           std::function<void()> job;
           {
             std::unique_lock<std::mutex> lock(mMutex);
-            mWake.wait(lock, [this] { return !mJobs.empty(); });
+            mWake.wait(lock, [this] {
+              return !mJobs.empty();
+            });
             job = std::move(mJobs.front());
             mJobs.pop_front();
           }
@@ -165,7 +191,10 @@ namespace gpg::gal::effects
 
   bool gBackgroundShaders = true;
 
-  void Fnv1a64::Add(const void* const data, const std::size_t bytes) noexcept
+  void Fnv1a64::Add(
+    const void* const data,
+    const std::size_t bytes
+  ) noexcept
   {
     const auto* const begin = static_cast<const unsigned char*>(data);
     for (std::size_t index = 0U; index < bytes; ++index) {
@@ -174,7 +203,9 @@ namespace gpg::gal::effects
     }
   }
 
-  void Fnv1a64::Add(const std::string_view text) noexcept
+  void Fnv1a64::Add(
+    const std::string_view text
+  ) noexcept
   {
     Add(text.data(), text.size());
     const char terminator = '\0';
@@ -186,8 +217,42 @@ namespace gpg::gal::effects
     return gpg::LocalCacheDirectory();
   }
 
+  CompiledShader CompileRawCached(
+    const std::string_view hlsl,
+    const std::string_view entryName,
+    const wchar_t* const profile,
+    const std::vector<std::wstring>& extraArguments,
+    const ShaderTarget target
+  )
+  {
+    const ShaderCompiler& compiler = ShaderCompiler::Instance();
+    Fnv1a64 hash;
+    hash.Add("faf gpu program 1");
+    hash.Add(compiler.Version());
+    hash.Add(hlsl);
+    hash.Add(entryName);
+    hash.Add(profile, std::wcslen(profile) * sizeof(wchar_t));
+    for (const std::wstring& argument : extraArguments) {
+      hash.Add(argument.data(), (argument.size() + 1U) * sizeof(wchar_t));
+    }
+    const std::string path = CachePath(hash.Value(), target);
+    CompiledShader cached;
+    if (ReadCache(path, hash.Value(), cached.code)) {
+      cached.succeeded = true;
+      return cached;
+    }
+    CompiledShader compiled = compiler.CompileRaw(hlsl, entryName, profile, extraArguments);
+    if (compiled.succeeded) {
+      WriteCache(path, hash.Value(), compiled.code);
+    }
+    return compiled;
+  }
+
   EffectProgram::EffectProgram(
-    std::string name, std::string translatedSource, const ShaderTarget target, const std::string_view originalSource
+    std::string name,
+    std::string translatedSource,
+    const ShaderTarget target,
+    const std::string_view originalSource
   )
     : mName(std::move(name))
     , mTarget(target)
@@ -195,13 +260,30 @@ namespace gpg::gal::effects
     mDescription = ParseEffect(translatedSource);
     // Engine addition (ren_ShadowCascades): an effect that reads the shadow map for lighting gets the
     // cascade parameter its lookups go through (ShadowCascades.h).
-    if (std::any_of(mDescription.samplers.begin(), mDescription.samplers.end(), IsShadowLookupSampler) &&
-        FindParameter(kShadowCascadeParameter) < 0) {
+    if (
+      std::any_of(mDescription.samplers.begin(), mDescription.samplers.end(), IsShadowLookupSampler) &&
+      FindParameter(kShadowCascadeParameter) < 0
+    ) {
       translatedSource.insert(0U, ShadowCascadeDeclaration());
       // Engine addition (ren_RayTracedShadows): the ray constants ahead of the cascades, whose lookups read them.
       if (gRayQueryShaders && FindParameter(kRayShadowParameter) < 0) {
         translatedSource.insert(0U, RayShadowDeclaration());
       }
+      mDescription = ParseEffect(translatedSource);
+    }
+    // Engine addition (ren_RayWaterReflections): the water effect (it samples the sky cube and the refraction copy,
+    // and has the eye and the view-projection) gets the ray constants too, for its traced reflections.
+    const auto hasSampler = [&](const std::string_view name) {
+      return std::any_of(mDescription.samplers.begin(), mDescription.samplers.end(), [&](const SamplerDesc& sampler) {
+        return sampler.name == name;
+      });
+    };
+    if (
+      gRayQueryShaders && FindParameter(kRayShadowParameter) < 0 && hasSampler("SkySampler") &&
+      hasSampler("RefractionSampler") && FindParameter("ViewPosition") >= 0 && FindParameter("WorldToView") >= 0 &&
+      FindParameter("Projection") >= 0 && FindParameter("ViewportScaleOffset") >= 0
+    ) {
+      translatedSource.insert(0U, RayShadowDeclaration());
       mDescription = ParseEffect(translatedSource);
     }
     if (!originalSource.empty()) {
@@ -249,13 +331,17 @@ namespace gpg::gal::effects
 
     // Diagnostics: FAF_EFFECT_DUMP_DIR=dir writes the translated source and
     // the generated HLSL of every effect there (local files, never shipped).
-    if (const char* const dumpDirectory = std::getenv("FAF_EFFECT_DUMP_DIR"); dumpDirectory != nullptr && dumpDirectory[0] != '\0') {
+    if (
+      const char* const dumpDirectory = std::getenv("FAF_EFFECT_DUMP_DIR");
+      dumpDirectory != nullptr && dumpDirectory[0] != '\0'
+    ) {
       const std::size_t slash = mName.find_last_of("\\/");
       const std::string base =
         std::string(dumpDirectory) + "\\" + ((slash == std::string::npos) ? mName : mName.substr(slash + 1U));
-      for (const auto& [suffix, text] : {std::pair<const char*, std::string_view>{".original.fx", originalSource},
-                                         std::pair<const char*, std::string_view>{".translated.fx", translatedSource},
-                                         std::pair<const char*, std::string_view>{".hlsl", mModern.hlsl}}) {
+      for (const auto& [suffix, text] :
+           {std::pair<const char*, std::string_view>{".original.fx", originalSource},
+            std::pair<const char*, std::string_view>{".translated.fx", translatedSource},
+            std::pair<const char*, std::string_view>{".hlsl", mModern.hlsl}}) {
         if (FILE* const file = std::fopen((base + suffix).c_str(), "wb")) {
           std::fwrite(text.data(), 1U, text.size(), file);
           std::fclose(file);
@@ -271,7 +357,10 @@ namespace gpg::gal::effects
     }
   }
 
-  const PassEntries& EffectProgram::Entries(const std::uint32_t technique, const std::uint32_t pass) const
+  const PassEntries& EffectProgram::Entries(
+    const std::uint32_t technique,
+    const std::uint32_t pass
+  ) const
   {
     static const PassEntries kNone{};
     if (technique >= mPassEntries.size() || pass >= mPassEntries[technique].size()) {
@@ -280,7 +369,9 @@ namespace gpg::gal::effects
     return mPassEntries[technique][pass];
   }
 
-  const CompiledEntry& EffectProgram::Shader(const std::uint32_t entry)
+  const CompiledEntry& EffectProgram::Shader(
+    const std::uint32_t entry
+  )
   {
     static const CompiledEntry kMissing{};
     if (entry >= mCompiled.size()) {
@@ -289,7 +380,9 @@ namespace gpg::gal::effects
     {
       std::unique_lock<std::mutex> lock(mCompileMutex);
       // A worker already reading or compiling this entry finishes sooner than a second compile.
-      mEntryPrepared.wait(lock, [&] { return !mCompiled[entry].preparing; });
+      mEntryPrepared.wait(lock, [&] {
+        return !mCompiled[entry].preparing;
+      });
       if (mCompiled[entry].attempted) {
         return mCompiled[entry];
       }
@@ -306,7 +399,9 @@ namespace gpg::gal::effects
     }
   }
 
-  std::uint64_t EffectProgram::EntryKey(const std::uint32_t entry) const
+  std::uint64_t EffectProgram::EntryKey(
+    const std::uint32_t entry
+  ) const
   {
     Fnv1a64 key;
     key.Add(&mSourceKey, sizeof(mSourceKey));
@@ -315,7 +410,9 @@ namespace gpg::gal::effects
     return key.Value();
   }
 
-  bool EffectProgram::Claim(const std::uint32_t entry)
+  bool EffectProgram::Claim(
+    const std::uint32_t entry
+  )
   {
     const std::lock_guard<std::mutex> lock(mCompileMutex);
     CompiledEntry& compiled = mCompiled[entry];
@@ -326,7 +423,10 @@ namespace gpg::gal::effects
     return true;
   }
 
-  bool EffectProgram::Prepare(const std::uint32_t entry, const PrepareMode mode)
+  bool EffectProgram::Prepare(
+    const std::uint32_t entry,
+    const PrepareMode mode
+  )
   {
     // The entry is claimed (preparing), so no other thread writes it; the work runs outside
     // the lock, and draws needing other entries meanwhile are not held up.
@@ -352,8 +452,12 @@ namespace gpg::gal::effects
       prepared.messages = std::move(result.messages);
       if (!result.succeeded) {
         gpg::Warnf(
-          "effects: %s: %s (%s %s) failed to compile:\n%s", mName.c_str(), shaderEntry.name.c_str(), shaderEntry.function.c_str(),
-          shaderEntry.arguments.c_str(), prepared.messages.substr(0U, 2000U).c_str()
+          "effects: %s: %s (%s %s) failed to compile:\n%s",
+          mName.c_str(),
+          shaderEntry.name.c_str(),
+          shaderEntry.function.c_str(),
+          shaderEntry.arguments.c_str(),
+          prepared.messages.substr(0U, 2000U).c_str()
         );
       } else {
         prepared.code = std::move(result.code);
@@ -362,8 +466,12 @@ namespace gpg::gal::effects
         static std::atomic<int> logged{0};
         if (logged++ < 32) {
           gpg::Logf(
-            "effects: %s: compiled %s (%s) in %lu ms%s", mName.c_str(), shaderEntry.name.c_str(), shaderEntry.function.c_str(),
-            ::GetTickCount() - started, mode == PrepareMode::Background ? " ahead of use" : ""
+            "effects: %s: compiled %s (%s) in %lu ms%s",
+            mName.c_str(),
+            shaderEntry.name.c_str(),
+            shaderEntry.function.c_str(),
+            ::GetTickCount() - started,
+            mode == PrepareMode::Background ? " ahead of use" : ""
           );
         }
       }
@@ -374,12 +482,18 @@ namespace gpg::gal::effects
     // Engine addition (ren_UsedTextureTable): the texture registers the code reads.
     if (prepared.succeeded) {
       prepared.textureSlots = (mTarget == ShaderTarget::Dxil) ? compiler.ReflectTextureSlots(prepared.code)
-                                                               : ReflectSpirvTextureSlots(prepared.code);
+                                                              : ReflectSpirvTextureSlots(prepared.code);
       // Diagnostics: FAF_TEXTURE_SLOTS_LOG=1 logs each prepared entry's texture registers.
       static const bool logSlots = std::getenv("FAF_TEXTURE_SLOTS_LOG") != nullptr;
       if (logSlots) {
-        gpg::Logf("effects: %s: %s (%s %s) reads textures %016llx", mName.c_str(), shaderEntry.name.c_str(),
-                  shaderEntry.function.c_str(), shaderEntry.arguments.c_str(), static_cast<unsigned long long>(prepared.textureSlots));
+        gpg::Logf(
+          "effects: %s: %s (%s %s) reads textures %016llx",
+          mName.c_str(),
+          shaderEntry.name.c_str(),
+          shaderEntry.function.c_str(),
+          shaderEntry.arguments.c_str(),
+          static_cast<unsigned long long>(prepared.textureSlots)
+        );
       }
     }
 
@@ -392,45 +506,46 @@ namespace gpg::gal::effects
     return true;
   }
 
-  void EffectProgram::PrepareInBackground(const std::shared_ptr<EffectProgram>& program)
+  void EffectProgram::PrepareInBackground(
+    const std::shared_ptr<EffectProgram>& program
+  )
   {
     const std::weak_ptr<EffectProgram> weak = program;
-    ShaderWorkers::Instance().Submit(
-      [weak] {
-        const std::shared_ptr<EffectProgram> self = weak.lock();
-        if (self == nullptr) {
-          return;
+    ShaderWorkers::Instance().Submit([weak] {
+      const std::shared_ptr<EffectProgram> self = weak.lock();
+      if (self == nullptr) {
+        return;
+      }
+      std::uint32_t read = 0U;
+      std::uint32_t missing = 0U;
+      for (std::uint32_t entry = 0U; entry < self->mCompiled.size(); ++entry) {
+        if (!self->Claim(entry)) {
+          continue; // a draw got there first
         }
-        std::uint32_t read = 0U;
-        std::uint32_t missing = 0U;
-        for (std::uint32_t entry = 0U; entry < self->mCompiled.size(); ++entry) {
-          if (!self->Claim(entry)) {
-            continue; // a draw got there first
-          }
-          if (self->Prepare(entry, PrepareMode::CacheOnly)) {
-            ++read;
-            continue;
-          }
-          ++missing;
-          ShaderWorkers::Instance().Submit(
-            [weak, entry] {
-              if (const std::shared_ptr<EffectProgram> owner = weak.lock(); owner != nullptr && owner->Claim(entry)) {
-                owner->Prepare(entry, PrepareMode::Background);
-              }
-            },
-            false
-          );
+        if (self->Prepare(entry, PrepareMode::CacheOnly)) {
+          ++read;
+          continue;
         }
-        gpg::Logf(
-          "effects: %s: %u of %zu shaders read from the cache ahead of use, %u queued to compile", self->mName.c_str(), read,
-          self->mCompiled.size(), missing
-        );
-      },
-      true
-    );
+        ++missing;
+        ShaderWorkers::Instance().Submit([weak, entry] {
+          if (const std::shared_ptr<EffectProgram> owner = weak.lock(); owner != nullptr && owner->Claim(entry)) {
+            owner->Prepare(entry, PrepareMode::Background);
+          }
+        }, false);
+      }
+      gpg::Logf(
+        "effects: %s: %u of %zu shaders read from the cache ahead of use, %u queued to compile",
+        self->mName.c_str(),
+        read,
+        self->mCompiled.size(),
+        missing
+      );
+    }, true);
   }
 
-  std::int32_t EffectProgram::FindParameter(const std::string_view name) const noexcept
+  std::int32_t EffectProgram::FindParameter(
+    const std::string_view name
+  ) const noexcept
   {
     for (std::size_t index = 0U; index < mDescription.parameters.size(); ++index) {
       if (mDescription.parameters[index].name == name) {
@@ -445,13 +560,20 @@ namespace gpg::gal
 {
   namespace
   {
-    [[noreturn]] void Throw(const int line, const std::string& message)
+    [[noreturn]] void Throw(
+      const int line,
+      const std::string& message
+    )
     {
       throw Error(fa::string("EffectRuntime.cpp"), line, fa::string(message.c_str()));
     }
 
     template <class Read>
-    bool ReadAnnotation(const effects::Annotations* const annotations, const fa::string& name, Read&& read)
+    bool ReadAnnotation(
+      const effects::Annotations* const annotations,
+      const fa::string& name,
+      Read&& read
+    )
     {
       if (annotations == nullptr) {
         return false;
@@ -460,7 +582,10 @@ namespace gpg::gal
       return annotation != nullptr && read(*annotation);
     }
 
-    [[nodiscard]] bool AnnotationNumber(const effects::Annotation& annotation, double& value)
+    [[nodiscard]] bool AnnotationNumber(
+      const effects::Annotation& annotation,
+      double& value
+    )
     {
       if (annotation.kind == effects::Annotation::Kind::String) {
         return false;
@@ -474,7 +599,9 @@ namespace gpg::gal
   // ProgramEffect
 
   ProgramEffect::ProgramEffect(
-    const EffectContext& context, std::shared_ptr<effects::EffectProgram> program, effects::PassBinder& binder
+    const EffectContext& context,
+    std::shared_ptr<effects::EffectProgram> program,
+    effects::PassBinder& binder
   )
     : mContext(context)
     , mProgram(std::move(program))
@@ -491,15 +618,21 @@ namespace gpg::gal
     return &mContext;
   }
 
-  void ProgramEffect::GetTechniques(fa::vector<boost::shared_ptr<EffectTechnique>>& outTechniques)
+  void ProgramEffect::GetTechniques(
+    fa::vector<std::shared_ptr<EffectTechnique>>& outTechniques
+  )
   {
     const auto count = static_cast<std::uint32_t>(mProgram->Description().techniques.size());
     for (std::uint32_t technique = 0U; technique < count; ++technique) {
-      outTechniques.push_back(boost::shared_ptr<EffectTechnique>(new ProgramEffectTechnique(mProgram, technique, mBinder)));
+      outTechniques.push_back(
+        std::shared_ptr<EffectTechnique>(new ProgramEffectTechnique(mProgram, technique, mBinder))
+      );
     }
   }
 
-  boost::shared_ptr<EffectVariable> ProgramEffect::GetVariable(const char* const name)
+  std::shared_ptr<EffectVariable> ProgramEffect::GetVariable(
+    const char* const name
+  )
   {
     const std::string_view wanted = (name != nullptr) ? name : "";
     const std::int32_t parameter = mProgram->FindParameter(wanted);
@@ -512,15 +645,17 @@ namespace gpg::gal
         Throw(__LINE__, "invalid effect variable requested: " + std::string(wanted));
       }
     }
-    return boost::shared_ptr<EffectVariable>(new ProgramEffectVariable(mProgram, parameter, name));
+    return std::shared_ptr<EffectVariable>(new ProgramEffectVariable(mProgram, parameter, name));
   }
 
-  boost::shared_ptr<EffectTechnique> ProgramEffect::GetTechnique(const char* const name)
+  std::shared_ptr<EffectTechnique> ProgramEffect::GetTechnique(
+    const char* const name
+  )
   {
     const auto& techniques = mProgram->Description().techniques;
     for (std::size_t technique = 0U; technique < techniques.size(); ++technique) {
       if (name != nullptr && techniques[technique].name == name) {
-        return boost::shared_ptr<EffectTechnique>(
+        return std::shared_ptr<EffectTechnique>(
           new ProgramEffectTechnique(mProgram, static_cast<std::uint32_t>(technique), mBinder)
         );
       }
@@ -532,7 +667,9 @@ namespace gpg::gal
 
   void ProgramEffect::OnLost() {}
 
-  bool ProgramEffect::TechniqueCompiles(const char* const name)
+  bool ProgramEffect::TechniqueCompiles(
+    const char* const name
+  )
   {
     const auto& techniques = mProgram->Description().techniques;
     for (std::size_t technique = 0U; technique < techniques.size(); ++technique) {
@@ -546,8 +683,10 @@ namespace gpg::gal
             return false;
           }
         }
-        if (techniques[technique].passes[pass].tessellationDropped ||
-            (techniques[technique].passes[pass].Tessellated() && (entries.hull < 0 || entries.domain < 0))) {
+        if (
+          techniques[technique].passes[pass].tessellationDropped ||
+          (techniques[technique].passes[pass].Tessellated() && (entries.hull < 0 || entries.domain < 0))
+        ) {
           return false;
         }
       }
@@ -560,7 +699,9 @@ namespace gpg::gal
   // ProgramEffectTechnique
 
   ProgramEffectTechnique::ProgramEffectTechnique(
-    std::shared_ptr<effects::EffectProgram> program, const std::uint32_t technique, effects::PassBinder& binder
+    std::shared_ptr<effects::EffectProgram> program,
+    const std::uint32_t technique,
+    effects::PassBinder& binder
   )
     : mProgram(std::move(program))
     , mTechnique(technique)
@@ -596,7 +737,9 @@ namespace gpg::gal
     mBegun = false;
   }
 
-  void ProgramEffectTechnique::BeginPass(const int pass)
+  void ProgramEffectTechnique::BeginPass(
+    const int pass
+  )
   {
     if (!mBegun) {
       Throw(__LINE__, "effect technique begin/end mismatch");
@@ -615,58 +758,80 @@ namespace gpg::gal
     mBinder.UnbindPass();
   }
 
-  bool ProgramEffectTechnique::GetAnnotationBool(bool* const outValue, const fa::string& annotationName)
+  bool ProgramEffectTechnique::GetAnnotationBool(
+    bool* const outValue,
+    const fa::string& annotationName
+  )
   {
-    return ReadAnnotation(&mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
+    return ReadAnnotation(
+      &mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
       double value = 0.0;
       if (!AnnotationNumber(a, value)) {
         return false;
       }
       *outValue = value != 0.0;
       return true;
-    });
+    }
+    );
   }
 
-  bool ProgramEffectTechnique::GetAnnotationInt(int* const outValue, const fa::string& annotationName)
+  bool ProgramEffectTechnique::GetAnnotationInt(
+    int* const outValue,
+    const fa::string& annotationName
+  )
   {
-    return ReadAnnotation(&mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
+    return ReadAnnotation(
+      &mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
       double value = 0.0;
       if (!AnnotationNumber(a, value)) {
         return false;
       }
       *outValue = static_cast<int>(value);
       return true;
-    });
+    }
+    );
   }
 
-  bool ProgramEffectTechnique::GetAnnotationFloat(float* const outValue, const fa::string& annotationName)
+  bool ProgramEffectTechnique::GetAnnotationFloat(
+    float* const outValue,
+    const fa::string& annotationName
+  )
   {
-    return ReadAnnotation(&mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
+    return ReadAnnotation(
+      &mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
       double value = 0.0;
       if (!AnnotationNumber(a, value)) {
         return false;
       }
       *outValue = static_cast<float>(value);
       return true;
-    });
+    }
+    );
   }
 
-  bool ProgramEffectTechnique::GetAnnotationString(fa::string* const outValue, const fa::string& annotationName)
+  bool ProgramEffectTechnique::GetAnnotationString(
+    fa::string* const outValue,
+    const fa::string& annotationName
+  )
   {
-    return ReadAnnotation(&mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
+    return ReadAnnotation(
+      &mProgram->Description().techniques[mTechnique].annotations, annotationName, [&](const effects::Annotation& a) {
       if (a.kind != effects::Annotation::Kind::String) {
         return false;
       }
       outValue->assign_owned(a.text.c_str());
       return true;
-    });
+    }
+    );
   }
 
   // ---------------------------------------------------------------------------
   // ProgramEffectVariable
 
   ProgramEffectVariable::ProgramEffectVariable(
-    std::shared_ptr<effects::EffectProgram> program, const std::int32_t parameter, const char* const name
+    std::shared_ptr<effects::EffectProgram> program,
+    const std::int32_t parameter,
+    const char* const name
   )
     : mProgram(std::move(program))
     , mParameter(parameter)
@@ -680,12 +845,16 @@ namespace gpg::gal
     return &mName;
   }
 
-  void ProgramEffectVariable::SetCubeRenderTarget(const boost::shared_ptr<CubeRenderTarget> cubeTarget)
+  void ProgramEffectVariable::SetCubeRenderTarget(
+    const std::shared_ptr<CubeRenderTarget> cubeTarget
+  )
   {
     static_cast<void>(cubeTarget);
   }
 
-  void ProgramEffectVariable::SetRenderTarget(const boost::shared_ptr<RenderTarget> renderTarget)
+  void ProgramEffectVariable::SetRenderTarget(
+    const std::shared_ptr<RenderTarget> renderTarget
+  )
   {
     RecordStateChange();
     if (mParameter >= 0) {
@@ -693,7 +862,9 @@ namespace gpg::gal
     }
   }
 
-  void ProgramEffectVariable::SetTexture(const boost::shared_ptr<Texture> texture)
+  void ProgramEffectVariable::SetTexture(
+    const std::shared_ptr<Texture> texture
+  )
   {
     RecordStateChange();
     if (mParameter >= 0) {
@@ -701,28 +872,38 @@ namespace gpg::gal
     }
   }
 
-  void ProgramEffectVariable::SetMatrix4x4(const Matrix* const matrix)
+  void ProgramEffectVariable::SetMatrix4x4(
+    const Matrix* const matrix
+  )
   {
     if (mParameter >= 0 && matrix != nullptr) {
       mProgram->Parameters().SetMatrix(static_cast<std::uint32_t>(mParameter), &matrix->r[0].x);
     }
   }
 
-  void ProgramEffectVariable::SetFloatArray(const std::uint32_t count, const float* const values)
+  void ProgramEffectVariable::SetFloatArray(
+    const std::uint32_t count,
+    const float* const values
+  )
   {
     if (mParameter >= 0) {
       mProgram->Parameters().SetFloats(static_cast<std::uint32_t>(mParameter), values, count);
     }
   }
 
-  void ProgramEffectVariable::SetVector(const float* const vector4)
+  void ProgramEffectVariable::SetVector(
+    const float* const vector4
+  )
   {
     if (mParameter >= 0) {
       mProgram->Parameters().SetVector(static_cast<std::uint32_t>(mParameter), vector4);
     }
   }
 
-  void ProgramEffectVariable::SetValue(const void* const data, const std::uint32_t byteCount)
+  void ProgramEffectVariable::SetValue(
+    const void* const data,
+    const std::uint32_t byteCount
+  )
   {
     if (mParameter < 0) {
       return;
@@ -730,43 +911,59 @@ namespace gpg::gal
     const effects::Parameter& parameter = mProgram->Description().parameters[static_cast<std::size_t>(mParameter)];
     // D3D9's SetValue on float data converts like SetFloatArray; anything
     // else is packed 4-byte components.
-    if (parameter.scalarType == effects::ScalarType::Float && parameter.parameterClass != effects::ParameterClass::Struct &&
-        (byteCount % 4U) == 0U) {
-      mProgram->Parameters().SetFloats(static_cast<std::uint32_t>(mParameter), static_cast<const float*>(data), byteCount / 4U);
+    if (
+      parameter.scalarType == effects::ScalarType::Float &&
+      parameter.parameterClass != effects::ParameterClass::Struct && (byteCount % 4U) == 0U
+    ) {
+      mProgram->Parameters().SetFloats(
+        static_cast<std::uint32_t>(mParameter), static_cast<const float*>(data), byteCount / 4U
+      );
       return;
     }
     mProgram->Parameters().SetPacked(static_cast<std::uint32_t>(mParameter), data, byteCount);
   }
 
-  void ProgramEffectVariable::SetFloat(const float value)
+  void ProgramEffectVariable::SetFloat(
+    const float value
+  )
   {
     if (mParameter >= 0) {
       mProgram->Parameters().SetScalar(static_cast<std::uint32_t>(mParameter), value);
     }
   }
 
-  void ProgramEffectVariable::SetInt(const int value)
+  void ProgramEffectVariable::SetInt(
+    const int value
+  )
   {
     if (mParameter >= 0) {
       mProgram->Parameters().SetScalar(static_cast<std::uint32_t>(mParameter), value);
     }
   }
 
-  void ProgramEffectVariable::SetBool(const bool value)
+  void ProgramEffectVariable::SetBool(
+    const bool value
+  )
   {
     if (mParameter >= 0) {
       mProgram->Parameters().SetScalar(static_cast<std::uint32_t>(mParameter), value ? 1.0 : 0.0);
     }
   }
 
-  void ProgramEffectVariable::SetMatrixArray(const std::uint32_t count, const Matrix* const matrices)
+  void ProgramEffectVariable::SetMatrixArray(
+    const std::uint32_t count,
+    const Matrix* const matrices
+  )
   {
     if (mParameter >= 0 && matrices != nullptr) {
       mProgram->Parameters().SetMatrixArray(static_cast<std::uint32_t>(mParameter), &matrices->r[0].x, count);
     }
   }
 
-  void ProgramEffectVariable::SetVectorArray(const std::uint32_t count, const float* const vectors4)
+  void ProgramEffectVariable::SetVectorArray(
+    const std::uint32_t count,
+    const float* const vectors4
+  )
   {
     if (mParameter >= 0) {
       mProgram->Parameters().SetVectorArray(static_cast<std::uint32_t>(mParameter), vectors4, count);
@@ -781,7 +978,10 @@ namespace gpg::gal
     return &mProgram->Description().parameters[static_cast<std::size_t>(mParameter)].annotations;
   }
 
-  bool ProgramEffectVariable::GetAnnotationBool(bool* const outValue, const fa::string& annotationName)
+  bool ProgramEffectVariable::GetAnnotationBool(
+    bool* const outValue,
+    const fa::string& annotationName
+  )
   {
     return ReadAnnotation(OwnAnnotations(), annotationName, [&](const effects::Annotation& a) {
       double value = 0.0;
@@ -793,7 +993,10 @@ namespace gpg::gal
     });
   }
 
-  bool ProgramEffectVariable::GetAnnotationInt(int* const outValue, const fa::string& annotationName)
+  bool ProgramEffectVariable::GetAnnotationInt(
+    int* const outValue,
+    const fa::string& annotationName
+  )
   {
     return ReadAnnotation(OwnAnnotations(), annotationName, [&](const effects::Annotation& a) {
       double value = 0.0;
@@ -805,7 +1008,10 @@ namespace gpg::gal
     });
   }
 
-  bool ProgramEffectVariable::GetAnnotationFloat(float* const outValue, const fa::string& annotationName)
+  bool ProgramEffectVariable::GetAnnotationFloat(
+    float* const outValue,
+    const fa::string& annotationName
+  )
   {
     return ReadAnnotation(OwnAnnotations(), annotationName, [&](const effects::Annotation& a) {
       double value = 0.0;
@@ -817,7 +1023,10 @@ namespace gpg::gal
     });
   }
 
-  bool ProgramEffectVariable::GetAnnotationString(fa::string* const outValue, const fa::string& annotationName)
+  bool ProgramEffectVariable::GetAnnotationString(
+    fa::string* const outValue,
+    const fa::string& annotationName
+  )
   {
     return ReadAnnotation(OwnAnnotations(), annotationName, [&](const effects::Annotation& a) {
       if (a.kind != effects::Annotation::Kind::String) {

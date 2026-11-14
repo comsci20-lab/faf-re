@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "moho/audio/RecoverableCue.h"
 #include "moho/audio/AudioOutputSelection.h"
 #include "moho/audio/XactClock.h"
@@ -291,3 +292,5 @@ TEST(AudioRecovery, NativeStreamingUsesTheWindowsSelectedRenderer)
   ASSERT_GE(resources.cue->GetState(&state), 0);
   EXPECT_NE(state & XACT_CUESTATE_PLAYING, 0);
 }
+
+#endif

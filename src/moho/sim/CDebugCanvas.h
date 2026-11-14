@@ -61,7 +61,8 @@ namespace moho
     void AddLine(const Wm3::Vector3f& p0, const Wm3::Vector3f& p1, std::uint32_t depth);
 
     /**
-     * Address: 0x0044FD50 (FUN_0044FD50, ?AddContouredLine@CDebugCanvas@Moho@@QAEXABV?$Vector2@M@Wm3@@0IABVCHeightField@2@@Z)
+     * Address: 0x0044FD50 (FUN_0044FD50,
+     * ?AddContouredLine@CDebugCanvas@Moho@@QAEXABV?$Vector2@M@Wm3@@0IABVCHeightField@2@@Z)
      *
      * What it does:
      * Draws a 10-step terrain-conforming line by sampling `heightField` between two XZ points.
@@ -104,7 +105,8 @@ namespace moho
     );
 
     /**
-     * Address: 0x00450330 (FUN_00450330, ?AddWireCoords@CDebugCanvas@Moho@@QAEXABV?$Vector3@M@Wm3@@ABV?$Quaternion@M@4@M@Z)
+     * Address: 0x00450330 (FUN_00450330,
+     * ?AddWireCoords@CDebugCanvas@Moho@@QAEXABV?$Vector3@M@Wm3@@ABV?$Quaternion@M@4@M@Z)
      *
      * What it does:
      * Draws RGB orientation axes of length `axisLength` from `origin` rotated by `orientation`.
@@ -206,30 +208,4 @@ namespace moho
 
   static_assert(sizeof(CDebugCanvas) == 0x40, "CDebugCanvas size must be 0x40");
 
-  /**
-   * Address: 0x00452110 (FUN_00452110, sub_452110)
-   *
-   * What it does:
-   * Out-of-line `size()` thunk for `fa::vector<SDebugWorldText>`
-   * used by `CDebugCanvas::worldText` (element size `0x30`).
-   */
-  [[nodiscard]] std::size_t GetDebugWorldTextCount(const fa::vector<SDebugWorldText>* worldText) noexcept;
-
-  /**
-   * Address: 0x00452160 (FUN_00452160, sub_452160)
-   *
-   * What it does:
-   * Out-of-line `size()` thunk for `fa::vector<SDebugScreenText>`
-   * used by `CDebugCanvas::screenText` (element size `0x48`).
-   */
-  [[nodiscard]] std::size_t GetDebugScreenTextCount(const fa::vector<SDebugScreenText>* screenText) noexcept;
-
-  /**
-   * Address: 0x004521B0 (FUN_004521B0, sub_4521B0)
-   *
-   * What it does:
-   * Out-of-line `size()` thunk for `fa::vector<SDebugDecal>` used
-   * by `CDebugCanvas::decals` (element size `0x34`).
-   */
-  [[nodiscard]] std::size_t GetDebugDecalCount(const fa::vector<SDebugDecal>* decals) noexcept;
 } // namespace moho

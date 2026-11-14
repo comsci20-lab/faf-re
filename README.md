@@ -5,14 +5,15 @@
 **The *Supreme Commander: Forged Alliance* engine, rebuilt as C++20**
 
 [![Replay parity](https://img.shields.io/badge/replay%20parity-96.7%25-brightgreen)](docs/RETAIL_REPLAY_PARITY.md)
-[![x64 vs retail](https://img.shields.io/badge/x64%20vs%20retail-19%25%20less%20time-blue)](docs/PERFORMANCE.md)
+[![x64 vs retail](https://img.shields.io/badge/x64%20vs%20retail-41%25%20less%20time-blue)](docs/PERFORMANCE.md)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%7C%20x86-blue)](#build)
+[![Line coverage](https://img.shields.io/badge/line%20coverage-71.3%25-yellowgreen)](tests/README.md#coverage)
 
 [Build](#build) · [Retail parity](#retail-parity) · [Performance](#performance) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
-The Moho engine behind *Supreme Commander: Forged Alliance* (2007), rebuilt as readable, buildable C++20 so it can be maintained instead of staying frozen in a binary. It builds for x86 and x64, plays real games bit for bit like the retail `ForgedAlliance.exe`, and the x64 build plays replays about a quarter faster.
+The Moho engine behind *Supreme Commander: Forged Alliance* (2007), rebuilt as readable, buildable C++20 so it can be maintained instead of staying frozen in a binary. It builds for x86 and x64, plays real games bit for bit like the retail `ForgedAlliance.exe`, and the x64 build plays replays in about 40 % less time.
 
 > An independent preservation and interoperability effort, inspired by and indebted to the [Forged Alliance Forever](https://faforever.com) community. Not affiliated with, endorsed by, or supported by the original publisher or developer. See [LEGAL.md](LEGAL.md).
 
@@ -23,8 +24,8 @@ The Moho engine behind *Supreme Commander: Forged Alliance* (2007), rebuilt as r
 | Renderers | [![Direct3D 9](https://img.shields.io/badge/Direct3D-9-0078D6)](docs/RENDERER_BACKENDS.md) [![Direct3D 10](https://img.shields.io/badge/Direct3D-10-0078D6)](docs/RENDERER_BACKENDS.md) [![Direct3D 11](https://img.shields.io/badge/Direct3D-11-0078D6)](docs/RENDERER_BACKENDS.md) [![Direct3D 12](https://img.shields.io/badge/Direct3D-12-0078D6)](docs/RENDERER_BACKENDS.md) [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C)](docs/RENDERER_BACKENDS.md) |
 | Replay parity | Latest nightly (04–05/11/2026): 2,127 of 2,139 vault replays played (99.4 %) match every recorded checksum, 5 more are expected desyncs that aren't this engine's, 7 were new failures of ours, fixed since, as is 27064121, which failed after them; no CI run has played those fixes yet. Largest run: 12,714 of 13,148 (96.7 %) on CI (30–31/10/2026) ([Retail replay parity](docs/RETAIL_REPLAY_PARITY.md)) |
 | Live multiplayer | Retail, rebuilt x86 and rebuilt x64 in one game: 21 min of AI-driven fighting without a desync; retail and our x64 also ran 30 min without a desync, with and without sim workers |
-| Performance | x64 replays take 19 % less time than retail on average (4 % to 33 %) ([Performance](docs/PERFORMANCE.md)) |
-| Recovery | Complete: every engine function the game uses is written as source (40,617 functions). The rest of the shipped exe is library code we link from source (wxWidgets, the MSVC runtime, libpng, Wild Magic, ...) or unreferenced fragments; 0 functions are outstanding |
+| Performance | x64 plays five vault replays in 41 % less time than retail all together (23 % to 45 % per replay), measured 10/11/2026 ([Performance](docs/PERFORMANCE.md)) |
+| Recovery | Complete: every engine function the game uses is written as source (40,617 functions). The rest of the shipped exe is library code (its window library, the MSVC runtime, libpng, Wild Magic, ...) or unreferenced fragments; 0 functions are outstanding. The window library is replaced by SDL3 and Dear ImGui on every platform (#416) |
 
 Most symbols in the retail engine were never hand-written: they are template instantiations, folded aliases, unwind glue and static-init thunks the 2007 compiler emitted from a single source line. Those are rebuilt as that one line, so the function count understates how much is covered.
 
@@ -55,7 +56,15 @@ Method, per-replay results and the causes of past divergences: [docs/RETAIL_REPL
 
 ## Performance
 
-- **Against retail**: on five vault replays the x64 build saves 4 % (least), 33 % (most) and 19 % (average) of the time. The bigger the battle, the bigger the gain.
+- **Against retail**: on five vault replays, played back to back with retail in the same session, the x64 build saves 41 % of the time all together (5122 s → 3027 s, 1.69× the speed). The bigger the battle, the bigger the gain:
+
+  | Replay | Players | Retail | x64 | Time saved |
+  |---|---|---|---|---|
+  | 26919967 | 12 | 1752 s | 964 s | 45 % |
+  | 26935800 | 12 | 1560 s | 868 s | 44 % |
+  | 26928802 | 8 | 1327 s | 834 s | 37 % |
+  | 26997072 | 10 | 236 s | 170 s | 28 % |
+  | 26923388 | 2 | 247 s | 191 s | 23 % |
 - **Scale**: x86 runs out of address space at about 60,000 units; x64 was still running at 90,000.
 - **Exact**: sim work runs on worker threads only where the result is provably the same as serial, and every change has a switch that restores the original code ([docs/SWITCHES.md](docs/SWITCHES.md)).
 
@@ -153,14 +162,14 @@ CMake configure fetches all of them at the exact version below and applies the p
 | Library | Version | Source | FAF patch |
 |---|---|---|---|
 | Wild Magic | 3.8 (original 2006 release) | [Draiget/wild-magic-3-8](https://github.com/Draiget/wild-magic-3-8) (submodule) | `wildmagic3p8_faf_required` |
-| wxWidgets (MSW) | 2.4.2 | [wxMSW-2.4.2.zip](https://github.com/wxWidgets/wxWidgets/releases/download/v2.4.2/wxMSW-2.4.2.zip) | `wxwindows_2_4_2_faf_required`, `_x64`, `_x64_pointers` |
-| Boost | 1.34.1 | [boost_1_34_1.tar.bz2](https://downloads.sourceforge.net/project/boost/boost/1.34.1/boost_1_34_1.tar.bz2) | `boost_1_34_1_faf_required` |
+| SDL | 3.4.18 (zlib) | [release archive](https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz) | none; built static by `cmake/deps/sdl3` (Windows) and `cmake/FafLinuxClient.cmake`: the client's windows, input, clipboard, message boxes, pickers and the developer windows' renderer |
+| Dear ImGui | 1.92.4, docking branch (MIT) | [v1.92.4-docking source archive](https://github.com/ocornut/imgui/archive/refs/tags/v1.92.4-docking.tar.gz) | none; the map editor's panels and the developer windows (log window, Lua debugger, emitter and reference editors) |
 | zlib | 1.2.3 | [madler/zlib](https://github.com/madler/zlib/tree/v1.2.3) (submodule) | `zlib_1_2_3_faf_required` |
 | FFmpeg | 7.1.3 (LGPL) | [Draiget/ffmpeg-mirror](https://github.com/Draiget/ffmpeg-mirror) (submodule) | none; linked statically, for SFD movies in place of CRI Sofdec/ADX. Configuration and licence: [SFD compatibility](docs/FAF_SFD_COMPATIBILITY.md#ffmpeg-dependency-and-build) |
 | FX11 | bec3b8fc | [microsoft/FX11](https://github.com/microsoft/FX11) (submodule) | none |
 | Vulkan headers | 1.4.304 | [KhronosGroup/Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) (submodule) | none |
 | libjuice | 1.7.4 (MPL-2.0) | [v1.7.4 source archive](https://github.com/paullouisageneau/libjuice/archive/refs/tags/v1.7.4.tar.gz) | none; built by `cmake/deps/libjuice` as the ICE agent of `src/netlink` |
-| libdatachannel | 0.24.6 (MPL-2.0) | [v0.24.6 source archive](https://github.com/paullouisageneau/libdatachannel/archive/refs/tags/v0.24.6.tar.gz) | none; built by `cmake/deps/libdatachannel` without media and WebSocket, on `faf_juice`, for WebRTC data channels (#238) |
+| libdatachannel | 0.24.6 (MPL-2.0) | [v0.24.6 source archive](https://github.com/paullouisageneau/libdatachannel/archive/refs/tags/v0.24.6.tar.gz) | `libdatachannel_0_24_6_faf_algorithm_include`; built by `cmake/deps/libdatachannel` without media and WebSocket, on `faf_juice`, for WebRTC data channels (#238) |
 | usrsctp | commit fec583d5, the one libdatachannel 0.24.6 pins (BSD-3-Clause) | [commit archive](https://github.com/sctplab/usrsctp/archive/fec583d54493f879d2ae44a743423bf8a04371ab.tar.gz) | none; SCTP for libdatachannel, without IPv4/IPv6 sockets |
 | plog | commit 94899e0b, the one libdatachannel 0.24.6 pins (MIT) | [commit archive](https://github.com/SergiusTheBest/plog/archive/94899e0b926ac1b0f4750bfbd495167b4a6ae9ef.tar.gz) | none; headers only, libdatachannel's log |
 | Mbed TLS | 3.6.7 LTS (Apache-2.0 or GPL-2.0-or-later; used under Apache-2.0) | [release archive](https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2) | none; DTLS for libdatachannel, `MBEDTLS_SSL_DTLS_SRTP` turned on through `cmake/deps/libdatachannel/faf_mbedtls_config.h` |

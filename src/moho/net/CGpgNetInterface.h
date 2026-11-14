@@ -1,10 +1,9 @@
 #pragma once
-#include "boost/enable_shared_from_this.h"
-#include "boost/mutex.h"
-#include "boost/recursive_mutex.h"
-#include "boost/shared_ptr.h"
-#include "boost/thread.h"
-#include "boost/weak_ptr.h"
+#include <memory>
+#include "legacy/thread/Mutex.h"
+#include "legacy/thread/Thread.h"
+#include <memory>
+#include <memory>
 #include "gpg/core/utils/Sync.h"
 #include "INetNATTraversalProvider.h"
 #include "legacy/containers/Deque.h"
@@ -125,7 +124,9 @@ namespace moho
      * rather than `fa::string::operator=`'s self-assignment-safe
      * copy/swap path).
      */
-    SNetCommandArg& operator=(const SNetCommandArg& source)
+    SNetCommandArg& operator=(
+      const SNetCommandArg& source
+    )
     {
       mType = source.mType;
       mNum = source.mNum;
@@ -173,7 +174,7 @@ namespace moho
   class CGpgNetInterface :
     public CPullTask<CGpgNetInterface>,
     public INetNATTraversalProvider,
-    public boost::enable_shared_from_this<CGpgNetInterface>
+    public std::enable_shared_from_this<CGpgNetInterface>
   {
   public:
     /**
@@ -188,7 +189,7 @@ namespace moho
      * Creates one owning `boost::shared_ptr<CGpgNetInterface>` from a raw
      * instance pointer and binds `enable_shared_from_this` ownership lanes.
      */
-    [[nodiscard]] static boost::shared_ptr<CGpgNetInterface> CreatePtr(CGpgNetInterface* inter);
+    [[nodiscard]] static std::shared_ptr<CGpgNetInterface> CreatePtr(CGpgNetInterface* inter);
 
     /**
      * Address: 0x007B68C0 (FUN_007B68C0 deleting wrapper)
@@ -211,7 +212,7 @@ namespace moho
      * What it does:
      * Stores NAT traversal handler weak-pointer for SendNatPacket command path.
      */
-    void SetTraversalHandler(int port, boost::shared_ptr<INetNATTraversalHandler>* handler) override;
+    void SetTraversalHandler(int port, std::shared_ptr<INetNATTraversalHandler>* handler) override;
 
     /**
      * Address: 0x007B9160 (FUN_007B9160)
@@ -356,15 +357,6 @@ namespace moho
     void WriteArg(const SNetCommandArg* arg);
 
     /**
-     * Address: 0x007B75D0 (FUN_007B75D0)
-     *
-     * What it does:
-     * Validates connected state under `mLock` and closes the active TCP
-     * socket lane with `ModeBoth`.
-     */
-    void EnsureConnectedAndCloseSocket();
-
-    /**
      * Address: 0x007B7710 (FUN_007B7710, func_GPGNETProcess)
      *
      * What it does:
@@ -372,6 +364,14 @@ namespace moho
      * drains the queued GPGNet commands and dispatches each.
      */
     void PullTask();
+
+    /**
+     * Engine addition (plan WP12.2), not in the binary: the launcher's `CreateLobby` has made a lobby here.
+     */
+    [[nodiscard]] bool HasLobby() const noexcept
+    {
+      return mLobbyObject.m_state != nullptr;
+    }
 
     /**
      * Address: 0x007B7A30
@@ -495,26 +495,24 @@ namespace moho
 
   private:
     // boost::shared_ptr<CGpgNetInterface> mSelf;
-    boost::mutex mLock;
+    fa::mutex mLock;
     DWORD mConnectionState{0};
     INetTCPServer* mTcpServer{nullptr};
     INetTCPSocket* mTcpSocket{nullptr};
     fa::deque<SNetCommand> mCommands;
     HANDLE mQueueEvent{nullptr};
-    boost::thread* mConnectThreadWorker{nullptr};
+    fa::thread* mConnectThreadWorker{nullptr};
     LuaPlus::LuaObject mLobbyObject;
-    boost::weak_ptr<INetNATTraversalHandler> mNATHandler;
+    std::weak_ptr<INetNATTraversalHandler> mNATHandler;
   };
   static_assert(sizeof(CGpgNetInterface) == 0x70, "CGpgNetInterface size must be 0x70");
-  static_assert(
-    sizeof(CPullTask<CGpgNetInterface>) == 0x18, "CPullTask<CGpgNetInterface> size must be 0x18"
-  );
+  static_assert(sizeof(CPullTask<CGpgNetInterface>) == 0x18, "CPullTask<CGpgNetInterface> size must be 0x18");
 
   // FUN_007BB4E0 (boost::weak_ptr<INetNATTraversalHandler>(const shared_ptr&))
   // and FUN_007BC5C0 (the CGpgNetInterface->INetNATTraversalProvider aliasing
-  // form) are both instantiations of the generic `boost::AssignWeakFromShared`
-  // template -- see BoostWrappers.h for the shared per-T binding and both
-  // addresses' citations.
+  // form) are both instantiations of weak_ptr's converting constructor from
+  // shared_ptr, written here as a plain weak_ptr assignment; both addresses
+  // are cited in gpg/core/utils/SharedPtrUtils.h.
 
   /**
    * Address: 0x007BC5F0 (FUN_007BC5F0, Moho::NET_MakeNATTraversal)
@@ -534,7 +532,8 @@ namespace moho
   LuaPlus::LuaObject* NET_MakeNATTraversal(
     LuaPlus::LuaState* state,
     LuaPlus::LuaObject* out,
-    boost::weak_ptr<INetNATTraversalProvider>* provider);
+    std::weak_ptr<INetNATTraversalProvider>* provider
+  );
 
   /**
    * Address: 0x007B9470 (FUN_007B9470, Moho::GPGNET_SetPtr)
@@ -542,13 +541,13 @@ namespace moho
    * What it does:
    * Replaces the process-global GPGNet shared-pointer lane (`sGPGNet`).
    */
-  void GPGNET_SetPtr(const boost::shared_ptr<CGpgNetInterface>& ptr);
+  void GPGNET_SetPtr(const std::shared_ptr<CGpgNetInterface>& ptr);
 
   /**
    * What it does:
    * Returns the active process-global GPGNet interface pointer.
    */
-  [[nodiscard]] boost::shared_ptr<CGpgNetInterface> GPGNET_GetPtr();
+  [[nodiscard]] std::shared_ptr<CGpgNetInterface> GPGNET_GetPtr();
 
   /**
    * Address: 0x007B94C0 (FUN_007B94C0, ?GPGNET_ReportBottleneck@Moho@@YAXABUSClientBottleneckInfo@1@@Z)

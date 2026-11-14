@@ -39,11 +39,16 @@
 #include "gpg/core/containers/ArchiveSerialization.h"
 #include "gpg/core/reflection/Reflection.h"
 
+#include "legacy/algorithms/Sort.h"
+#include "legacy/thread/Mutex.h"
+
 namespace
 {
   constexpr const char* kOnStatsTriggerScriptName = "OnStatsTrigger";
 
-  [[nodiscard]] float ResolveConditionValue(const moho::SCondition& condition)
+  [[nodiscard]] float ResolveConditionValue(
+    const moho::SCondition& condition
+  )
   {
     moho::CArmyStatItem* const item = condition.mItem;
     if (item == nullptr) {
@@ -57,16 +62,16 @@ namespace
     }
 
     switch (item->mType) {
-      case moho::EStatType::kFloat:
-        return item->GetFloat(false);
-      case moho::EStatType::kInt:
-        return static_cast<float>(item->GetInt(false));
-      case moho::EStatType::kString:
-      default: {
-        fa::string value;
-        item->SetValueCopy(&value);
-        return static_cast<float>(std::atof(value.c_str()));
-      }
+    case moho::EStatType::kFloat:
+      return item->GetFloat(false);
+    case moho::EStatType::kInt:
+      return static_cast<float>(item->GetInt(false));
+    case moho::EStatType::kString:
+    default: {
+      fa::string value;
+      item->SetValueCopy(&value);
+      return static_cast<float>(std::atof(value.c_str()));
+    }
     }
   }
 
@@ -74,33 +79,44 @@ namespace
    * Inlined block from 0x0070BFFA..0x0070C03F: an unknown operator keeps the
    * result of the previous condition (false for the first one).
    */
-  [[nodiscard]] bool EvaluateCondition(const moho::SCondition& condition, const float value, const bool previous)
+  [[nodiscard]] bool EvaluateCondition(
+    const moho::SCondition& condition,
+    const float value,
+    const bool previous
+  )
   {
     switch (condition.mOp) {
-      case moho::TRIGGER_GreaterThan:
-        return value > condition.mVal;
-      case moho::TRIGGER_GreaterThanOrEqual:
-        return value >= condition.mVal;
-      case moho::TRIGGER_LessThan:
-        return value < condition.mVal;
-      case moho::TRIGGER_LessThanOrEqual:
-        return value <= condition.mVal;
-      default:
-        return previous;
+    case moho::TRIGGER_GreaterThan:
+      return value > condition.mVal;
+    case moho::TRIGGER_GreaterThanOrEqual:
+      return value >= condition.mVal;
+    case moho::TRIGGER_LessThan:
+      return value < condition.mVal;
+    case moho::TRIGGER_LessThanOrEqual:
+      return value <= condition.mVal;
+    default:
+      return previous;
     }
   }
 
-  [[nodiscard]] float IntBitsToFloat(const std::int32_t bits) noexcept
+  [[nodiscard]] float IntBitsToFloat(
+    const std::int32_t bits
+  ) noexcept
   {
     return std::bit_cast<float>(bits);
   }
 
-  [[nodiscard]] std::int32_t FloatToIntBits(const float value) noexcept
+  [[nodiscard]] std::int32_t FloatToIntBits(
+    const float value
+  ) noexcept
   {
     return std::bit_cast<std::int32_t>(value);
   }
 
-  [[nodiscard]] moho::CArmyStatItem* FindArmyChildByName(moho::CArmyStatItem* parent, const fa::string& token)
+  [[nodiscard]] moho::CArmyStatItem* FindArmyChildByName(
+    moho::CArmyStatItem* parent,
+    const fa::string& token
+  )
   {
     if (parent == nullptr) {
       return nullptr;
@@ -109,13 +125,18 @@ namespace
     return static_cast<moho::CArmyStatItem*>(parent->FindDirectChildByName(token));
   }
 
-  void AppendMsvcString(std::string& out, const fa::string& text)
+  void AppendMsvcString(
+    std::string& out,
+    const fa::string& text
+  )
   {
     out.append(text.c_str(), text.size());
   }
 
-  [[nodiscard]] const moho::EntityCategorySet*
-  ResolveStatsCategory(const moho::RRuleGameRules* const rules, const char* const categoryName)
+  [[nodiscard]] const moho::EntityCategorySet* ResolveStatsCategory(
+    const moho::RRuleGameRules* const rules,
+    const char* const categoryName
+  )
   {
     return rules->GetEntityCategory(categoryName);
   }
@@ -134,6 +155,30 @@ namespace
   )
   {
     return static_cast<int>(SumStatCategory(item, category));
+  }
+
+  /**
+   * Engine addition: the map is keyed on blueprint pointers, so it walks in
+   * heap-address order, which is not the same on Linux and Windows (or between allocators). What adds
+   * up the floats or hands them to Lua walks them in blueprint-ordinal order instead
+   * (`mBlueprintOrdinal`, RBlueprint::mBlueprintOrdinal: load order, unique per blueprint), the same on
+   * every platform. Null keys are left out, as the walks did.
+   */
+  [[nodiscard]] fa::vector<std::pair<const moho::RUnitBlueprint*, float>> BlueprintStatsInOrdinalOrder(
+    const moho::ArmyBlueprintStatTree& tree
+  )
+  {
+    fa::vector<std::pair<const moho::RUnitBlueprint*, float>> entries;
+    entries.reserve(tree.size());
+    for (const auto& entry : tree) {
+      if (entry.first != nullptr) {
+        entries.push_back(std::pair<const moho::RUnitBlueprint*, float>(entry.first, entry.second));
+      }
+    }
+    fa::sort(entries.data(), entries.data() + entries.size(), [](const auto& lhs, const auto& rhs) {
+      return lhs.first->mBlueprintOrdinal < rhs.first->mBlueprintOrdinal;
+    });
+    return entries;
   }
 
   void CollectBlueprintStatKeys(
@@ -170,7 +215,10 @@ namespace
     );
   }
 
-  [[nodiscard]] float ReadRequiredFloatStat(moho::CArmyStats& stats, const char* const statPath)
+  [[nodiscard]] float ReadRequiredFloatStat(
+    moho::CArmyStats& stats,
+    const char* const statPath
+  )
   {
     return stats.GetStat(statPath)->GetFloat(false);
   }
@@ -184,7 +232,9 @@ namespace
   // overload set.
 
   template <class TNode>
-  [[nodiscard]] bool IsRbNil(const TNode* const node) noexcept
+  [[nodiscard]] bool IsRbNil(
+    const TNode* const node
+  ) noexcept
   {
     return node == nullptr || node->isNil != 0u;
   }
@@ -243,8 +293,8 @@ namespace
     for (const auto& entry : tree) {
       const moho::RUnitBlueprint* const blueprint = entry.first;
       const int value = static_cast<int>(entry.second);
-      gpg::Logf(logFormat, blueprint->mBlueprintId.c_str(), blueprint->mBlueprintLabel.c_str(), value);
-      writer.Printf("%s(%s), %d\n", blueprint->mBlueprintId.c_str(), blueprint->mBlueprintLabel.c_str(), value);
+      gpg::Logf(logFormat, blueprint->mBlueprintId.c_str(), blueprint->mDescription.c_str(), value);
+      writer.Printf("%s(%s), %d\n", blueprint->mBlueprintId.c_str(), blueprint->mDescription.c_str(), value);
     }
   }
 
@@ -274,8 +324,6 @@ namespace
       writer.Printf("%s, %d\n", categoryName, sum);
     }
   }
-
-
 
   gpg::RType* gArmyStatsBaseType = nullptr;
   gpg::RType* gArmyNameIndexType = nullptr;
@@ -352,7 +400,9 @@ namespace moho
   /**
    * Address: 0x00585B30 (FUN_00585B30, Moho::CArmyStatItem::CArmyStatItem)
    */
-  CArmyStatItem::CArmyStatItem(const char* name)
+  CArmyStatItem::CArmyStatItem(
+    const char* name
+  )
     : StatItem(name)
     , mBlueprintStats{}
   {
@@ -379,7 +429,10 @@ namespace moho
   /**
    * Address: 0x0070B430 (FUN_0070B430, CArmyStatItem vtable slot 1)
    */
-  void CArmyStatItem::ToLua(LuaPlus::LuaState* state, LuaPlus::LuaObject* outObject)
+  void CArmyStatItem::ToLua(
+    LuaPlus::LuaState* state,
+    LuaPlus::LuaObject* outObject
+  )
   {
     StatItem::ToLua(state, outObject);
     if (mBlueprintStats.empty()) {
@@ -389,12 +442,12 @@ namespace moho
     LuaPlus::LuaObject blueprints;
     blueprints.AssignNewTable(state, 0, 0);
 
-    for (const auto& entry : mBlueprintStats) {
+    // Engine addition: in ordinal order, not address order (BlueprintStatsInOrdinalOrder): the
+    // insertion order decides where colliding keys land, and so the table's pairs() order.
+    for (const auto& entry : BlueprintStatsInOrdinalOrder(mBlueprintStats)) {
       const RUnitBlueprint* const blueprint = entry.first;
-      if (blueprint != nullptr) {
-        const fa::string value = gpg::STR_Printf("%.2f", entry.second);
-        blueprints.SetString(blueprint->mBlueprintId.c_str(), value.c_str());
-      }
+      const fa::string value = gpg::STR_Printf("%.2f", entry.second);
+      blueprints.SetString(blueprint->mBlueprintId.c_str(), value.c_str());
     }
 
     outObject->SetObject("Blueprints", &blueprints);
@@ -403,20 +456,20 @@ namespace moho
   /**
    * Address: 0x0070B580 (FUN_0070B580, Moho::CArmyStatItem::SumCategory)
    */
-  float CArmyStatItem::SumCategory(const EntityCategorySet* const categorySet) const
+  float CArmyStatItem::SumCategory(
+    const EntityCategorySet* const categorySet
+  ) const
   {
     if (categorySet == nullptr || categorySet->mUniverse.mRules == nullptr) {
       return 0.0f;
     }
 
+    // Engine addition: summed in ordinal order, not address order (BlueprintStatsInOrdinalOrder):
+    // the damage lanes have fractions, so the order changes the rounding of the float sum.
     float total = 0.0f;
-    for (const auto& entry : mBlueprintStats) {
+    for (const auto& entry : BlueprintStatsInOrdinalOrder(mBlueprintStats)) {
       const RUnitBlueprint* const blueprint = entry.first;
-      if (blueprint == nullptr) {
-        continue;
-      }
-
-      if (categorySet->mBits.Contains(static_cast<unsigned int>(blueprint->mCategoryBitIndex))) {
+      if (categorySet->mBits.Contains(static_cast<unsigned int>(blueprint->mBlueprintOrdinal))) {
         total += entry.second;
       }
     }
@@ -432,7 +485,9 @@ namespace moho
    * zero-initialized node when missing, and returns a writable pointer to that
    * lane.
    */
-  float* CArmyStatItem::FindOrCreateBlueprintStatValue(const RUnitBlueprint* const blueprint)
+  float* CArmyStatItem::FindOrCreateBlueprintStatValue(
+    const RUnitBlueprint* const blueprint
+  )
   {
     // The binary is VC8's `map::operator[]`: lower_bound, then a *hinted*
     // insert of a zero-initialised mapped value when the key is absent, and
@@ -452,7 +507,9 @@ namespace moho
    * returns it, giving the caller a private snapshot of this item's per-blueprint
    * float lanes.
    */
-  ArmyBlueprintStatTree* CArmyStatItem::CopyBlueprintStatsInto(ArmyBlueprintStatTree* const destination) const
+  ArmyBlueprintStatTree* CArmyStatItem::CopyBlueprintStatsInto(
+    ArmyBlueprintStatTree* const destination
+  ) const
   {
     *destination = mBlueprintStats;
     return destination;
@@ -474,7 +531,10 @@ namespace moho
    * Address: 0x005953A0 (FUN_005953A0, token walk)
    */
   CArmyStatItem* Stats<CArmyStatItem>::WalkTokenPath(
-    CArmyStatItem* root, const fa::vector<fa::string>& tokens, const bool allowCreate, bool* const didCreate
+    CArmyStatItem* root,
+    const fa::vector<fa::string>& tokens,
+    const bool allowCreate,
+    bool* const didCreate
   )
   {
     if (didCreate != nullptr) {
@@ -524,9 +584,12 @@ namespace moho
   /**
    * Address: 0x00594400 (FUN_00594400, token traversal helper)
    */
-  CArmyStatItem* Stats<CArmyStatItem>::TraverseTables(const gpg::StrArg statPath, const bool allowCreate)
+  CArmyStatItem* Stats<CArmyStatItem>::TraverseTables(
+    const gpg::StrArg statPath,
+    const bool allowCreate
+  )
   {
-    boost::mutex::scoped_lock lock(mLock);
+    fa::mutex::scoped_lock lock(mLock);
 
     fa::vector<fa::string> tokens;
     gpg::STR_GetTokens(statPath, "_", tokens);
@@ -546,7 +609,9 @@ namespace moho
    * Create-enabled wrapper lane over token traversal used by legacy
    * CArmyStats helper callsites.
    */
-  CArmyStatItem* Stats<CArmyStatItem>::TraverseTablesCreate(const gpg::StrArg statPath)
+  CArmyStatItem* Stats<CArmyStatItem>::TraverseTablesCreate(
+    const gpg::StrArg statPath
+  )
   {
     return TraverseTables(statPath, true);
   }
@@ -556,9 +621,11 @@ namespace moho
    * Alias:   0x00705BD0 (FUN_00705BD0, thunk)
    * Alias:   0x006105A0 (FUN_006105A0)
    */
-  CArmyStatItem* Stats<CArmyStatItem>::GetStringItem(const gpg::StrArg statPath)
+  CArmyStatItem* Stats<CArmyStatItem>::GetStringItem(
+    const gpg::StrArg statPath
+  )
   {
-    boost::mutex::scoped_lock lock(mLock);
+    fa::mutex::scoped_lock lock(mLock);
 
     fa::vector<fa::string> tokens;
     gpg::STR_GetTokens(statPath, "_", tokens);
@@ -566,7 +633,7 @@ namespace moho
     bool didCreate = false;
     CArmyStatItem* const item = WalkTokenPath(mItem.get(), tokens, true, &didCreate);
     if (didCreate && item != nullptr) {
-      boost::mutex::scoped_lock itemLock(item->mLock);
+      fa::mutex::scoped_lock itemLock(item->mLock);
       item->mType = EStatType::kString;
     }
     return item;
@@ -575,9 +642,11 @@ namespace moho
   /**
    * Address: 0x00703D70 (FUN_00703D70, delete-by-path helper)
    */
-  void Stats<CArmyStatItem>::Delete(const char* statPath)
+  void Stats<CArmyStatItem>::Delete(
+    const char* statPath
+  )
   {
-    boost::mutex::scoped_lock lock(mLock);
+    fa::mutex::scoped_lock lock(mLock);
     CArmyStatItem* const item = TraverseTables(statPath, false);
     if (item == mItem.get()) {
       throw std::runtime_error("Don't be doing that, chief.");
@@ -590,7 +659,9 @@ namespace moho
   /**
    * Address: 0x006FD7C0 (FUN_006FD7C0, CArmyStats constructor)
    */
-  CArmyStats::CArmyStats(CAiBrain* ownerArmy)
+  CArmyStats::CArmyStats(
+    CAiBrain* ownerArmy
+  )
     : mOwnerArmy(ownerArmy)
     , mNameIndex{}
     , mTriggers{}
@@ -626,7 +697,9 @@ namespace moho
   /**
    * Address: 0x0070B980 (FUN_0070B980, CArmyStats vtable slot 0)
    */
-  void CArmyStats::Delete(const char* statPath)
+  void CArmyStats::Delete(
+    const char* statPath
+  )
   {
     for (auto it = mNameIndex.begin(); it != mNameIndex.end();) {
       if (std::strstr(it->first.c_str(), statPath) != nullptr) {
@@ -648,7 +721,9 @@ namespace moho
    * Loads base stats storage, by-name item index and the trigger list
    * from archive using cached reflection RTTI.
    */
-  void CArmyStats::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CArmyStats::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -656,7 +731,9 @@ namespace moho
     }
 
     const gpg::RRef owner{};
-    archive->Read(gpg::CachedLookup<Stats<CArmyStatItem>>(gArmyStatsBaseType), static_cast<Stats<CArmyStatItem>*>(this), owner);
+    archive->Read(
+      gpg::CachedLookup<Stats<CArmyStatItem>>(gArmyStatsBaseType), static_cast<Stats<CArmyStatItem>*>(this), owner
+    );
     archive->Read(gpg::CachedLookup<ArmyNameIndexTree>(gArmyNameIndexType), &mNameIndex, owner);
     archive->Read(gpg::CachedLookup<ArmyTriggerList>(gArmyTriggerListType), &mTriggers, owner);
   }
@@ -670,7 +747,9 @@ namespace moho
    * Writes base stats storage, by-name item index and the trigger list
    * to archive using cached reflection RTTI.
    */
-  void CArmyStats::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CArmyStats::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -679,9 +758,7 @@ namespace moho
 
     const gpg::RRef owner{};
     archive->Write(
-      gpg::CachedLookup<Stats<CArmyStatItem>>(gArmyStatsBaseType),
-      static_cast<const Stats<CArmyStatItem>*>(this),
-      owner
+      gpg::CachedLookup<Stats<CArmyStatItem>>(gArmyStatsBaseType), static_cast<const Stats<CArmyStatItem>*>(this), owner
     );
     archive->Write(gpg::CachedLookup<ArmyNameIndexTree>(gArmyNameIndexType), &mNameIndex, owner);
     archive->Write(gpg::CachedLookup<ArmyTriggerList>(gArmyTriggerListType), &mTriggers, owner);
@@ -690,7 +767,9 @@ namespace moho
   /**
    * Address: 0x0070B860 (FUN_0070B860, Moho::CArmyStats::GetStat)
    */
-  CArmyStatItem* CArmyStats::GetStat(const char* statPath)
+  CArmyStatItem* CArmyStats::GetStat(
+    const char* statPath
+  )
   {
     const fa::string key(statPath);
     if (const auto found = mNameIndex.find(key); found != mNameIndex.end()) {
@@ -710,7 +789,9 @@ namespace moho
   /**
    * Address: 0x005945E0 (FUN_005945E0, Moho::CArmyStats::GetItem)
    */
-  CArmyStatItem* CArmyStats::GetItem(const char* const statPath)
+  CArmyStatItem* CArmyStats::GetItem(
+    const char* const statPath
+  )
   {
     const fa::string key(statPath);
     if (const auto found = mNameIndex.find(key); found != mNameIndex.end()) {
@@ -725,9 +806,12 @@ namespace moho
 
   /**
    * Address: 0x0070CC40 (FUN_0070CC40, Moho::CArmyStats::ArmyXmlStatsNode)
-   * Mangled: ?ArmyXmlStatsNode@CArmyStats@Moho@@QAE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@@Z
+   * Mangled:
+   * ?ArmyXmlStatsNode@CArmyStats@Moho@@QAE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@@Z
    */
-  fa::string CArmyStats::ArmyXmlStatsNode(const fa::string& indent)
+  fa::string CArmyStats::ArmyXmlStatsNode(
+    const fa::string& indent
+  )
   {
     CAiBrain* const brain = mOwnerArmy;
     CArmyImpl* const army = brain->mArmy;
@@ -737,7 +821,12 @@ namespace moho
     std::string xml;
     AppendMsvcString(
       xml,
-      gpg::STR_Printf("%s<Army index=\"%d\" name=\"%s\">\n", indentText, army->mConstDat.mArmyIndex, army->mConstDat.mPlayerName.c_str())
+      gpg::STR_Printf(
+        "%s<Army index=\"%d\" name=\"%s\">\n",
+        indentText,
+        army->mConstDat.mArmyIndex,
+        army->mConstDat.mPlayerName.c_str()
+      )
     );
 
     CArmyStatItem* const unitsActive = GetItem("Units_Active");
@@ -758,10 +847,11 @@ namespace moho
       AppendMsvcString(
         xml,
         gpg::STR_Printf(
-          "%s      <Unit id=\"%s\" type=\"%s\" built=\"%d\" lost=\"%d\" killed=\"%d\" damagedealt=\"%.2f\" damagereceived=\"%.2f\" masscost=\"%.2f\" energycost=\"%.2f\" buildtime=\"%.2f\"/>\n",
+          "%s      <Unit id=\"%s\" type=\"%s\" built=\"%d\" lost=\"%d\" killed=\"%d\" damagedealt=\"%.2f\" "
+          "damagereceived=\"%.2f\" masscost=\"%.2f\" energycost=\"%.2f\" buildtime=\"%.2f\"/>\n",
           indentText,
           blueprint->mBlueprintId.c_str(),
-          blueprint->mBlueprintLabel.c_str(),
+          blueprint->mDescription.c_str(),
           SumStatCategoryInt(unitsActive, unitCategory),
           SumStatCategoryInt(unitsLost, unitCategory),
           SumStatCategoryInt(enemiesKilled, unitCategory),
@@ -834,7 +924,10 @@ namespace moho
    * Resolves one army-stat item by path from the name-index cache and creates
    * and caches the lane when missing.
    */
-  CArmyStatItem* ResolveArmyStatItemCachedCreate(CArmyStats* const armyStats, const char* const statPath)
+  CArmyStatItem* ResolveArmyStatItemCachedCreate(
+    CArmyStats* const armyStats,
+    const char* const statPath
+  )
   {
     const fa::string key(statPath);
     if (const auto found = armyStats->mNameIndex.find(key); found != armyStats->mNameIndex.end()) {
@@ -909,9 +1002,7 @@ namespace moho
     };
 
     if (gSnapshotDirectory.size() == 0u) {
-      gSnapshotDirectory.assign(
-        gpg::STR_Printf("%s/Desktop", std::getenv("USERPROFILE")), 0, fa::string::npos
-      );
+      gSnapshotDirectory.assign(gpg::STR_Printf("%s/Desktop", std::getenv("USERPROFILE")), 0, fa::string::npos);
 
       // Engine addition (dedicated-server plan WPL.4): the wxDirDialog
       // (0x0070C438) is the client's (moho/app/SnapshotDirectoryDialog.cpp);
@@ -928,8 +1019,7 @@ namespace moho
     RRuleGameRules* const rules = brain->mSim->mRules;
 
     const std::int32_t snapshotIndex = gSnapshotIndex++;
-    const fa::string snapshotPath =
-      gpg::STR_Printf("%s/SnapShot%d.txt", gSnapshotDirectory.c_str(), snapshotIndex);
+    const fa::string snapshotPath = gpg::STR_Printf("%s/SnapShot%d.txt", gSnapshotDirectory.c_str(), snapshotIndex);
 
     gpg::FileStream snapshotStream(snapshotPath.c_str(), gpg::Stream::ModeSend, 0u, 4096);
     gpg::TextWriter writer(&snapshotStream, 2);
@@ -998,8 +1088,11 @@ namespace moho
    * Resolves one army-stat item by path, resolves one per-blueprint float lane
    * in that item, applies `delta`, and returns the updated lane pointer.
    */
-  float*
-  CArmyStats::AddBlueprintStatDelta(const char* const statPath, const RUnitBlueprint* const blueprint, const float delta)
+  float* CArmyStats::AddBlueprintStatDelta(
+    const char* const statPath,
+    const RUnitBlueprint* const blueprint,
+    const float delta
+  )
   {
     CArmyStatItem* const statItem = ResolveArmyStatItemCachedCreate(this, statPath);
     float* const lane = statItem->FindOrCreateBlueprintStatValue(blueprint);
@@ -1010,76 +1103,14 @@ namespace moho
   /**
    * Address: 0x00593260 (FUN_00593260, func_UpdateUnitStat)
    */
-  std::int32_t CArmyStats::UpdateUnitStat(const char* const statPath, const std::int32_t* const delta)
+  std::int32_t CArmyStats::UpdateUnitStat(
+    const char* const statPath,
+    const std::int32_t* const delta
+  )
   {
     CArmyStatItem* const item = GetItem(statPath);
     item->SynchronizeAsInt();
     return platform::AtomicAdd(&item->mPrimaryValueBits, *delta);
-  }
-
-  /**
-   * Address: 0x00593220 (FUN_00593220, func_SetUnitStat)
-   */
-  std::int32_t CArmyStats::SetUnitStat(const char* const statPath, const std::int32_t* const value)
-  {
-    CArmyStatItem* const item = ResolveArmyStatItemCachedCreate(this, statPath); // 0x00594720
-    item->SynchronizeAsFloat();                                                // 0x00415370
-
-    volatile std::int32_t* const counter = &item->mPrimaryValueBits;
-    for (;;) {
-      const std::int32_t observed = platform::AtomicLoad(counter);
-      const std::int32_t result = platform::AtomicCompareExchange(counter, *value, observed);
-      if (result == observed) {
-        return result;
-      }
-    }
-  }
-
-  /**
-   * Address: 0x005931E0 (FUN_005931E0, Moho::CArmyStats::SetIntStatAtomic)
-   *
-   * What it does:
-   * Resolves one stat item by path, marks it as an integer lane, and then
-   * repeatedly compares and swaps the stored counter until the replace
-   * succeeds, returning the previous counter value.
-   */
-  std::int32_t CArmyStats::SetIntStatAtomic(const char* const statPath, const std::int32_t* const value)
-  {
-    CArmyStatItem* const item = GetItem(statPath);
-    item->SynchronizeAsInt();
-
-    volatile std::int32_t* const counter = &item->mPrimaryValueBits;
-    for (;;) {
-      const std::int32_t observed = platform::AtomicLoad(counter);
-      const std::int32_t previous = platform::AtomicCompareExchange(counter, *value, observed);
-      if (previous == observed) {
-        return previous;
-      }
-    }
-  }
-
-  /**
-   * Address: 0x005932C0 (FUN_005932C0, sub_5932C0)
-   */
-  std::int32_t CArmyStats::SetUnitStatGreaterOf(const char* const statPath, const std::int32_t* const candidate)
-  {
-    CArmyStatItem* const item = GetItem(statPath);
-    volatile std::int32_t* const counter = &item->mPrimaryValueBits;
-
-    std::int32_t result = platform::AtomicLoad(counter);
-    const std::int32_t targetValue = *candidate;
-    if (targetValue > result) {
-      item->SynchronizeAsInt();
-      for (;;) {
-        const std::int32_t observed = platform::AtomicLoad(counter);
-        result = platform::AtomicCompareExchange(counter, targetValue, observed);
-        if (result == observed) {
-          break;
-        }
-      }
-    }
-
-    return result;
   }
 
   /**
@@ -1089,7 +1120,10 @@ namespace moho
    * Sets one float stat counter to `max(current, *candidate)` using an
    * atomic compare-exchange loop over the bitwise float lane.
    */
-  void CArmyStats::SetUnitStatGreaterFloat(const char* const statPath, const float* const candidate)
+  void CArmyStats::SetUnitStatGreaterFloat(
+    const char* const statPath,
+    const float* const candidate
+  )
   {
     if (candidate == nullptr) {
       return;
@@ -1098,7 +1132,10 @@ namespace moho
     SetUnitStatGreaterFloat(item, *candidate);
   }
 
-  void CArmyStats::SetUnitStatGreaterFloat(CArmyStatItem* const item, const float candidateValue)
+  void CArmyStats::SetUnitStatGreaterFloat(
+    CArmyStatItem* const item,
+    const float candidateValue
+  )
   {
     if (item == nullptr) {
       return;
@@ -1126,9 +1163,12 @@ namespace moho
   /**
    * Address: 0x0070BAB0 (FUN_0070BAB0, Moho::CArmyStats::GetTrigger)
    */
-  boost::shared_ptr<STrigger>* CArmyStats::GetTrigger(boost::shared_ptr<STrigger>* outTrigger, const char* triggerName)
+  std::shared_ptr<STrigger>* CArmyStats::GetTrigger(
+    std::shared_ptr<STrigger>* outTrigger,
+    const char* triggerName
+  )
   {
-    for (const boost::shared_ptr<STrigger>& trigger : mTriggers) {
+    for (const std::shared_ptr<STrigger>& trigger : mTriggers) {
       if (_stricmp(trigger->mName.c_str(), triggerName) == 0) {
         *outTrigger = trigger;
         return outTrigger;
@@ -1151,7 +1191,7 @@ namespace moho
     const float triggerValue
   )
   {
-    boost::shared_ptr<STrigger> trigger;
+    std::shared_ptr<STrigger> trigger;
     armyStats->GetTrigger(&trigger, triggerName);
     if (!trigger) {
       gpg::Warnf("Trigger %s does not exist.", triggerName);
@@ -1178,19 +1218,19 @@ namespace moho
   /**
    * Address: 0x0070BB40 (FUN_0070BB40, sub_70BB40)
    */
-  void CArmyStats::EnsureTriggerExists(const char* const triggerName)
+  void CArmyStats::EnsureTriggerExists(
+    const char* const triggerName
+  )
   {
-    boost::shared_ptr<STrigger> trigger;
+    std::shared_ptr<STrigger> trigger;
     GetTrigger(&trigger, triggerName);
     if (trigger) {
       return;
     }
 
-    // Route the per-T raw-pointer ctor through the canonical helper
-    // (FUN_007134C0) so the MSVC8 `shared_ptr<STrigger>(STrigger*)`
-    // template emission symbol is preserved.
-    boost::shared_ptr<STrigger> created;
-    ConstructSharedSTriggerFromRaw(created, new STrigger());
+    // The binary's `shared_ptr<STrigger>(STrigger*)` emission (FUN_007134C0).
+    std::shared_ptr<STrigger> created;
+    created.reset(new STrigger());
     created->mName = triggerName ? triggerName : "";
 
     mTriggers.push_back(created);
@@ -1199,7 +1239,9 @@ namespace moho
   /**
    * Address: 0x0070BE50 (FUN_0070BE50, Moho::CArmyStats::RemoveArmyStatsTrigger)
    */
-  void CArmyStats::RemoveArmyStatsTrigger(const char* const triggerName)
+  void CArmyStats::RemoveArmyStatsTrigger(
+    const char* const triggerName
+  )
   {
     for (ArmyTriggerList::iterator it = mTriggers.begin(); it != mTriggers.end(); ++it) {
       if (*it && _stricmp((*it)->mName.c_str(), triggerName) == 0) {
@@ -1222,7 +1264,7 @@ namespace moho
   {
     ArmyTriggerList fired;
     for (ArmyTriggerList::iterator it = mTriggers.begin(); it != mTriggers.end();) {
-      const boost::shared_ptr<STrigger> trigger = *it;
+      const std::shared_ptr<STrigger> trigger = *it;
       const auto& conditions = trigger->mConditions;
       if (conditions.Empty()) {
         ++it;
@@ -1245,7 +1287,7 @@ namespace moho
       }
     }
 
-    for (const boost::shared_ptr<STrigger>& trigger : fired) {
+    for (const std::shared_ptr<STrigger>& trigger : fired) {
       (void)mOwnerArmy->RunScript(kOnStatsTriggerScriptName, trigger->mName.c_str());
     }
   }
@@ -1253,7 +1295,9 @@ namespace moho
   /**
    * Address: 0x00704FD0 (FUN_00704FD0, sub_704FD0)
    */
-  CArmyStatItem* CArmyStats::GetStringItemCached(const gpg::StrArg statPath)
+  CArmyStatItem* CArmyStats::GetStringItemCached(
+    const gpg::StrArg statPath
+  )
   {
     const fa::string key(statPath ? statPath : "");
     if (const auto found = mNameIndex.find(key); found != mNameIndex.end()) {
@@ -1271,7 +1315,10 @@ namespace moho
   /**
    * Address: 0x00704000 (FUN_00704000, sub_704000)
    */
-  void CArmyStats::SetStringValueByPath(const gpg::StrArg statPath, const fa::string& value)
+  void CArmyStats::SetStringValueByPath(
+    const gpg::StrArg statPath,
+    const fa::string& value
+  )
   {
     CArmyStatItem* const item = GetStringItemCached(statPath);
     if (item == nullptr) {
@@ -1279,13 +1326,13 @@ namespace moho
     }
 
     {
-      boost::mutex::scoped_lock itemLock(item->mLock);
+      fa::mutex::scoped_lock itemLock(item->mLock);
       item->mType = EStatType::kString;
     }
     item->SetValue(value);
   }
 
-  /**
+  /*
    * Address: 0x007134C0 (FUN_007134C0, boost::shared_ptr<Moho::STrigger>::shared_ptr(STrigger*))
    *
    * What it does:
@@ -1299,20 +1346,26 @@ namespace moho
    *
    * Wiring at the `EnsureTriggerExists` caller site preserves the MSVC8
    * per-T template emission symbol for `T = STrigger`.
+   *
+   * The caller calls `created.reset(new STrigger())`.
    */
-  void ConstructSharedSTriggerFromRaw(boost::shared_ptr<STrigger>& out, STrigger* const raw)
-  {
-    out.reset(raw);
-  }
 } // namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(PreregisterCArmyStatItemPointerType_5a41c5, moho::PreregisterCArmyStatItemPointerType)
+GPG_PREREGISTER_INIT(
+  PreregisterCArmyStatItemPointerType_5a41c5,
+  moho::PreregisterCArmyStatItemPointerType
+)
 
 namespace moho
 {
-  void CArmyStats::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CArmyStats::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     CAiBrain* brain = nullptr;
     const gpg::RRef owner{};
@@ -1321,7 +1374,10 @@ namespace moho
   }
 
   void CArmyStats::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
     archive.WritePointer(mOwnerArmy, gpg::TrackedPointerState::Unowned, gpg::RRef{});

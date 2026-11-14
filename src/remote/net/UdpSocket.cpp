@@ -1,9 +1,10 @@
+#include "platform/PlatformDefines.h"
 #include "remote/net/UdpSocket.h"
 
 #include <charconv>
 #include <cstring>
 
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -28,9 +29,12 @@ namespace faf::remote::net
   {
     constexpr int kBufferBytes = 1024 * 1024;
 
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
     using SocketHandle = SOCKET;
-    [[nodiscard]] int LastError() noexcept { return WSAGetLastError(); }
+    [[nodiscard]] int LastError() noexcept
+    {
+      return WSAGetLastError();
+    }
 
     [[nodiscard]] bool StartSockets() noexcept
     {
@@ -41,33 +45,65 @@ namespace faf::remote::net
       return started;
     }
 
-    void CloseSocket(const SocketHandle handle) noexcept { (void)closesocket(handle); }
+    void CloseSocket(
+      const SocketHandle handle
+    ) noexcept
+    {
+      (void)closesocket(handle);
+    }
 
-    [[nodiscard]] bool MakeNonBlocking(const SocketHandle handle) noexcept
+    [[nodiscard]] bool MakeNonBlocking(
+      const SocketHandle handle
+    ) noexcept
     {
       u_long enabled = 1;
       return ioctlsocket(handle, FIONBIO, &enabled) == 0;
     }
 
     /** An ICMP reply to something sent earlier shows up on the next receive here; the datagrams behind it are fine. */
-    [[nodiscard]] bool WorthRetry(const int error) noexcept { return error == WSAECONNRESET || error == WSAEMSGSIZE; }
+    [[nodiscard]] bool WorthRetry(
+      const int error
+    ) noexcept
+    {
+      return error == WSAECONNRESET || error == WSAEMSGSIZE;
+    }
 #else
     using SocketHandle = int;
     constexpr SocketHandle INVALID_SOCKET = -1;
-    [[nodiscard]] int LastError() noexcept { return errno; }
-    [[nodiscard]] bool StartSockets() noexcept { return true; }
-    void CloseSocket(const SocketHandle handle) noexcept { (void)::close(handle); }
+    [[nodiscard]] int LastError() noexcept
+    {
+      return errno;
+    }
+    [[nodiscard]] bool StartSockets() noexcept
+    {
+      return true;
+    }
+    void CloseSocket(
+      const SocketHandle handle
+    ) noexcept
+    {
+      (void)::close(handle);
+    }
 
-    [[nodiscard]] bool MakeNonBlocking(const SocketHandle handle) noexcept
+    [[nodiscard]] bool MakeNonBlocking(
+      const SocketHandle handle
+    ) noexcept
     {
       const int flags = fcntl(handle, F_GETFL, 0);
       return flags >= 0 && fcntl(handle, F_SETFL, flags | O_NONBLOCK) == 0;
     }
 
-    [[nodiscard]] bool WorthRetry(const int error) noexcept { return error == EINTR || error == ECONNREFUSED; }
+    [[nodiscard]] bool WorthRetry(
+      const int error
+    ) noexcept
+    {
+      return error == EINTR || error == ECONNREFUSED;
+    }
 #endif
 
-    [[nodiscard]] sockaddr_in ToAddress(const SEndpoint& endpoint) noexcept
+    [[nodiscard]] sockaddr_in ToAddress(
+      const SEndpoint& endpoint
+    ) noexcept
     {
       sockaddr_in address{};
       address.sin_family = AF_INET;
@@ -79,11 +115,14 @@ namespace faf::remote::net
 
   std::string SEndpoint::Text() const
   {
-    return std::to_string((ip >> 24) & 0xFFu) + "." + std::to_string((ip >> 16) & 0xFFu) + "." + std::to_string((ip >> 8) & 0xFFu) + "."
-         + std::to_string(ip & 0xFFu) + ":" + std::to_string(port);
+    return std::to_string((ip >> 24) & 0xFFu) + "." + std::to_string((ip >> 16) & 0xFFu) + "." +
+      std::to_string((ip >> 8) & 0xFFu) + "." + std::to_string(ip & 0xFFu) + ":" + std::to_string(port);
   }
 
-  bool ParseEndpoint(const std::string_view text, SEndpoint& out)
+  bool ParseEndpoint(
+    const std::string_view text,
+    SEndpoint& out
+  )
   {
     const char* cursor = text.data();
     const char* const end = text.data() + text.size();
@@ -112,7 +151,10 @@ namespace faf::remote::net
     Close();
   }
 
-  bool CUdpSocket::Open(const SEndpoint& local, std::string& error)
+  bool CUdpSocket::Open(
+    const SEndpoint& local,
+    std::string& error
+  )
   {
     Close();
     if (!StartSockets()) {
@@ -140,7 +182,7 @@ namespace faf::remote::net
     (void)setsockopt(handle, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&kBufferBytes), sizeof(kBufferBytes));
 
     sockaddr_in bound{};
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
     int boundSize = sizeof(bound);
 #else
     socklen_t boundSize = sizeof(bound);
@@ -161,33 +203,59 @@ namespace faf::remote::net
     }
   }
 
-  bool CUdpSocket::SendTo(const void* const data, const std::size_t size, const SEndpoint& to) noexcept
+  bool CUdpSocket::SendTo(
+    const void* const data,
+    const std::size_t size,
+    const SEndpoint& to
+  ) noexcept
   {
     if (mSocket == -1) {
       return false;
     }
     const sockaddr_in address = ToAddress(to);
-#if defined(_WIN32)
-    const int sent = sendto(static_cast<SocketHandle>(mSocket), static_cast<const char*>(data), static_cast<int>(size), 0, reinterpret_cast<const sockaddr*>(&address), sizeof(address));
+#if FAFRE_PLATFORM_WINDOWS
+    const int sent = sendto(
+      static_cast<SocketHandle>(mSocket),
+      static_cast<const char*>(data),
+      static_cast<int>(size),
+      0,
+      reinterpret_cast<const sockaddr*>(&address),
+      sizeof(address)
+    );
 #else
-    const auto sent = sendto(static_cast<SocketHandle>(mSocket), data, size, 0, reinterpret_cast<const sockaddr*>(&address), sizeof(address));
+    const auto sent = sendto(
+      static_cast<SocketHandle>(mSocket), data, size, 0, reinterpret_cast<const sockaddr*>(&address), sizeof(address)
+    );
 #endif
     return sent == static_cast<decltype(sent)>(size);
   }
 
-  int CUdpSocket::ReceiveFrom(void* const out, const std::size_t capacity, SEndpoint& from) noexcept
+  int CUdpSocket::ReceiveFrom(
+    void* const out,
+    const std::size_t capacity,
+    SEndpoint& from
+  ) noexcept
   {
     if (mSocket == -1) {
       return -1;
     }
     for (;;) {
       sockaddr_in address{};
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
       int addressSize = sizeof(address);
-      const int received = recvfrom(static_cast<SocketHandle>(mSocket), static_cast<char*>(out), static_cast<int>(capacity), 0, reinterpret_cast<sockaddr*>(&address), &addressSize);
+      const int received = recvfrom(
+        static_cast<SocketHandle>(mSocket),
+        static_cast<char*>(out),
+        static_cast<int>(capacity),
+        0,
+        reinterpret_cast<sockaddr*>(&address),
+        &addressSize
+      );
 #else
       socklen_t addressSize = sizeof(address);
-      const auto received = recvfrom(static_cast<SocketHandle>(mSocket), out, capacity, 0, reinterpret_cast<sockaddr*>(&address), &addressSize);
+      const auto received = recvfrom(
+        static_cast<SocketHandle>(mSocket), out, capacity, 0, reinterpret_cast<sockaddr*>(&address), &addressSize
+      );
 #endif
       if (received >= 0) {
         from.ip = ntohl(address.sin_addr.s_addr);
@@ -200,12 +268,14 @@ namespace faf::remote::net
     }
   }
 
-  void CUdpSocket::Wait(const int milliseconds) noexcept
+  void CUdpSocket::Wait(
+    const int milliseconds
+  ) noexcept
   {
     if (mSocket == -1) {
       return;
     }
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
     WSAPOLLFD entry{};
     entry.fd = static_cast<SocketHandle>(mSocket);
     entry.events = POLLRDNORM;

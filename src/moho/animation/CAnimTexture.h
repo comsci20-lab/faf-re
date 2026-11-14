@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
 #include "moho/misc/CountedObject.h"
@@ -15,7 +15,7 @@ namespace moho
   class CAnimTexture final : public CountedObject
   {
   public:
-    using FrameRef = boost::SharedPtrRaw<ID3DTextureSheet>;
+    using FrameRef = std::shared_ptr<ID3DTextureSheet>;
 
     /**
      * Address: 0x00422D20 (FUN_00422D20)
@@ -48,13 +48,10 @@ namespace moho
      * Address: 0x00423190 (FUN_00423190)
      *
      * What it does:
-     * Samples a frame pointer by positive-wrapped frame index and returns an intrusive
-     * `SharedPtrRaw` copy (`pi` refcount retained on success).
+     * Samples a frame by positive-wrapped frame index and returns a shared copy of it (empty when there is no
+     * frame at that index).
      */
     void GetFrameAt(FrameRef& outFrame, float frameIndex) const;
-
-
-    [[nodiscard]] const fa::string& GetBaseTextureName() const noexcept;
 
     CAnimTexture(const CAnimTexture&) = delete;
     CAnimTexture& operator=(const CAnimTexture&) = delete;

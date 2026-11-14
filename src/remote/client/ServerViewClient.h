@@ -1,10 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
+#include "remote/client/CommandLaneApplier.h"
+#include "remote/client/EffectHosting.h"
+#include "remote/client/EffectLaneApplier.h"
 #include "remote/client/SyncRebuilder.h"
 #include "remote/client/ViewMerge.h"
 #include "remote/wire/ArmyLane.h"
@@ -21,7 +26,7 @@ namespace moho
   class CHeightField;
   class RRuleGameRules;
   struct SSyncData;
-}
+} // namespace moho
 
 namespace faf::remote::client
 {
@@ -50,9 +55,16 @@ namespace faf::remote::client
     std::span<const std::uint8_t> lua;
     std::span<const std::uint8_t> poses; // plan WP8.1: the sixth lane, when the server sends poses
     bool hasPoses = false;
+    std::span<const std::uint8_t> effects; // plan WP9.1 step 3: the seventh (wire/EffectLane.h); empty: no op
+    std::span<const std::uint8_t> commands; // plan WP5.14: the eighth (wire/CommandLane.h); empty: no change
+    bool hasCommands = false;               // the server sends command records
+    std::uint32_t lanesSkipped = 0;         // lanes after those this build knows, skipped
   };
 
-  /** Reads a whole `View` message (its kind byte first); its lanes must end at the message's last byte. */
+  /**
+   * Reads a whole `View` message (its kind byte first); its lanes must end at the message's last byte. Lanes after the
+   * command-records lane, from a newer server, are skipped.
+   */
   [[nodiscard]] bool ReadViewMessage(std::span<const std::uint8_t> message, SViewMessage& out);
 
   /** One `SessionTables` message, its record as a span into its bytes. */
@@ -65,6 +77,12 @@ namespace faf::remote::client
 
   /** Reads a whole `SessionTables` message (its kind byte first). */
   [[nodiscard]] bool ReadTablesMessage(std::span<const std::uint8_t> message, STablesMessage& out);
+
+  /**
+   * Plan WP9.3: a client that doesn't run effects yet only keeps and counts them (`CEffectLaneApplier::SetHorizon`),
+   * and can't tell when one's lifetime ends, so one no op has named for this many beats is forgotten.
+   */
+  inline constexpr std::uint32_t kCountedEffectBeats = 600;
 
   struct SServerViewStats
   {
@@ -82,6 +100,8 @@ namespace faf::remote::client
     std::uint64_t poseLanes = 0;
     std::uint64_t poseFailures = 0; // pose lanes that didn't decode
     std::uint64_t poseBytes = 0;
+    std::uint64_t effectFailures = 0; // effects lanes that didn't decode
+    std::uint64_t commandBytes = 0;   // plan WP5.14: the command-records lanes
   };
 
   class CServerViewClient
@@ -90,7 +110,8 @@ namespace faf::remote::client
     /** `rules`: the client's own, from its own load of the match's map and mods; must outlive this. */
     CServerViewClient(moho::RRuleGameRules& rules, const SServerGameInfo& info);
 
-    /** One view into `packet`'s entity lanes (a fresh packet: nothing else to start from), and its army and grid lanes. */
+    /** One view into `packet`'s entity lanes (a fresh packet: nothing else to start from), and its army and grid lanes.
+     */
     bool Apply(const SViewMessage& view, moho::SSyncData& packet);
     /**
      * A `SessionTables` message (plan WP11 step 4): the sounds, names, deposits and terrain edits the views after it
@@ -101,19 +122,90 @@ namespace faf::remote::client
      * The heights this client's terrain starts from (its own load of the map): the server's terrain edits are applied
      * to a copy, which each beat's packet then carries as the sim's field would.
      */
-    void SeedTerrain(const moho::CHeightField& heights) { mRebuilder->SeedTerrain(heights); }
-    [[nodiscard]] const wire::CSessionTableReaders& Tables() const noexcept { return *mTables; }
+    void SeedTerrain(
+      const moho::CHeightField& heights
+    )
+    {
+      mRebuilder->SeedTerrain(heights);
+    }
+    [[nodiscard]] const wire::CSessionTableReaders& Tables() const noexcept
+    {
+      return *mTables;
+    }
 
-    [[nodiscard]] const SServerGameInfo& Info() const noexcept { return mInfo; }
-    [[nodiscard]] const std::vector<wire::SArmyRecord>& Armies() const noexcept { return mArmies; }
-    [[nodiscard]] const std::vector<wire::SGridSlot>& Grids() const noexcept { return mGrids; }
-    [[nodiscard]] const SServerViewStats& Stats() const noexcept { return mStats; }
-    [[nodiscard]] const SRebuildStats& RebuildStats() const noexcept { return mRebuilder->Stats(); }
+    [[nodiscard]] const SServerGameInfo& Info() const noexcept
+    {
+      return mInfo;
+    }
+    [[nodiscard]] const std::vector<wire::SArmyRecord>& Armies() const noexcept
+    {
+      return mArmies;
+    }
+    [[nodiscard]] const std::vector<wire::SGridSlot>& Grids() const noexcept
+    {
+      return mGrids;
+    }
+    [[nodiscard]] const SServerViewStats& Stats() const noexcept
+    {
+      return mStats;
+    }
+    [[nodiscard]] const SRebuildStats& RebuildStats() const noexcept
+    {
+      return mRebuilder->Stats();
+    }
+    /** Plan WP10.9: what the client holds, as the session was last given it (for a made-up beat). */
+    [[nodiscard]] const CSyncRebuilder& Rebuilder() const noexcept
+    {
+      return *mRebuilder;
+    }
     /** The last merged frame shown. */
-    [[nodiscard]] const wire::SViewFrame* Shown() const noexcept { return mRebuilder->Baseline(); }
-    [[nodiscard]] std::uint64_t BlipsLeftOut() const noexcept { return mMerger.BlipsLeftOut(); }
+    [[nodiscard]] const wire::SViewFrame* Shown() const noexcept
+    {
+      return mRebuilder->Baseline();
+    }
+    [[nodiscard]] std::uint64_t BlipsLeftOut() const noexcept
+    {
+      return mMerger.BlipsLeftOut();
+    }
+    /**
+     * Plan WP9.3: each view's effects lane, applied after its frames: entities checked against the frame shown (or
+     * the one before, for an emitter placed at an entity the view removed), blueprints against the client's rules.
+     * Until effects run outside the sim (WP9.3's hosting), nothing is drawn: the effects are kept and counted.
+     */
+    [[nodiscard]] const CEffectLaneApplier& Effects() const noexcept
+    {
+      return *mEffects;
+    }
+    /**
+     * Plan WP5.14: each view's command-records lane, into its packet's command lists (`CWldSession::DoBeat` keeps the
+     * command helpers from them, as from a lockstep sim's).
+     */
+    [[nodiscard]] const CCommandLaneApplier& Commands() const noexcept
+    {
+      return *mCommands;
+    }
+
+    /**
+     * Plan WP9.3 (hosting): from now on the effects lane makes real effects (EffectHosting.h): the sim's effect classes
+     * run on this client over `world`'s cameras and map, tick once each view, and their particles, trails and beams
+     * go into that view's packet (`SSyncData::mParticleBuffer`) for the session to draw, as a sim's go in lockstep.
+     * Before the first view; without it effects are only counted. `rules` must outlive this.
+     */
+    void HostEffects(moho::RRuleGameRules& rules, SEffectHostWorld world);
+    /** The hosted effects (`HostEffects`), or null. */
+    [[nodiscard]] const CClientEffects* Hosted() const noexcept
+    {
+      return mHosted.get();
+    }
 
   private:
+    /** Whether the frame shown holds an entity with this id; `orRemoved`: or the one before it did. */
+    [[nodiscard]] bool HoldsEntity(std::int32_t id, bool orRemoved) const;
+
+    using SEffectTarget = CEffectCountTarget<
+      std::function<bool(std::int32_t, bool)>,
+      std::function<bool(moho::EEffectOp, const std::string&)>>;
+
     SServerGameInfo mInfo;
     wire::SFrameCodec mCodec{};
     std::unique_ptr<wire::CSessionTableReaders> mTables;
@@ -124,5 +216,10 @@ namespace faf::remote::client
     std::vector<wire::SGridSlot> mGrids;
     std::vector<wire::SUnitPose> mPoses; // this view's pose lane, while it's applied
     SServerViewStats mStats;
+    std::vector<std::uint32_t> mPreviousIds; // the ids of the frame shown before the view being applied
+    std::unique_ptr<SEffectTarget> mEffectTarget;
+    std::unique_ptr<CClientEffects> mHosted; // `HostEffects`; declared before the applier that drives it
+    std::unique_ptr<CEffectLaneApplier> mEffects;
+    std::unique_ptr<CCommandLaneApplier> mCommands;
   };
 } // namespace faf::remote::client

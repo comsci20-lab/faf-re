@@ -74,7 +74,7 @@ namespace moho
     // Address: 0x006FDCA0 (FUN_006FDCA0)
     virtual CAiReconDBImpl* GetReconDB() = 0;
     // Address: 0x006FDCB0 (FUN_006FDCB0)
-    virtual CSimArmyEconomyInfo* GetEconomy() = 0;
+    virtual CEconomy* GetEconomy() = 0;
     // Address: 0x006FFCB0 (FUN_006FFCB0)
     virtual void GenerateArmyStart() = 0;
     // Address: 0x006FDCC0 (FUN_006FDCC0)
@@ -98,9 +98,9 @@ namespace moho
     // Address: 0x006FDDE0 (FUN_006FDDE0)
     virtual void* GetPathFinder() = 0;
     // Address: 0x006FDDF0 (FUN_006FDDF0)
-    virtual boost::SharedPtrRaw<void>* SetUnknownSharedRef(boost::SharedPtrRaw<void>* value) = 0;
+    virtual std::shared_ptr<void>* SetUnknownSharedRef(std::shared_ptr<void>* value) = 0;
     // Address: 0x006FDE40 (FUN_006FDE40)
-    virtual boost::SharedPtrRaw<void>* GetUnknownSharedRef(boost::SharedPtrRaw<void>* outValue) = 0;
+    virtual std::shared_ptr<void>* GetUnknownSharedRef(std::shared_ptr<void>* outValue) = 0;
     // Address: 0x006FDE70 (FUN_006FDE70)
     virtual std::uint32_t SetUnknownVectorWithMeta(const SArmyVectorWithMeta* value) = 0;
     // Address: 0x006FDE90 (FUN_006FDE90)
@@ -133,7 +133,9 @@ namespace moho
     virtual int GetNumPlatoonWithPlan(const char* planName) = 0;
     // Address: 0x00700A00 (FUN_00700A00)
     virtual int CountUnitsInBoundsXZ(
-      const Wm3::Vector3f& minBounds, const Wm3::Vector3f& maxBounds, const EntitySetTemplate<Unit>& unitSet
+      const Wm3::Vector3f& minBounds,
+      const Wm3::Vector3f& maxBounds,
+      const EntitySetTemplate<Unit>& unitSet
     ) = 0;
     // Address: 0x00700A70 (FUN_00700A70)
     virtual void UpdateAIDebugPlatoonStats(Unit* unit) = 0;

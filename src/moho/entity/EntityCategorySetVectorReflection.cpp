@@ -22,23 +22,6 @@ namespace
   }
 
   /**
-   * Address: 0x006DFDE0 (FUN_006DFDE0)
-   *
-   * What it does:
-   * Deserializes one `vector<EntityCategorySet>` object lane through archive
-   * owner context and returns the archive instance.
-   */
-  [[maybe_unused]] gpg::ReadArchive* ReadEntityCategorySetVectorArchiveAdapter(
-    gpg::ReadArchive* const archive,
-    void* const object,
-    gpg::RRef* const ownerRef
-  )
-  {
-    archive->Read(gpg::RTypeOf<EntityCategorySetVector>(), object, *ownerRef);
-    return archive;
-  }
-
-  /**
    * Address: 0x006DBEB0 (FUN_006DBEB0)
    *
    * What it does:
@@ -48,9 +31,14 @@ namespace
    * matching the binary's reserve-then-read pattern where each grown slot is
    * copy-constructed from a default-initialized prototype.
    */
-  void LoadEntityCategorySetVector(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void LoadEntityCategorySetVector(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const storage = reinterpret_cast<EntityCategorySetVector*>(objectPtr);
+    auto* const storage = static_cast<EntityCategorySetVector*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -92,9 +80,14 @@ namespace
    * What it does:
    * Writes a `vector<EntityCategorySet>` payload element-by-element.
    */
-  void SaveEntityCategorySetVector(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void SaveEntityCategorySetVector(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const storage = reinterpret_cast<const EntityCategorySetVector*>(objectPtr);
+    auto* const storage = static_cast<const EntityCategorySetVector*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -144,7 +137,9 @@ const char* gpg::RVectorType<moho::EntityCategorySet>::GetName() const
 /**
  * Address: 0x006DB340 (FUN_006DB340, gpg::RVectorType_BVSet_PRBlueprint::GetLexical)
  */
-fa::string gpg::RVectorType<moho::EntityCategorySet>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RVectorType<moho::EntityCategorySet>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
   const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
@@ -163,7 +158,9 @@ const gpg::RIndexed* gpg::RVectorType<moho::EntityCategorySet>::IsIndexed() cons
  */
 void gpg::RVectorType<moho::EntityCategorySet>::Init()
 {
-  static_assert(sizeof(fa::vector<moho::EntityCategorySet>) == 0x10, "fa::vector<moho::EntityCategorySet> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(fa::vector<moho::EntityCategorySet>) == 0x10, "fa::vector<moho::EntityCategorySet> is 0x10 bytes on x86"
+  );
   size_ = sizeof(fa::vector<moho::EntityCategorySet>);
   version_ = 1;
   serLoadFunc_ = &LoadEntityCategorySetVector;
@@ -173,7 +170,10 @@ void gpg::RVectorType<moho::EntityCategorySet>::Init()
 /**
  * Address: 0x006DB450 (FUN_006DB450, gpg::RVectorType_BVSet_PRBlueprint::SubscriptIndex)
  */
-gpg::RRef gpg::RVectorType<moho::EntityCategorySet>::SubscriptIndex(void* const obj, const int ind) const
+gpg::RRef gpg::RVectorType<moho::EntityCategorySet>::SubscriptIndex(
+  void* const obj,
+  const int ind
+) const
 {
   auto* const storage = static_cast<EntityCategorySetVector*>(obj);
   GPG_ASSERT(storage != nullptr);
@@ -193,7 +193,9 @@ gpg::RRef gpg::RVectorType<moho::EntityCategorySet>::SubscriptIndex(void* const 
 /**
  * Address: 0x006DB3E0 (FUN_006DB3E0, gpg::RVectorType_BVSet_PRBlueprint::GetCount)
  */
-size_t gpg::RVectorType<moho::EntityCategorySet>::GetCount(void* const obj) const
+size_t gpg::RVectorType<moho::EntityCategorySet>::GetCount(
+  void* const obj
+) const
 {
   if (!obj) {
     return 0u;
@@ -205,7 +207,10 @@ size_t gpg::RVectorType<moho::EntityCategorySet>::GetCount(void* const obj) cons
 /**
  * Address: 0x006DB410 (FUN_006DB410, gpg::RVectorType_BVSet_PRBlueprint::SetCount)
  */
-void gpg::RVectorType<moho::EntityCategorySet>::SetCount(void* const obj, const int count) const
+void gpg::RVectorType<moho::EntityCategorySet>::SetCount(
+  void* const obj,
+  const int count
+) const
 {
   auto* const storage = static_cast<EntityCategorySetVector*>(obj);
   GPG_ASSERT(storage != nullptr);
@@ -264,7 +269,8 @@ namespace
  */
 void moho::PushBackEntityCategorySetVector(
   fa::vector<moho::EntityCategorySet>& destination,
-  const moho::EntityCategorySet& value)
+  const moho::EntityCategorySet& value
+)
 {
   // push_back's capacity-full path is the single-value insert lane (FUN_006DBAE0),
   // which tail-calls `fa::vector<EntityCategorySet>::_Insert_n` (FUN_006DC600).
@@ -273,4 +279,7 @@ void moho::PushBackEntityCategorySetVector(
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_EntityCategorySetVectorType_0692e8, moho::register_EntityCategorySetVectorType)
+GPG_PREREGISTER_INIT(
+  register_EntityCategorySetVectorType_0692e8,
+  moho::register_EntityCategorySetVectorType
+)

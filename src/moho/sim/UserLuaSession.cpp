@@ -7,8 +7,8 @@ namespace
 {
   constexpr const char* kAddToSessionExtraSelectListHelpText = "Add unit to the session extra select list";
   constexpr const char* kClearSessionExtraSelectListHelpText = "Clear the session extra select list";
-  constexpr const char* kCurrentTimeHelpText =
-    "Get the current time in seconds, counting from 0 at application start. This is wall-clock time and is unaffected by gameplay.";
+  constexpr const char* kCurrentTimeHelpText = "Get the current time in seconds, counting from 0 at application start. "
+                                               "This is wall-clock time and is unaffected by gameplay.";
   constexpr const char* kEjectSessionClientHelpText =
     "EjectSessionClient(int clientIndex) -- eject another client from your session";
   constexpr const char* kExitGameHelpText = "ExitGame() - Quits the sim, but not the app";
@@ -26,8 +26,7 @@ namespace
   constexpr const char* kGetSimTicksPerSecondHelpText = "int GetSimTicksPerSecond()";
   constexpr const char* kGetSystemTimeHelpText =
     "string GetSystemTime() - returns a formatted string displaying the System time";
-  constexpr const char* kGetSystemTimeSecondsHelpText =
-    "float GetSystemTimeSeconds() - returns System time in seconds";
+  constexpr const char* kGetSystemTimeSecondsHelpText = "float GetSystemTimeSeconds() - returns System time in seconds";
   constexpr CommandSourceId kInvalidCommandSource = 0xFF;
   constexpr const char* kNoActiveSessionPeriodText = "No active session.";
   constexpr const char* kNoActiveSessionText = "No active session";
@@ -63,7 +62,7 @@ namespace
   constexpr const char* kWorldIsLoadingHelpText = "bool = WorldIsLoading()";
   constexpr const char* kWorldIsPlayingHelpText = "bool = WorldIsPlaying()";
   constexpr const char* kWrongLuaStateText = "wrong lua state.";
-}
+} // namespace
 
 /**
  * Address: 0x0088D970 (FUN_0088D970, cfunc_EjectSessionClientL)
@@ -72,7 +71,9 @@ namespace
  * Validates one client index argument and ejects the selected non-local
  * client from the active session.
  */
-int moho::cfunc_EjectSessionClientL(LuaPlus::LuaState* const state)
+int moho::cfunc_EjectSessionClientL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -123,7 +124,9 @@ int moho::cfunc_EjectSessionClientL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_EjectSessionClientL`.
  */
-int moho::cfunc_EjectSessionClient(lua_State* const luaContext)
+int moho::cfunc_EjectSessionClient(
+  lua_State* const luaContext
+)
 {
   return cfunc_EjectSessionClientL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -153,15 +156,14 @@ moho::CScrLuaInitForm* moho::func_EjectSessionClient_LuaFuncDef()
  * What it does:
  * Returns whether the current world frame action is loading or preload.
  */
-int moho::cfunc_WorldIsLoadingL(LuaPlus::LuaState* const state)
+int moho::cfunc_WorldIsLoadingL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kWorldIsLoadingHelpText);
 
   const EWldFrameAction frameAction = WLD_GetFrameAction();
-  lua_pushboolean(
-    state->m_state,
-    frameAction == EWldFrameAction::Loading || frameAction == EWldFrameAction::Preload
-  );
+  lua_pushboolean(state->m_state, frameAction == EWldFrameAction::Loading || frameAction == EWldFrameAction::Preload);
   (void)lua_gettop(state->m_state);
   return 1;
 }
@@ -172,7 +174,9 @@ int moho::cfunc_WorldIsLoadingL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_WorldIsLoadingL`.
  */
-int moho::cfunc_WorldIsLoading(lua_State* const luaContext)
+int moho::cfunc_WorldIsLoading(
+  lua_State* const luaContext
+)
 {
   return cfunc_WorldIsLoadingL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -202,7 +206,9 @@ moho::CScrLuaInitForm* moho::func_WorldIsLoading_LuaFuncDef()
  * What it does:
  * Returns whether the current world frame action is actively playing.
  */
-int moho::cfunc_WorldIsPlayingL(LuaPlus::LuaState* const state)
+int moho::cfunc_WorldIsPlayingL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kWorldIsPlayingHelpText);
 
@@ -217,7 +223,9 @@ int moho::cfunc_WorldIsPlayingL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_WorldIsPlayingL`.
  */
-int moho::cfunc_WorldIsPlaying(lua_State* const luaContext)
+int moho::cfunc_WorldIsPlaying(
+  lua_State* const luaContext
+)
 {
   return cfunc_WorldIsPlayingL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -247,7 +255,9 @@ moho::CScrLuaInitForm* moho::func_WorldIsPlaying_LuaFuncDef()
  * What it does:
  * Returns the current requested sim speed from the active client manager.
  */
-int moho::cfunc_GetGameSpeedL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetGameSpeedL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kGetGameSpeedHelpText);
 
@@ -268,7 +278,9 @@ int moho::cfunc_GetGameSpeedL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_GetGameSpeedL`.
  */
-int moho::cfunc_GetGameSpeed(lua_State* const luaContext)
+int moho::cfunc_GetGameSpeed(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetGameSpeedL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -282,12 +294,7 @@ int moho::cfunc_GetGameSpeed(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetGameSpeed_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "GetGameSpeed",
-    &moho::cfunc_GetGameSpeed,
-    nullptr,
-    "<global>",
-    kGetGameSpeedHelpText
+    moho::SCR_UserLuaInitSet(), "GetGameSpeed", &moho::cfunc_GetGameSpeed, nullptr, "<global>", kGetGameSpeedHelpText
   );
   return &binder;
 }
@@ -298,7 +305,9 @@ moho::CScrLuaInitForm* moho::func_GetGameSpeed_LuaFuncDef()
  * What it does:
  * Validates one requested speed and forwards it to the active client manager.
  */
-int moho::cfunc_SetGameSpeedL(LuaPlus::LuaState* const state)
+int moho::cfunc_SetGameSpeedL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kSetGameSpeedHelpText);
 
@@ -327,7 +336,9 @@ int moho::cfunc_SetGameSpeedL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_SetGameSpeedL`.
  */
-int moho::cfunc_SetGameSpeed(lua_State* const luaContext)
+int moho::cfunc_SetGameSpeed(
+  lua_State* const luaContext
+)
 {
   return cfunc_SetGameSpeedL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -341,12 +352,7 @@ int moho::cfunc_SetGameSpeed(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_SetGameSpeed_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "SetGameSpeed",
-    &moho::cfunc_SetGameSpeed,
-    nullptr,
-    "<global>",
-    kSetGameSpeedHelpText
+    moho::SCR_UserLuaInitSet(), "SetGameSpeed", &moho::cfunc_SetGameSpeed, nullptr, "<global>", kSetGameSpeedHelpText
   );
   return &binder;
 }
@@ -357,14 +363,16 @@ moho::CScrLuaInitForm* moho::func_SetGameSpeed_LuaFuncDef()
  * What it does:
  * Reads one user-unit Lua object and adds it to world-session extra selection.
  */
-int moho::cfunc_AddToSessionExtraSelectListL(LuaPlus::LuaState* const state)
+int moho::cfunc_AddToSessionExtraSelectListL(
+  LuaPlus::LuaState* const state
+)
 {
   if (CWldSession* const session = WLD_GetActiveSession(); session != nullptr) {
     moho::SCR_ExpectExactArgs(state, 1, kAddToSessionExtraSelectListHelpText);
 
     LuaPlus::LuaObject unitObject(LuaPlus::LuaStackObject(state, 1));
     UserUnit* const userUnit = SCR_FromLua_UserUnit(unitObject, state);
-    UserEntity* const userEntity = userUnit;  // base conversion, not a reinterpretation
+    UserEntity* const userEntity = userUnit; // base conversion, not a reinterpretation
     session->AddToExtraSelectList(userEntity);
   }
 
@@ -378,7 +386,9 @@ int moho::cfunc_AddToSessionExtraSelectListL(LuaPlus::LuaState* const state)
  * Unwraps Lua callback state and dispatches to
  * `cfunc_AddToSessionExtraSelectListL`.
  */
-int moho::cfunc_AddToSessionExtraSelectList(lua_State* const luaContext)
+int moho::cfunc_AddToSessionExtraSelectList(
+  lua_State* const luaContext
+)
 {
   return cfunc_AddToSessionExtraSelectListL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -410,14 +420,16 @@ moho::CScrLuaInitForm* moho::func_AddToSessionExtraSelectList_LuaFuncDef()
  * Reads one user-unit Lua object and removes it from world-session extra
  * selection.
  */
-int moho::cfunc_RemoveFromSessionExtraSelectListL(LuaPlus::LuaState* const state)
+int moho::cfunc_RemoveFromSessionExtraSelectListL(
+  LuaPlus::LuaState* const state
+)
 {
   if (CWldSession* const session = WLD_GetActiveSession(); session != nullptr) {
     moho::SCR_ExpectExactArgs(state, 1, kRemoveFromSessionExtraSelectListHelpText);
 
     LuaPlus::LuaObject unitObject(LuaPlus::LuaStackObject(state, 1));
     UserUnit* const userUnit = SCR_FromLua_UserUnit(unitObject, state);
-    UserEntity* const userEntity = userUnit;  // base conversion, not a reinterpretation
+    UserEntity* const userEntity = userUnit; // base conversion, not a reinterpretation
     session->RemoveFromExtraSelectList(userEntity);
   }
 
@@ -431,7 +443,9 @@ int moho::cfunc_RemoveFromSessionExtraSelectListL(LuaPlus::LuaState* const state
  * Unwraps Lua callback state and dispatches to
  * `cfunc_RemoveFromSessionExtraSelectListL`.
  */
-int moho::cfunc_RemoveFromSessionExtraSelectList(lua_State* const luaContext)
+int moho::cfunc_RemoveFromSessionExtraSelectList(
+  lua_State* const luaContext
+)
 {
   return cfunc_RemoveFromSessionExtraSelectListL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -463,7 +477,9 @@ moho::CScrLuaInitForm* moho::func_RemoveFromSessionExtraSelectList_LuaFuncDef()
  * Validates zero-argument call shape and clears the active session extra
  * selection set when a world session exists.
  */
-int moho::cfunc_ClearSessionExtraSelectList(lua_State* const luaContext)
+int moho::cfunc_ClearSessionExtraSelectList(
+  lua_State* const luaContext
+)
 {
   LuaPlus::LuaState* const state = LuaPlus::LuaState::CastState(luaContext);
   CWldSession* const activeSession = WLD_GetActiveSession();
@@ -503,7 +519,9 @@ moho::CScrLuaInitForm* moho::func_ClearSessionExtraSelectList_LuaFuncDef()
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_CurrentTimeL`.
  */
-int moho::cfunc_CurrentTime(lua_State* const luaContext)
+int moho::cfunc_CurrentTime(
+  lua_State* const luaContext
+)
 {
   return cfunc_CurrentTimeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -517,12 +535,7 @@ int moho::cfunc_CurrentTime(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_CurrentTime_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "CurrentTime",
-    &moho::cfunc_CurrentTime,
-    nullptr,
-    "<global>",
-    kCurrentTimeHelpText
+    moho::SCR_UserLuaInitSet(), "CurrentTime", &moho::cfunc_CurrentTime, nullptr, "<global>", kCurrentTimeHelpText
   );
   return &binder;
 }
@@ -533,7 +546,9 @@ moho::CScrLuaInitForm* moho::func_CurrentTime_LuaFuncDef()
  * What it does:
  * Validates zero-argument call shape and returns wall-clock elapsed seconds.
  */
-int moho::cfunc_CurrentTimeL(LuaPlus::LuaState* const state)
+int moho::cfunc_CurrentTimeL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -552,7 +567,9 @@ int moho::cfunc_CurrentTimeL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_GameTimeL`.
  */
-int moho::cfunc_GameTime(lua_State* const luaContext)
+int moho::cfunc_GameTime(
+  lua_State* const luaContext
+)
 {
   return cfunc_GameTimeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -566,12 +583,7 @@ int moho::cfunc_GameTime(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GameTime_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "GameTime",
-    &moho::cfunc_GameTime,
-    nullptr,
-    "<global>",
-    kGameTimeUserHelpText
+    moho::SCR_UserLuaInitSet(), "GameTime", &moho::cfunc_GameTime, nullptr, "<global>", kGameTimeUserHelpText
   );
   return &binder;
 }
@@ -582,7 +594,9 @@ moho::CScrLuaInitForm* moho::func_GameTime_LuaFuncDef()
  * What it does:
  * Returns current game time in seconds from the active world session.
  */
-int moho::cfunc_GameTimeL(LuaPlus::LuaState* const state)
+int moho::cfunc_GameTimeL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -607,7 +621,9 @@ int moho::cfunc_GameTimeL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_GameTickL`.
  */
-int moho::cfunc_GameTick(lua_State* const luaContext)
+int moho::cfunc_GameTick(
+  lua_State* const luaContext
+)
 {
   return cfunc_GameTickL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -621,12 +637,7 @@ int moho::cfunc_GameTick(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GameTick_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "GameTick",
-    &moho::cfunc_GameTick,
-    nullptr,
-    "<global>",
-    kGameTickUserHelpText
+    moho::SCR_UserLuaInitSet(), "GameTick", &moho::cfunc_GameTick, nullptr, "<global>", kGameTickUserHelpText
   );
   return &binder;
 }
@@ -637,7 +648,9 @@ moho::CScrLuaInitForm* moho::func_GameTick_LuaFuncDef()
  * What it does:
  * Returns current game time in ticks from the active world session.
  */
-int moho::cfunc_GameTickL(LuaPlus::LuaState* const state)
+int moho::cfunc_GameTickL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -662,7 +675,9 @@ int moho::cfunc_GameTickL(LuaPlus::LuaState* const state)
  * Reads one rect table and synchronizes active-session playable bounds +
  * user-entity visibility against that rectangle.
  */
-int moho::cfunc_SyncPlayableRectL(LuaPlus::LuaState* const state)
+int moho::cfunc_SyncPlayableRectL(
+  LuaPlus::LuaState* const state
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr || state == nullptr || state->m_state == nullptr) {
@@ -683,7 +698,9 @@ int moho::cfunc_SyncPlayableRectL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_SyncPlayableRectL`.
  */
-int moho::cfunc_SyncPlayableRect(lua_State* const luaContext)
+int moho::cfunc_SyncPlayableRect(
+  lua_State* const luaContext
+)
 {
   return cfunc_SyncPlayableRectL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -713,7 +730,9 @@ moho::CScrLuaInitForm* moho::func_SyncPlayableRect_LuaFuncDef()
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_RandomUserL`.
  */
-int moho::cfunc_RandomUser(lua_State* const luaContext)
+int moho::cfunc_RandomUser(
+  lua_State* const luaContext
+)
 {
   return cfunc_RandomUserL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -727,12 +746,7 @@ int moho::cfunc_RandomUser(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_RandomUser_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "Random",
-    &moho::cfunc_RandomUser,
-    nullptr,
-    "<global>",
-    kRandomUserHelpText
+    moho::SCR_UserLuaInitSet(), "Random", &moho::cfunc_RandomUser, nullptr, "<global>", kRandomUserHelpText
   );
   return &binder;
 }
@@ -744,7 +758,9 @@ moho::CScrLuaInitForm* moho::func_RandomUser_LuaFuncDef()
  * Produces one random float or integer range sample from the process-wide
  * random stream for `Random([[min,] max])`.
  */
-int moho::cfunc_RandomUserL(LuaPlus::LuaState* const state)
+int moho::cfunc_RandomUserL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -754,12 +770,7 @@ int moho::cfunc_RandomUserL(LuaPlus::LuaState* const state)
   const int argumentCount = lua_gettop(rawState);
   if (argumentCount > 2) {
     LuaPlus::LuaState::Error(
-      state,
-      "%s\n  expected between %d and %d args, but got %d",
-      kRandomUserHelpText,
-      0,
-      2,
-      argumentCount
+      state, "%s\n  expected between %d and %d args, but got %d", kRandomUserHelpText, 0, 2, argumentCount
     );
   }
 
@@ -802,7 +813,9 @@ int moho::cfunc_RandomUserL(LuaPlus::LuaState* const state)
  * What it does:
  * Casts Lua callback state, validates zero args, and requests sim exit.
  */
-int moho::cfunc_ExitGame(lua_State* const luaContext)
+int moho::cfunc_ExitGame(
+  lua_State* const luaContext
+)
 {
   return cfunc_ExitGameL(LuaPlus::LuaState::CastState(luaContext));
 }
@@ -813,7 +826,9 @@ int moho::cfunc_ExitGame(lua_State* const luaContext)
  * What it does:
  * Validates zero args and requests world-frame action `Exit`.
  */
-int moho::cfunc_ExitGameL(LuaPlus::LuaState* const state)
+int moho::cfunc_ExitGameL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kExitGameHelpText);
 
@@ -833,12 +848,7 @@ int moho::cfunc_ExitGameL(LuaPlus::LuaState* const state)
 moho::CScrLuaInitForm* moho::func_ExitGame_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "ExitGame",
-    &moho::cfunc_ExitGame,
-    nullptr,
-    "<global>",
-    kExitGameHelpText
+    moho::SCR_UserLuaInitSet(), "ExitGame", &moho::cfunc_ExitGame, nullptr, "<global>", kExitGameHelpText
   );
   return &binder;
 }
@@ -849,7 +859,9 @@ moho::CScrLuaInitForm* moho::func_ExitGame_LuaFuncDef()
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_RestartSessionL`.
  */
-int moho::cfunc_RestartSession(lua_State* const luaContext)
+int moho::cfunc_RestartSession(
+  lua_State* const luaContext
+)
 {
   return cfunc_RestartSessionL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -880,7 +892,9 @@ moho::CScrLuaInitForm* moho::func_RestartSession_LuaFuncDef()
  * Validates zero arguments and requests world-frame action `CreateSession`
  * when restart prerequisites are present.
  */
-int moho::cfunc_RestartSessionL(LuaPlus::LuaState* const state)
+int moho::cfunc_RestartSessionL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -904,7 +918,9 @@ int moho::cfunc_RestartSessionL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_GetSimTicksPerSecondL`.
  */
-int moho::cfunc_GetSimTicksPerSecond(lua_State* const luaContext)
+int moho::cfunc_GetSimTicksPerSecond(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetSimTicksPerSecondL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -934,7 +950,9 @@ moho::CScrLuaInitForm* moho::func_GetSimTicksPerSecond_LuaFuncDef()
  * What it does:
  * Pushes fixed simulation ticks-per-second (10.0) as a Lua number.
  */
-int moho::cfunc_GetSimTicksPerSecondL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetSimTicksPerSecondL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -953,7 +971,9 @@ int moho::cfunc_GetSimTicksPerSecondL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionRequestPauseL`.
  */
-int moho::cfunc_SessionRequestPause(lua_State* const luaContext)
+int moho::cfunc_SessionRequestPause(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionRequestPauseL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -983,7 +1003,9 @@ moho::CScrLuaInitForm* moho::func_SessionRequestPause_LuaFuncDef()
  * What it does:
  * Requests world-session pause from Lua after validating active session.
  */
-int moho::cfunc_SessionRequestPauseL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionRequestPauseL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1006,7 +1028,9 @@ int moho::cfunc_SessionRequestPauseL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionResumeL`.
  */
-int moho::cfunc_SessionResume(lua_State* const luaContext)
+int moho::cfunc_SessionResume(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionResumeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1020,12 +1044,7 @@ int moho::cfunc_SessionResume(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_SessionResume_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "SessionResume",
-    &moho::cfunc_SessionResume,
-    nullptr,
-    "<global>",
-    kSessionResumeHelpText
+    moho::SCR_UserLuaInitSet(), "SessionResume", &moho::cfunc_SessionResume, nullptr, "<global>", kSessionResumeHelpText
   );
   return &binder;
 }
@@ -1036,7 +1055,9 @@ moho::CScrLuaInitForm* moho::func_SessionResume_LuaFuncDef()
  * What it does:
  * Requests world-session resume from Lua after validating active session.
  */
-int moho::cfunc_SessionResumeL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionResumeL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1059,7 +1080,9 @@ int moho::cfunc_SessionResumeL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionIsPausedL`.
  */
-int moho::cfunc_SessionIsPaused(lua_State* const luaContext)
+int moho::cfunc_SessionIsPaused(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionIsPausedL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1089,7 +1112,9 @@ moho::CScrLuaInitForm* moho::func_SessionIsPaused_LuaFuncDef()
  * What it does:
  * Pushes pause state from replay/requested/non-local session lanes.
  */
-int moho::cfunc_SessionIsPausedL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionIsPausedL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1119,7 +1144,9 @@ int moho::cfunc_SessionIsPausedL(LuaPlus::LuaState* const state)
  * What it does:
  * Pushes whether the active world-session game-over flag is set.
  */
-int moho::cfunc_SessionIsGameOver(lua_State* const luaContext)
+int moho::cfunc_SessionIsGameOver(
+  lua_State* const luaContext
+)
 {
   LuaPlus::LuaState* const state = LuaPlus::LuaState::CastState(luaContext);
   CWldSession* const session = WLD_GetActiveSession();
@@ -1157,7 +1184,9 @@ moho::CScrLuaInitForm* moho::func_SessionIsGameOver_LuaFuncDef()
  * Unwraps Lua callback context and dispatches to
  * `cfunc_SessionGetLocalCommandSourceL`.
  */
-int moho::cfunc_SessionGetLocalCommandSource(lua_State* const luaContext)
+int moho::cfunc_SessionGetLocalCommandSource(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionGetLocalCommandSourceL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1187,7 +1216,9 @@ moho::CScrLuaInitForm* moho::func_SessionGetLocalCommandSource_LuaFuncDef()
  * What it does:
  * Returns one-based local command-source id (`0` when unavailable).
  */
-int moho::cfunc_SessionGetLocalCommandSourceL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionGetLocalCommandSourceL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1218,7 +1249,9 @@ int moho::cfunc_SessionGetLocalCommandSourceL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionIsReplayUserL`.
  */
-int moho::cfunc_SessionIsReplayUser(lua_State* const luaContext)
+int moho::cfunc_SessionIsReplayUser(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionIsReplayUserL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1248,7 +1281,9 @@ moho::CScrLuaInitForm* moho::func_SessionIsReplayUser_LuaFuncDef()
  * What it does:
  * Pushes whether the active world-session is replay-backed.
  */
-int moho::cfunc_SessionIsReplayUserL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionIsReplayUserL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1273,7 +1308,9 @@ int moho::cfunc_SessionIsReplayUserL(LuaPlus::LuaState* const state)
  * Unwraps Lua callback context and dispatches to
  * `cfunc_SessionIsBeingRecordedL`.
  */
-int moho::cfunc_SessionIsBeingRecorded(lua_State* const luaContext)
+int moho::cfunc_SessionIsBeingRecorded(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionIsBeingRecordedL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1303,7 +1340,9 @@ moho::CScrLuaInitForm* moho::func_SessionIsBeingRecorded_LuaFuncDef()
  * What it does:
  * Pushes whether the active world-session is currently being recorded.
  */
-int moho::cfunc_SessionIsBeingRecordedL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionIsBeingRecordedL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1327,7 +1366,9 @@ int moho::cfunc_SessionIsBeingRecordedL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionIsMultiplayerL`.
  */
-int moho::cfunc_SessionIsMultiplayer(lua_State* const luaContext)
+int moho::cfunc_SessionIsMultiplayer(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionIsMultiplayerL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1357,7 +1398,9 @@ moho::CScrLuaInitForm* moho::func_SessionIsMultiplayer_LuaFuncDef()
  * What it does:
  * Pushes whether the active world-session is multiplayer.
  */
-int moho::cfunc_SessionIsMultiplayerL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionIsMultiplayerL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1382,7 +1425,9 @@ int moho::cfunc_SessionIsMultiplayerL(LuaPlus::LuaState* const state)
  * Unwraps Lua callback context and dispatches to
  * `cfunc_SessionIsObservingAllowedL`.
  */
-int moho::cfunc_SessionIsObservingAllowed(lua_State* const luaContext)
+int moho::cfunc_SessionIsObservingAllowed(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionIsObservingAllowedL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1412,7 +1457,9 @@ moho::CScrLuaInitForm* moho::func_SessionIsObservingAllowed_LuaFuncDef()
  * What it does:
  * Pushes whether observing is enabled for the active world-session.
  */
-int moho::cfunc_SessionIsObservingAllowedL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionIsObservingAllowedL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1436,7 +1483,9 @@ int moho::cfunc_SessionIsObservingAllowedL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionCanRestartL`.
  */
-int moho::cfunc_SessionCanRestart(lua_State* const luaContext)
+int moho::cfunc_SessionCanRestart(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionCanRestartL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1466,7 +1515,9 @@ moho::CScrLuaInitForm* moho::func_SessionCanRestart_LuaFuncDef()
  * What it does:
  * Pushes whether restart launch metadata exists for the active session.
  */
-int moho::cfunc_SessionCanRestartL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionCanRestartL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1490,7 +1541,9 @@ int moho::cfunc_SessionCanRestartL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionIsActiveL`.
  */
-int moho::cfunc_SessionIsActive(lua_State* const luaContext)
+int moho::cfunc_SessionIsActive(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionIsActiveL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1520,7 +1573,9 @@ moho::CScrLuaInitForm* moho::func_SessionIsActive_LuaFuncDef()
  * What it does:
  * Pushes whether any world-session is currently active.
  */
-int moho::cfunc_SessionIsActiveL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionIsActiveL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1540,7 +1595,9 @@ int moho::cfunc_SessionIsActiveL(LuaPlus::LuaState* const state)
  * Unwraps Lua callback context and dispatches to
  * `cfunc_SessionGetScenarioInfoL`.
  */
-int moho::cfunc_SessionGetScenarioInfo(lua_State* const luaContext)
+int moho::cfunc_SessionGetScenarioInfo(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionGetScenarioInfoL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1571,7 +1628,9 @@ moho::CScrLuaInitForm* moho::func_SessionGetScenarioInfo_LuaFuncDef()
  * Validates user-lua state ownership and pushes the active session
  * `ScenarioInfo` table.
  */
-int moho::cfunc_SessionGetScenarioInfoL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionGetScenarioInfoL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1599,7 +1658,9 @@ int moho::cfunc_SessionGetScenarioInfoL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_SessionEndGameL`.
  */
-int moho::cfunc_SessionEndGame(lua_State* const luaContext)
+int moho::cfunc_SessionEndGame(
+  lua_State* const luaContext
+)
 {
   return cfunc_SessionEndGameL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1650,7 +1711,9 @@ moho::CScrLuaInitForm* moho::func_SessionEndGame_LuaFuncDef()
  *
  * `[vtable+0x04]` is slot 1 on `ISTIDriver`, `DisconnectClients`.
  */
-int moho::cfunc_SessionEndGameL(LuaPlus::LuaState* const state)
+int moho::cfunc_SessionEndGameL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1674,7 +1737,9 @@ int moho::cfunc_SessionEndGameL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_GetGameTimeL`.
  */
-int moho::cfunc_GetGameTime(lua_State* const luaContext)
+int moho::cfunc_GetGameTime(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetGameTimeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1688,12 +1753,7 @@ int moho::cfunc_GetGameTime(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetGameTime_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "GetGameTime",
-    &moho::cfunc_GetGameTime,
-    nullptr,
-    "<global>",
-    kGetGameTimeHelpText
+    moho::SCR_UserLuaInitSet(), "GetGameTime", &moho::cfunc_GetGameTime, nullptr, "<global>", kGetGameTimeHelpText
   );
   return &binder;
 }
@@ -1705,7 +1765,9 @@ moho::CScrLuaInitForm* moho::func_GetGameTime_LuaFuncDef()
  * Formats active-session simulation time as `HH:MM:SS` and returns one Lua
  * string result.
  */
-int moho::cfunc_GetGameTimeL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetGameTimeL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1725,24 +1787,19 @@ int moho::cfunc_GetGameTimeL(LuaPlus::LuaState* const state)
 
   // 0x008432C6..0x008432DA: `fild tick; fadd timeSinceLastTick; fmul 0.1f`
   // (0x00E4F714 holds the float 0x3DCCCCCD), then __ftol2_sse.
-  const int wholeSeconds = static_cast<int>((static_cast<float>(session->mGameTick) + session->mTimeSinceLastTick) * 0.1f);
+  const int wholeSeconds =
+    static_cast<int>((static_cast<float>(session->mGameTick) + session->mTimeSinceLastTick) * 0.1f);
   const auto signedSeconds = static_cast<long long>(wholeSeconds);
   const bool isNegative = signedSeconds < 0;
-  const unsigned long long absoluteSeconds = isNegative
-    ? static_cast<unsigned long long>(-(signedSeconds + 1)) + 1ULL
-    : static_cast<unsigned long long>(signedSeconds);
+  const unsigned long long absoluteSeconds = isNegative ? static_cast<unsigned long long>(-(signedSeconds + 1)) + 1ULL
+                                                        : static_cast<unsigned long long>(signedSeconds);
   const int hours = static_cast<int>((absoluteSeconds / 3600ULL) % 24ULL);
   const int minutes = static_cast<int>((absoluteSeconds / 60ULL) % 60ULL);
   const int seconds = static_cast<int>(absoluteSeconds % 60ULL);
 
   char formatted[16]{};
   std::snprintf(
-    formatted,
-    sizeof(formatted),
-    isNegative ? "-%02d:%02d:%02d" : "%02d:%02d:%02d",
-    hours,
-    minutes,
-    seconds
+    formatted, sizeof(formatted), isNegative ? "-%02d:%02d:%02d" : "%02d:%02d:%02d", hours, minutes, seconds
   );
 
   lua_pushstring(rawState, formatted);
@@ -1755,7 +1812,9 @@ int moho::cfunc_GetGameTimeL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_GetGameTimeSecondsUserL`.
  */
-int moho::cfunc_GetGameTimeSecondsUser(lua_State* const luaContext)
+int moho::cfunc_GetGameTimeSecondsUser(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetGameTimeSecondsUserL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1785,7 +1844,9 @@ moho::CScrLuaInitForm* moho::func_GetGameTimeSecondsUser_LuaFuncDef()
  * What it does:
  * Pushes active-session elapsed game time in seconds as a Lua number.
  */
-int moho::cfunc_GetGameTimeSecondsUserL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetGameTimeSecondsUserL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1810,7 +1871,9 @@ int moho::cfunc_GetGameTimeSecondsUserL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_GetSystemTimeL`.
  */
-int moho::cfunc_GetSystemTime(lua_State* const luaContext)
+int moho::cfunc_GetSystemTime(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetSystemTimeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1824,12 +1887,7 @@ int moho::cfunc_GetSystemTime(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetSystemTime_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "GetSystemTime",
-    &moho::cfunc_GetSystemTime,
-    nullptr,
-    "<global>",
-    kGetSystemTimeHelpText
+    moho::SCR_UserLuaInitSet(), "GetSystemTime", &moho::cfunc_GetSystemTime, nullptr, "<global>", kGetSystemTimeHelpText
   );
   return &binder;
 }
@@ -1841,7 +1899,9 @@ moho::CScrLuaInitForm* moho::func_GetSystemTime_LuaFuncDef()
  * Formats process-system elapsed seconds as `HH:MM:SS` and returns one Lua
  * string result.
  */
-int moho::cfunc_GetSystemTimeL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetSystemTimeL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1852,21 +1912,15 @@ int moho::cfunc_GetSystemTimeL(LuaPlus::LuaState* const state)
 
   const auto totalSeconds = static_cast<long long>(gpg::time::GetSystemTimer().ElapsedSeconds());
   const bool isNegative = totalSeconds < 0;
-  const unsigned long long absoluteSeconds = isNegative
-    ? static_cast<unsigned long long>(-(totalSeconds + 1)) + 1ULL
-    : static_cast<unsigned long long>(totalSeconds);
+  const unsigned long long absoluteSeconds = isNegative ? static_cast<unsigned long long>(-(totalSeconds + 1)) + 1ULL
+                                                        : static_cast<unsigned long long>(totalSeconds);
   const int hours = static_cast<int>((absoluteSeconds / 3600ULL) % 24ULL);
   const int minutes = static_cast<int>((absoluteSeconds / 60ULL) % 60ULL);
   const int seconds = static_cast<int>(absoluteSeconds % 60ULL);
 
   char formatted[16]{};
   std::snprintf(
-    formatted,
-    sizeof(formatted),
-    isNegative ? "-%02d:%02d:%02d" : "%02d:%02d:%02d",
-    hours,
-    minutes,
-    seconds
+    formatted, sizeof(formatted), isNegative ? "-%02d:%02d:%02d" : "%02d:%02d:%02d", hours, minutes, seconds
   );
 
   lua_pushstring(rawState, formatted);
@@ -1881,7 +1935,9 @@ int moho::cfunc_GetSystemTimeL(LuaPlus::LuaState* const state)
  * Normalizes Lua callback entry calling convention and forwards to
  * `cfunc_GetSystemTimeSecondsL`.
  */
-static int cfunc_GetSystemTimeSecondsDispatch(lua_State* const luaContext)
+static int cfunc_GetSystemTimeSecondsDispatch(
+  lua_State* const luaContext
+)
 {
   return moho::cfunc_GetSystemTimeSecondsL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1892,7 +1948,9 @@ static int cfunc_GetSystemTimeSecondsDispatch(lua_State* const luaContext)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_GetSystemTimeSecondsL`.
  */
-int moho::cfunc_GetSystemTimeSeconds(lua_State* const luaContext)
+int moho::cfunc_GetSystemTimeSeconds(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetSystemTimeSecondsDispatch(luaContext);
 }
@@ -1922,7 +1980,9 @@ moho::CScrLuaInitForm* moho::func_GetSystemTimeSeconds_LuaFuncDef()
  * What it does:
  * Pushes process-system elapsed time in seconds as a Lua number.
  */
-int moho::cfunc_GetSystemTimeSecondsL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetSystemTimeSecondsL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1942,7 +2002,9 @@ int moho::cfunc_GetSystemTimeSecondsL(LuaPlus::LuaState* const state)
  * Validates one numeric seconds argument and returns a formatted `HH:MM:SS`
  * text value for Lua scripts.
  */
-int moho::cfunc_FormatTimeL(LuaPlus::LuaState* const state)
+int moho::cfunc_FormatTimeL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1962,21 +2024,15 @@ int moho::cfunc_FormatTimeL(LuaPlus::LuaState* const state)
 
   const auto totalSeconds = static_cast<long long>(lua_tonumber(rawState, 1));
   const bool isNegative = totalSeconds < 0;
-  const unsigned long long absoluteSeconds = isNegative
-    ? static_cast<unsigned long long>(-(totalSeconds + 1)) + 1ULL
-    : static_cast<unsigned long long>(totalSeconds);
+  const unsigned long long absoluteSeconds = isNegative ? static_cast<unsigned long long>(-(totalSeconds + 1)) + 1ULL
+                                                        : static_cast<unsigned long long>(totalSeconds);
   const int hours = static_cast<int>((absoluteSeconds / 3600ULL) % 24ULL);
   const int minutes = static_cast<int>((absoluteSeconds / 60ULL) % 60ULL);
   const int seconds = static_cast<int>(absoluteSeconds % 60ULL);
 
   char formatted[16]{};
   std::snprintf(
-    formatted,
-    sizeof(formatted),
-    isNegative ? "-%02d:%02d:%02d" : "%02d:%02d:%02d",
-    hours,
-    minutes,
-    seconds
+    formatted, sizeof(formatted), isNegative ? "-%02d:%02d:%02d" : "%02d:%02d:%02d", hours, minutes, seconds
   );
 
   lua_pushstring(rawState, formatted);
@@ -1989,7 +2045,9 @@ int moho::cfunc_FormatTimeL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_FormatTimeL`.
  */
-int moho::cfunc_FormatTime(lua_State* const luaContext)
+int moho::cfunc_FormatTime(
+  lua_State* const luaContext
+)
 {
   return cfunc_FormatTimeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -2003,12 +2061,7 @@ int moho::cfunc_FormatTime(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_FormatTime_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "FormatTime",
-    &moho::cfunc_FormatTime,
-    nullptr,
-    "<global>",
-    kFormatTimeHelpText
+    moho::SCR_UserLuaInitSet(), "FormatTime", &moho::cfunc_FormatTime, nullptr, "<global>", kFormatTimeHelpText
   );
   return &binder;
 }
@@ -2019,7 +2072,9 @@ moho::CScrLuaInitForm* moho::func_FormatTime_LuaFuncDef()
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_GetSimRateL`.
  */
-int moho::cfunc_GetSimRate(lua_State* const luaContext)
+int moho::cfunc_GetSimRate(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetSimRateL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -2033,12 +2088,7 @@ int moho::cfunc_GetSimRate(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetSimRate_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(),
-    "GetSimRate",
-    &moho::cfunc_GetSimRate,
-    nullptr,
-    "<global>",
-    kGetSimRateHelpText
+    moho::SCR_UserLuaInitSet(), "GetSimRate", &moho::cfunc_GetSimRate, nullptr, "<global>", kGetSimRateHelpText
   );
   return &binder;
 }
@@ -2049,7 +2099,9 @@ moho::CScrLuaInitForm* moho::func_GetSimRate_LuaFuncDef()
  * What it does:
  * Pushes the current client-manager simulation rate as a Lua number.
  */
-int moho::cfunc_GetSimRateL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetSimRateL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -2073,19 +2125,25 @@ int moho::cfunc_GetSimRateL(LuaPlus::LuaState* const state)
 namespace
 {
   template <int (*Body)(lua_State*)>
-  int ReplayTimelineBinding(lua_State* const luaContext)
+  int ReplayTimelineBinding(
+    lua_State* const luaContext
+  )
   {
     LuaPlus::LuaState* const state = moho::SCR_ResolveBindingState(luaContext);
     return state != nullptr && state->m_state != nullptr ? Body(state->m_state) : 0;
   }
 
-  int ReplayTotalTicksBody(lua_State* const rawState)
+  int ReplayTotalTicksBody(
+    lua_State* const rawState
+  )
   {
     lua_pushnumber(rawState, static_cast<lua_Number>(moho::REPLAY_TotalTicks()));
     return 1;
   }
 
-  int ReplayKeyframeTicksBody(lua_State* const rawState)
+  int ReplayKeyframeTicksBody(
+    lua_State* const rawState
+  )
   {
     const std::vector<std::int32_t> ticks = moho::REPLAY_KeyframeTicks();
     lua_newtable(rawState);
@@ -2099,7 +2157,9 @@ namespace
     return 1;
   }
 
-  int ReplaySeekBody(lua_State* const rawState)
+  int ReplaySeekBody(
+    lua_State* const rawState
+  )
   {
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
     if (session != nullptr && lua_isnumber(rawState, 1)) {
@@ -2108,7 +2168,9 @@ namespace
     return 0;
   }
 
-  int ReplaySeekKindBody(lua_State* const rawState)
+  int ReplaySeekKindBody(
+    lua_State* const rawState
+  )
   {
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
     if (session == nullptr || !lua_isnumber(rawState, 1)) {
@@ -2129,13 +2191,17 @@ namespace
     return 1;
   }
 
-  int ReplayCancelSeekBody(lua_State* const)
+  int ReplayCancelSeekBody(
+    lua_State* const
+  )
   {
     moho::REPLAY_CancelSeek();
     return 0;
   }
 
-  int ReplaySeekProgressBody(lua_State* const rawState)
+  int ReplaySeekProgressBody(
+    lua_State* const rawState
+  )
   {
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
     if (session == nullptr || !moho::REPLAY_IsSeeking()) {
@@ -2163,9 +2229,12 @@ namespace
    * Engine addition (issue #327): `GetEngineInfo()` - which engine runs the UI. FAF's own Lua carries
    * faf-re's options and screens behind `if rawget(_G, 'GetEngineInfo') then`, so on the original
    * executable, which has no such function, nothing changes. Name is always "faf-re"; Version is the
-   * release or nightly tag (or the short commit of any other build), Commit the short commit.
+   * release or nightly tag (any other build: the newest tag number and its short commit, as the lobby
+   * label shows it), Commit the short commit.
    */
-  int GetEngineInfoBody(lua_State* const rawState)
+  int GetEngineInfoBody(
+    lua_State* const rawState
+  )
   {
     lua_newtable(rawState);
     lua_pushstring(rawState, "Name");
@@ -2182,20 +2251,64 @@ namespace
 
   void RegisterReplayTimelineBindings()
   {
-    static CScrLuaBinder engineInfo(moho::SCR_UserLuaInitSet(), "GetEngineInfo", &ReplayTimelineBinding<&GetEngineInfoBody>, nullptr, "<global>",
-      "table GetEngineInfo() - the engine running the UI: Name 'faf-re', Version (release or nightly tag), Commit. Absent on the original executable.");
-    static CScrLuaBinder total(moho::SCR_UserLuaInitSet(), "GetReplayTotalTicks", &ReplayTimelineBinding<&ReplayTotalTicksBody>, nullptr, "<global>",
-      "int GetReplayTotalTicks() - the replay's length in ticks; 0 when not known.");
-    static CScrLuaBinder keyframes(moho::SCR_UserLuaInitSet(), "GetReplayKeyframeTicks", &ReplayTimelineBinding<&ReplayKeyframeTicksBody>, nullptr, "<global>",
-      "table GetReplayKeyframeTicks() - the ticks with a keyframe to move back to, in order.");
-    static CScrLuaBinder seek(moho::SCR_UserLuaInitSet(), "ReplaySeek", &ReplayTimelineBinding<&ReplaySeekBody>, nullptr, "<global>",
-      "ReplaySeek(tick) - moves the replay to a tick, either way, keeping the view.");
-    static CScrLuaBinder seekKind(moho::SCR_UserLuaInitSet(), "ReplaySeekKind", &ReplayTimelineBinding<&ReplaySeekKindBody>, nullptr, "<global>",
-      "string ReplaySeekKind(tick) - what ReplaySeek(tick) would do now: 'load' a keyframe or 'play' forward; nil when nothing or not known yet.");
-    static CScrLuaBinder cancel(moho::SCR_UserLuaInitSet(), "ReplayCancelSeek", &ReplayTimelineBinding<&ReplayCancelSeekBody>, nullptr, "<global>",
-      "ReplayCancelSeek() - stops a seek where it is.");
-    static CScrLuaBinder progress(moho::SCR_UserLuaInitSet(), "ReplaySeekProgress", &ReplayTimelineBinding<&ReplaySeekProgressBody>, nullptr, "<global>",
-      "table ReplaySeekProgress() - targetTick, currentTick, progress, restarting; nil when not seeking.");
+    static CScrLuaBinder engineInfo(
+      moho::SCR_UserLuaInitSet(),
+      "GetEngineInfo",
+      &ReplayTimelineBinding<&GetEngineInfoBody>,
+      nullptr,
+      "<global>",
+      "table GetEngineInfo() - the engine running the UI: Name 'faf-re', Version (release or nightly tag), Commit. "
+      "Absent on the original executable."
+    );
+    static CScrLuaBinder total(
+      moho::SCR_UserLuaInitSet(),
+      "GetReplayTotalTicks",
+      &ReplayTimelineBinding<&ReplayTotalTicksBody>,
+      nullptr,
+      "<global>",
+      "int GetReplayTotalTicks() - the replay's length in ticks; 0 when not known."
+    );
+    static CScrLuaBinder keyframes(
+      moho::SCR_UserLuaInitSet(),
+      "GetReplayKeyframeTicks",
+      &ReplayTimelineBinding<&ReplayKeyframeTicksBody>,
+      nullptr,
+      "<global>",
+      "table GetReplayKeyframeTicks() - the ticks with a keyframe to move back to, in order."
+    );
+    static CScrLuaBinder seek(
+      moho::SCR_UserLuaInitSet(),
+      "ReplaySeek",
+      &ReplayTimelineBinding<&ReplaySeekBody>,
+      nullptr,
+      "<global>",
+      "ReplaySeek(tick) - moves the replay to a tick, either way, keeping the view."
+    );
+    static CScrLuaBinder seekKind(
+      moho::SCR_UserLuaInitSet(),
+      "ReplaySeekKind",
+      &ReplayTimelineBinding<&ReplaySeekKindBody>,
+      nullptr,
+      "<global>",
+      "string ReplaySeekKind(tick) - what ReplaySeek(tick) would do now: 'load' a keyframe or 'play' forward; nil when "
+      "nothing or not known yet."
+    );
+    static CScrLuaBinder cancel(
+      moho::SCR_UserLuaInitSet(),
+      "ReplayCancelSeek",
+      &ReplayTimelineBinding<&ReplayCancelSeekBody>,
+      nullptr,
+      "<global>",
+      "ReplayCancelSeek() - stops a seek where it is."
+    );
+    static CScrLuaBinder progress(
+      moho::SCR_UserLuaInitSet(),
+      "ReplaySeekProgress",
+      &ReplayTimelineBinding<&ReplaySeekProgressBody>,
+      nullptr,
+      "<global>",
+      "table ReplaySeekProgress() - targetTick, currentTick, progress, restarting; nil when not seeking."
+    );
   }
 } // namespace
 
@@ -2315,5 +2428,4 @@ namespace
   };
 
   const UserLuaFuncDefBootstrap gUserLuaFuncDefBootstrap{};
-}
-
+} // namespace

@@ -13,8 +13,7 @@ namespace gpg::diag
 #else
     constexpr char kCommitShort[] = FAF_BUILD_COMMIT_SHORT;
 #endif
-    constexpr char kIdentity[] =
-      FAF_BUILD_COMMIT_SHORT
+    constexpr char kIdentity[] = FAF_BUILD_COMMIT_SHORT
 #if FAF_BUILD_DIRTY
       "-dirty"
 #endif
@@ -50,11 +49,6 @@ namespace gpg::diag
   const char* BuildDescribe() noexcept
   {
     return FAF_BUILD_DESCRIBE;
-  }
-
-  const char* BuildBranch() noexcept
-  {
-    return FAF_BUILD_BRANCH;
   }
 
   const char* BuildArch() noexcept

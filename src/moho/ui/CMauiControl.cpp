@@ -51,14 +51,6 @@ namespace
   constexpr const char* kCMauiControlAboveOneAlphaWarning =
     "Attempting to set an alpha value higher than 1.0 (%d) on control %s, are you sure you wan to do that?";
 
-  [[nodiscard]] std::uint32_t PackVertexAlphaFromScalar(
-    const float alpha
-  ) noexcept
-  {
-    const std::int32_t truncatedLane = static_cast<std::int32_t>(alpha * -255.0f);
-    return 0x00FFFFFFu - (static_cast<std::uint32_t>(truncatedLane) << 24u);
-  }
-
   [[nodiscard]] moho::CMauiControl* FirstChildControl(
     moho::CMauiControl* const control
   ) noexcept
@@ -233,7 +225,6 @@ namespace
     );
   }
 
-
   /**
    * Address: 0x007A4540 (FUN_007A4540, sub_7A4540)
    *
@@ -326,7 +317,7 @@ namespace
     const char* const message = exception.what() != nullptr ? exception.what() : "";
     scriptObject->LogScriptWarning(scriptObject, "IsScrollable", message);
   }
-}
+} // namespace
 
 gpg::RType* moho::CMauiControl::sType = nullptr;
 
@@ -1895,7 +1886,12 @@ int moho::cfunc_GetFrontEndData(
 moho::CScrLuaInitForm* moho::func_GetFrontEndData_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "GetFrontEndData", &moho::cfunc_GetFrontEndData, nullptr, "<global>", kGetFrontEndDataHelpText
+    moho::SCR_UserLuaInitSet(),
+    "GetFrontEndData",
+    &moho::cfunc_GetFrontEndData,
+    nullptr,
+    "<global>",
+    kGetFrontEndDataHelpText
   );
   return &binder;
 }
@@ -2074,50 +2070,6 @@ moho::CScriptLazyVar_float& moho::CMauiControl::Left()
 }
 
 /**
- * Address: 0x0077F6A0 (FUN_0077F6A0, Moho::CMauiControl::Right)
- *
- * What it does:
- * Returns writable reference to the right-edge lazy-var lane.
- */
-moho::CScriptLazyVar_float& moho::CMauiControl::Right()
-{
-  return mRightLV;
-}
-
-/**
- * Address: 0x0077F6B0 (FUN_0077F6B0, Moho::CMauiControl::Top)
- *
- * What it does:
- * Returns writable reference to the top-edge lazy-var lane.
- */
-moho::CScriptLazyVar_float& moho::CMauiControl::Top()
-{
-  return mTopLV;
-}
-
-/**
- * Address: 0x0077F6C0 (FUN_0077F6C0, Moho::CMauiControl::Bottom)
- *
- * What it does:
- * Returns writable reference to the bottom-edge lazy-var lane.
- */
-moho::CScriptLazyVar_float& moho::CMauiControl::Bottom()
-{
-  return mBottomLV;
-}
-
-/**
- * Address: 0x0077F6D0 (FUN_0077F6D0, Moho::CMauiControl::GetVertexAlpha)
- *
- * What it does:
- * Returns packed ARGB vertex-alpha color lane.
- */
-std::uint32_t moho::CMauiControl::GetVertexAlpha()
-{
-  return mVertexAlpha;
-}
-
-/**
  * Address: 0x0077F6E0 (FUN_0077F6E0, Moho::CMauiControl::SetNeedsFrameUpdate)
  *
  * What it does:
@@ -2153,20 +2105,6 @@ moho::CMauiFrame* moho::CMauiControl::GetRootFrame()
 }
 
 /**
- * Address: 0x007863F0 (FUN_007863F0, Moho::CMauiControl::SetAlpha)
- *
- * What it does:
- * Stores scalar alpha and updates packed vertex-alpha color lane.
- */
-void moho::CMauiControl::SetAlpha(
-  const float alpha
-)
-{
-  mAlpha = alpha;
-  mVertexAlpha = PackVertexAlphaFromScalar(alpha);
-}
-
-/**
  * Address: 0x0078EC10 (FUN_0078EC10, Moho::CMauiControl::AdjustARGBAlpha)
  *
  * What it does:
@@ -2191,17 +2129,6 @@ std::uint32_t moho::CMauiControl::AdjustARGBAlpha(
 float moho::CMauiControl::GetAlpha()
 {
   return mAlpha;
-}
-
-/**
- * Address: 0x00786450 (FUN_00786450, Moho::CMauiControl::IsInvisible)
- *
- * What it does:
- * Returns whether this control is currently marked invisible.
- */
-bool moho::CMauiControl::IsInvisible()
-{
-  return mInvisible;
 }
 
 /**
@@ -2240,8 +2167,7 @@ namespace
     static std::map<const moho::CMauiControl*, bool> map;
     return map;
   }
-}
-
+} // namespace
 
 void moho::CMauiControl::SetCustomRender(
   const bool enabled
@@ -2444,8 +2370,7 @@ void moho::CMauiControl::SetHidden(
   mIsHidden = hidden;
 
   CMauiControlListNode* const sentinel = static_cast<CMauiControlListNode*>(&mChildrenList);
-  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel;
-       childNode = childNode->mNext) {
+  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel; childNode = childNode->mNext) {
     if (CMauiControl* const childControl = ControlFromParentListNode(childNode); childControl != nullptr) {
       childControl->SetHidden(hidden);
     }
@@ -2519,9 +2444,7 @@ bool moho::CMauiControl::GetIsScrollable(
 
   try {
     LuaPlus::LuaFunction<bool> callback(callbackObject);
-    return callback(
-      mLuaObj, axisLexical != nullptr ? axisLexical : ""
-    );
+    return callback(mLuaObj, axisLexical != nullptr ? axisLexical : "");
   } catch (const std::exception& exception) {
     LogIsScrollableCallbackException(scriptObject, exception);
   } catch (...) {
@@ -2568,8 +2491,7 @@ void moho::CMauiControl::OnMinimized(
 )
 {
   CMauiControlListNode* const sentinel = static_cast<CMauiControlListNode*>(&mChildrenList);
-  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel;
-       childNode = childNode->mNext) {
+  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel; childNode = childNode->mNext) {
     CMauiControl* const childControl = ControlFromParentListNode(childNode);
     if (childControl != nullptr) {
       childControl->OnMinimized(minimized);
@@ -2596,8 +2518,7 @@ void moho::CMauiControl::DisableHitTest(
   }
 
   CMauiControlListNode* const sentinel = static_cast<CMauiControlListNode*>(&mChildrenList);
-  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel;
-       childNode = childNode->mNext) {
+  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel; childNode = childNode->mNext) {
     CMauiControl* const childControl = ControlFromParentListNode(childNode);
     if (childControl != nullptr) {
       childControl->DisableHitTest(disableHitTest, true);
@@ -2682,10 +2603,8 @@ bool moho::CMauiControl::HitTest(
   const float y
 )
 {
-  return x >= CScriptLazyVar_float::GetValue(&mLeftLV) &&
-    CScriptLazyVar_float::GetValue(&mRightLV) > x &&
-    y >= CScriptLazyVar_float::GetValue(&mTopLV) &&
-    CScriptLazyVar_float::GetValue(&mBottomLV) > y;
+  return x >= CScriptLazyVar_float::GetValue(&mLeftLV) && CScriptLazyVar_float::GetValue(&mRightLV) > x &&
+    y >= CScriptLazyVar_float::GetValue(&mTopLV) && CScriptLazyVar_float::GetValue(&mBottomLV) > y;
 }
 
 /**
@@ -2759,8 +2678,7 @@ bool moho::CMauiControl::HandleEvent(
   const SMauiEventData& eventData
 )
 {
-  LuaPlus::LuaState* const activeState =
-    mLuaObj.GetActiveState();
+  LuaPlus::LuaState* const activeState = mLuaObj.GetActiveState();
   LuaPlus::LuaObject eventObject{};
   (void)CreateLuaEventObject(const_cast<SMauiEventData*>(&eventData), &eventObject, activeState);
   return RunScriptBool("HandleEvent", eventObject);
@@ -2841,8 +2759,7 @@ moho::SMauiScrollValues moho::CMauiControl::GetScrollValues(
 {
   SMauiScrollValues values{};
   CScriptObject* const scriptObject = this;
-  LuaPlus::LuaState* const activeState =
-    mLuaObj.GetActiveState();
+  LuaPlus::LuaState* const activeState = mLuaObj.GetActiveState();
   if (scriptObject == nullptr || activeState == nullptr || activeState->m_state == nullptr) {
     return values;
   }
@@ -2889,8 +2806,7 @@ void moho::CMauiControl::ApplyFunction(
   callback(mLuaObj);
 
   CMauiControlListNode* const sentinel = static_cast<CMauiControlListNode*>(&mChildrenList);
-  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel;
-       childNode = childNode->mNext) {
+  for (CMauiControlListNode* childNode = mChildrenList.mNext; childNode != sentinel; childNode = childNode->mNext) {
     CMauiControl* const childControl = ControlFromParentListNode(childNode);
     if (childControl != nullptr) {
       callback(childControl->mLuaObj);
@@ -2996,7 +2912,12 @@ int moho::cfunc_GetInputCapture(
 moho::CScrLuaInitForm* moho::func_GetInputCapture_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "GetInputCapture", &moho::cfunc_GetInputCapture, nullptr, "<global>", kGetInputCaptureHelpText
+    moho::SCR_UserLuaInitSet(),
+    "GetInputCapture",
+    &moho::cfunc_GetInputCapture,
+    nullptr,
+    "<global>",
+    kGetInputCaptureHelpText
   );
   return &binder;
 }
@@ -3045,7 +2966,12 @@ int moho::func_AddInputCapture(
 moho::CScrLuaInitForm* moho::func_AddInputCapture_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "AddInputCapture", &moho::func_AddInputCapture, nullptr, "<global>", kAddInputCaptureHelpText
+    moho::SCR_UserLuaInitSet(),
+    "AddInputCapture",
+    &moho::func_AddInputCapture,
+    nullptr,
+    "<global>",
+    kAddInputCaptureHelpText
   );
   return &binder;
 }

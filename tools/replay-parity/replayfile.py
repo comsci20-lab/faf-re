@@ -178,19 +178,32 @@ def replay_body_info(data):
     mod_list = [{"name": str(v.get("name")), "uid": str(v.get("uid")), "version": v.get("version")}
                 for v in mods.values() if isinstance(v, dict)]
     return {"version": version, "scmap": scmap, "map": folder.group(1).lower() if folder else None,
-            "mods": mod_list}
+            "mods": mod_list, "matchmaker": started_by_matchmaker(data, pos + 8 + size)}
+
+
+def started_by_matchmaker(data, pos):
+    """Whether the matchmaker's lobby started the game, from the scenario table at pos (after the
+    sim mods): only it sets GameOptions.Divisions (AutolobbyController.lua, 3835 and 3840), and the
+    custom lobby (lobby.lua) never does. A table that can't be read counts as the custom lobby's."""
+    try:
+        scenario, _ = lua_value(data, pos + 4)
+    except (ValueError, IndexError, struct.error):
+        return False
+    options = scenario.get("Options") if isinstance(scenario, dict) else None
+    return isinstance(options, dict) and "Divisions" in options
 
 
 def live_client_desync(recorded, beat, sim, theirs):
-    """True when a mismatch is the live game's, not ours: at that beat at least as many of the
-    recorded clients agree with the sim as with the one that differs (26946725: nine clients and
-    the sim on one checksum at beat 6700, Paulosan alone on another). A tie counts: two players
-    who split one against one each recorded their own checksum, and the sim matching one of them
-    exactly is not a bug of ours (run 41660446996: most of its desyncs). The game then goes on
-    checking against that side. `recorded` is replay_checksums() of the replay."""
-    votes = recorded.get(beat, {})
-    agree = len(votes.get(sim, []))
-    return agree > 0 and agree >= len(votes.get(theirs, []))
+    """True when a mismatch is the live game's, not ours: at that beat the live players recorded
+    different checksums and the sim's equals one of them exactly, so it played as a real client did
+    and no build can match both sides (26946725: nine clients and the sim on one checksum at beat
+    6700, Paulosan alone on another; run 41660446996: most of its desyncs, one against one). The
+    sim's side may be the smaller one: a player who leaves can split the rest (28083432: emi_nem
+    left at 7900, at 7950 three players on one checksum and two on the sim's, which the sim then
+    equals at all 107 split beats to the end). The client that differs is not checked again; the
+    sim's side still is, so a sim that leaves it later is a desync. `recorded` is
+    replay_checksums() of the replay."""
+    return theirs != sim and len(recorded.get(beat, {}).get(sim, [])) > 0
 
 
 MISMATCH_RE = re.compile(r"Checksum for beat (\d+) mismatched: ([0-9a-f]{32}) \(sim\) != ([0-9a-f]{32}) \((.*)\)\.")

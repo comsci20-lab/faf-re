@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 
 #include "gpg/core/reflection/Reflection.h"
 #include "moho/lua/CScrLuaBinderFwd.h"
@@ -125,7 +125,7 @@ namespace moho
      * binary's `slot - 4` downcasts and `0x008679E0` relinks decode).
      */
     WeakPtr<CWldTerrainDecal> mDecal;                       // +0x34
-    boost::shared_ptr<RD3DTextureResource> mDynamicTexture; // +0x3C
+    std::shared_ptr<RD3DTextureResource> mDynamicTexture;   // +0x3C
     IDecalManager* mDecalManager;                           // +0x44
     CameraImpl* mWorldCamera;                               // +0x48
     Wm3::Vector3f mScale;                                   // +0x4C
@@ -146,9 +146,7 @@ namespace moho
   // 0x64 in the binary, plus the engine's mHeading.
   static_assert(sizeof(ScriptedDecal) == 0x68, "ScriptedDecal size must be 0x68");
   static_assert(offsetof(ScriptedDecal, mDecal) == 0x34, "ScriptedDecal::mDecal offset must be 0x34");
-  static_assert(
-    offsetof(ScriptedDecal, mDynamicTexture) == 0x3C, "ScriptedDecal::mDynamicTexture offset must be 0x3C"
-  );
+  static_assert(offsetof(ScriptedDecal, mDynamicTexture) == 0x3C, "ScriptedDecal::mDynamicTexture offset must be 0x3C");
   static_assert(offsetof(ScriptedDecal, mDecalManager) == 0x44, "ScriptedDecal::mDecalManager offset must be 0x44");
   static_assert(offsetof(ScriptedDecal, mWorldCamera) == 0x48, "ScriptedDecal::mWorldCamera offset must be 0x48");
   static_assert(offsetof(ScriptedDecal, mScale) == 0x4C, "ScriptedDecal::mScale offset must be 0x4C");

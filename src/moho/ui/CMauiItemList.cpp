@@ -99,7 +99,7 @@ namespace
       itemList->mCurSelection = currentSelection - 1;
     }
   }
-}
+} // namespace
 
 gpg::RType* moho::CMauiItemList::sType = nullptr;
 
@@ -130,9 +130,8 @@ moho::CMauiItemList::CMauiItemList(
   mShowMouseoverItem = false;
   mScrollPosition = 0;
 
-  boost::SharedPtrRaw<CD3DFont> createdFont = CD3DFont::Create(16, "New Times Roman");
-  AssignIntrusiveFont(mFont, createdFont.px);
-  createdFont.release();
+  moho::CountedPtr<CD3DFont> createdFont = CD3DFont::Create(16, "New Times Roman");
+  AssignIntrusiveFont(mFont, createdFont.tex);
 }
 
 /**
@@ -254,16 +253,15 @@ int moho::cfunc_CMauiItemListSetNewFontL(
   }
   const int pointSize = static_cast<int>(lua_tonumber(state->m_state, 3));
 
-  boost::SharedPtrRaw<CD3DFont> createdFont = CD3DFont::Create(pointSize, familyName);
-  if (createdFont.px != nullptr) {
-    itemList->SetFont(createdFont.px);
+  moho::CountedPtr<CD3DFont> createdFont = CD3DFont::Create(pointSize, familyName);
+  if (createdFont.tex != nullptr) {
+    itemList->SetFont(createdFont.tex);
     lua_settop(state->m_state, 1);
   } else {
     lua_pushnil(state->m_state);
     (void)lua_gettop(state->m_state);
   }
 
-  createdFont.release();
   return 1;
 }
 
@@ -932,9 +930,8 @@ void moho::CMauiItemList::SetFont(
     return;
   }
 
-  boost::SharedPtrRaw<CD3DFont> defaultFont = CD3DFont::Create(16, "New Times Roman");
-  AssignIntrusiveFont(mFont, defaultFont.px);
-  defaultFont.release();
+  moho::CountedPtr<CD3DFont> defaultFont = CD3DFont::Create(16, "New Times Roman");
+  AssignIntrusiveFont(mFont, defaultFont.tex);
 }
 
 /**
@@ -959,7 +956,6 @@ void moho::CMauiItemList::DoRender(
     return;
   }
 
-
   const std::int32_t visibleLineCount = LinesVisible();
 
   const float left = CScriptLazyVar_float::GetValue(&mLeftLV);
@@ -971,8 +967,7 @@ void moho::CMauiItemList::DoRender(
 
   // Background quad spanning the full control rectangle.
   {
-    const boost::shared_ptr<CD3DBatchTexture> backgroundTexture =
-      CD3DBatchTexture::FromSolidColor(mBackgroundColor);
+    const std::shared_ptr<CD3DBatchTexture> backgroundTexture = CD3DBatchTexture::FromSolidColor(mBackgroundColor);
     primBatcher->SetTexture(backgroundTexture);
 
     const CD3DPrimBatcher::Vertex topLeft = MakeBorderVertex(left, top, vertexColor, 0.0f, 0.0f);
@@ -993,7 +988,7 @@ void moho::CMauiItemList::DoRender(
       const float rowTop = rowHeight * static_cast<float>(static_cast<std::uint32_t>(visibleRow)) + top;
       const float rowBottom = font->mHeight + rowTop;
 
-      const boost::shared_ptr<CD3DBatchTexture> highlightTexture =
+      const std::shared_ptr<CD3DBatchTexture> highlightTexture =
         CD3DBatchTexture::FromSolidColor(mHighlightBackgroundColor);
       primBatcher->SetTexture(highlightTexture);
 
@@ -1014,7 +1009,7 @@ void moho::CMauiItemList::DoRender(
       const float rowTop = rowHeight * static_cast<float>(static_cast<std::uint32_t>(visibleRow)) + top;
       const float rowBottom = font->mHeight + rowTop;
 
-      const boost::shared_ptr<CD3DBatchTexture> selectedTexture =
+      const std::shared_ptr<CD3DBatchTexture> selectedTexture =
         CD3DBatchTexture::FromSolidColor(mSelectedBackgroundColor);
       primBatcher->SetTexture(selectedTexture);
 
@@ -1386,8 +1381,7 @@ bool moho::CMauiItemList::HandleEvent(
     }
 
     const char* const callbackName = eventData.mEventType == MET_ButtonPress ? "OnClick" : "OnDoubleClick";
-    LuaPlus::LuaState* const activeState =
-      mLuaObj.GetActiveState();
+    LuaPlus::LuaState* const activeState = mLuaObj.GetActiveState();
     LuaPlus::LuaObject eventObject{};
     const LuaPlus::LuaObject* const createdEvent =
       CreateLuaEventObject(const_cast<SMauiEventData*>(&eventData), &eventObject, activeState);

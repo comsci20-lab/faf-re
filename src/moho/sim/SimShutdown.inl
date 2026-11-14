@@ -82,74 +82,7 @@ int Sim::ArmyCount() const
 namespace
 {
 
-  /**
-   * Address: 0x00528DF0 (FUN_00528DF0)
-   *
-   * What it does:
-   * Uses the active blueprint TLS lane and forwards one mesh-blueprint
-   * registration callback into the canonical state registration routine.
-   */
-  [[maybe_unused]] int RegisterMeshBlueprintFromTlsLane(LuaPlus::LuaState* const state)
-  {
-    (void)&moho::BlueprintLoaderContext().mRules->mMeshBlueprints;
-    (void)RegisterMeshBlueprintFromState(state);
-    return 0;
-  }
-
-  /**
-   * Address: 0x00528EB0 (FUN_00528EB0)
-   *
-   * What it does:
-   * Uses the active blueprint TLS lane and forwards one trail-emitter
-   * registration callback into the canonical state registration routine.
-   */
-  [[maybe_unused]] int RegisterTrailEmitterBlueprintFromTlsLane(LuaPlus::LuaState* const state)
-  {
-    (void)&moho::BlueprintLoaderContext().mRules->mTrailBlueprints;
-    return RegisterTrailEmitterBlueprintFromState(state);
-  }
-
-  /**
-   * Address: 0x00528F60 (FUN_00528F60)
-   *
-   * What it does:
-   * Uses the active blueprint TLS lane and forwards one emitter-blueprint
-   * registration callback into the canonical state registration routine.
-   */
-  [[maybe_unused]] int RegisterEmitterBlueprintFromTlsLane(LuaPlus::LuaState* const state)
-  {
-    (void)&moho::BlueprintLoaderContext().mRules->mEmitterBlueprints;
-    return RegisterEmitterBlueprintFromState(state);
-  }
-
-  /**
-   * Address: 0x00529010 (FUN_00529010)
-   *
-   * What it does:
-   * Uses the active blueprint TLS lane and forwards one beam-blueprint
-   * registration callback into the canonical state registration routine.
-   */
-  [[maybe_unused]] int RegisterBeamBlueprintFromTlsLane(LuaPlus::LuaState* const state)
-  {
-    (void)&moho::BlueprintLoaderContext().mRules->mBeamBlueprints;
-    return RegisterBeamBlueprintFromState(state);
-  }
-
-  /**
-   * Address: 0x005290C0 (FUN_005290C0)
-   *
-   * What it does:
-   * Ticks one background-load progress update directly from the worker's
-   * blueprint-loader context and returns the legacy success code.
-   */
-  [[maybe_unused]] int BlueprintLoaderUpdateProgressFromLoaderContext()
-  {
-    TickBlueprintLoaderProgressFromLoaderContext();
-    return 0;
-  }
-}
-
-
+} // namespace
 
 /**
  * Address: 0x00BC8E50 (FUN_00BC8E50, register_RegisterUnitBlueprint_LuaFuncDef)
@@ -215,26 +148,4 @@ moho::CScrLuaInitForm* moho::register_RegisterTrailEmitterBlueprint_LuaFuncDef()
 moho::CScrLuaInitForm* moho::register_RegisterEmitterBlueprint_LuaFuncDef()
 {
   return func_RegisterEmitterBlueprint_LuaFuncDef();
-}
-
-/**
- * Address: 0x00BC8EB0 (FUN_00BC8EB0, j_func_RegisterBeamBlueprint_LuaFuncDef)
- *
- * What it does:
- * Startup thunk that forwards registration to `func_RegisterBeamBlueprint_LuaFuncDef`.
- */
-moho::CScrLuaInitForm* moho::j_func_RegisterBeamBlueprint_LuaFuncDef()
-{
-  return func_RegisterBeamBlueprint_LuaFuncDef();
-}
-
-/**
- * Address: 0x00BC8EC0 (FUN_00BC8EC0, j_func_BlueprintLoaderUpdateProgress_LuaFuncDef)
- *
- * What it does:
- * Startup thunk that forwards registration to `func_BlueprintLoaderUpdateProgress_LuaFuncDef`.
- */
-moho::CScrLuaInitForm* moho::j_func_BlueprintLoaderUpdateProgress_LuaFuncDef()
-{
-  return func_BlueprintLoaderUpdateProgress_LuaFuncDef();
 }

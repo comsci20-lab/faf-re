@@ -126,13 +126,10 @@ include(FafCodegen)
 option(FAF_SERVER_MODE "Build the client side of server-authoritative sessions (/connectserver)" OFF)
 
 # --- Dependencies (built here, /MT, read-only sources) ----------------------------------
-add_subdirectory(cmake/deps/wxwindows)
 add_subdirectory(cmake/deps/wildmagic)
 add_subdirectory(cmake/deps/libjuice)
 add_subdirectory(cmake/deps/libdatachannel)
-if(FAF_TARGET_ARCH STREQUAL "x64")
-  add_subdirectory(cmake/deps/zlib)
-endif()
+add_subdirectory(cmake/deps/zlib)
 add_subdirectory(cmake/deps/monocypher)
 add_subdirectory(cmake/deps/zstd)
 add_subdirectory(cmake/deps/freetype)
@@ -140,6 +137,7 @@ add_subdirectory(cmake/deps/msdfgen)
 add_subdirectory(cmake/deps/googletest)
 add_subdirectory(cmake/deps/directxtex)
 add_subdirectory(cmake/deps/imgui)
+add_subdirectory(cmake/deps/sdl3)
 
 # --- Profiler (optional Tracy integration) --------------------------------------------
 option(FAF_ENABLE_TRACY "Enable Tracy profiler instrumentation" OFF)

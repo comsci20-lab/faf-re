@@ -21,12 +21,18 @@
 #include <mmreg.h>
 #include <mmsystem.h>
 #include <dsound.h>
+#if FAFRE_PLATFORM_WINDOWS
 #include <mmdeviceapi.h>
-#include <boost/ptr_container/exception.hpp>
+#endif
+#include "gpg/core/utils/SharedPtrUtils.h"
+#if !FAFRE_PLATFORM_WINDOWS
+// The Linux client's XACT and X3DAudio: FAudio (issue #258).
+#include <F3DAudio.h>
+#include "platform/posix/XactOverFact.h"
+#endif
 
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/streams/BinaryReader.h"
-#include "gpg/core/utils/BoostWrappers.h"
 #include "gpg/core/utils/Logging.h"
 #include "legacy/containers/Map.h"
 #include "legacy/containers/Set.h"
@@ -34,7 +40,9 @@
 #include "moho/audio/XAudioError.h"
 #include "moho/audio/XactClock.h"
 #include "moho/audio/RecoverableCue.h"
+#if FAFRE_PLATFORM_WINDOWS
 #include "moho/audio/AudioOutputSelection.h"
+#endif
 #include "moho/audio/CSimSoundManager.h"
 #include "moho/app/CWaitHandleSet.h"
 #include "moho/console/CConCommand.h"
@@ -45,6 +53,7 @@
 
 namespace
 {
+#if FAFRE_PLATFORM_WINDOWS
   // FAF addition: Core Audio notifications only mark a generation. XACT is
   // rebuilt later on the normal audio thread, never inside a COM callback.
   class AudioEndpointWatch final : public IMMNotificationClient
@@ -155,15 +164,14 @@ namespace
   int InitializeSelectedOutput(moho::AudioEngineImpl& impl);
   void RecoverAudioOutput(moho::AudioEngineImpl& impl, int workResult);
   bool ConfigureAudioOutput(moho::AudioEngineImpl& impl);
+#endif
 
   // Engine addition (dedicated-server plan WPL.4): sSoundEnabled (CSimSoundManager.h), the
   // test Sim::Sim made on sSoundConfiguration before it creates its sound manager.
   bool IsSoundEnabled()
   {
     const moho::SoundConfiguration* const soundConfiguration = moho::sSoundConfiguration.get();
-    return soundConfiguration != nullptr && soundConfiguration->mEngines.mStart != nullptr &&
-      soundConfiguration->mEngines.mFinish != soundConfiguration->mEngines.mStart &&
-      soundConfiguration->mNoSound == 0;
+    return soundConfiguration != nullptr && !soundConfiguration->mEngines.empty() && soundConfiguration->mNoSound == 0;
   }
 
   [[maybe_unused]] const bool gSoundEnabledSet = (moho::sSoundEnabled = &IsSoundEnabled, true);
@@ -175,7 +183,7 @@ namespace
  * Address: 0x004DC230 (FUN_004DC230, boost::scoped_ptr<SoundConfiguration>::swap, emitted for its reset)
  */
 // Construct after the recovery sidecar so engines are destroyed before it.
-boost::scoped_ptr<moho::SoundConfiguration> moho::sSoundConfiguration;
+std::unique_ptr<moho::SoundConfiguration> moho::sSoundConfiguration;
 
 namespace
 {
@@ -201,6 +209,16 @@ namespace
 
   const X3DAudioFunctions& X3DAudio()
   {
+#if !FAFRE_PLATFORM_WINDOWS
+    // The Linux client (issue #258): FAudio's F3DAudio, built in, with X3DAudio's structures.
+    static const X3DAudioFunctions functions = [] {
+      X3DAudioFunctions linked;
+      linked.mInitialize = reinterpret_cast<decltype(linked.mInitialize)>(&F3DAudioInitialize);
+      linked.mCalculate = reinterpret_cast<decltype(linked.mCalculate)>(&F3DAudioCalculate);
+      return linked;
+    }();
+    return functions;
+#else
     static const X3DAudioFunctions functions = [] {
       for (const wchar_t* const library : {L"xaudio2_9.dll", L"X3DAudio1_7.dll"}) {
         const HMODULE module = ::LoadLibraryExW(library, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -222,6 +240,7 @@ namespace
       return X3DAudioFunctions{};
     }();
     return functions;
+#endif
   }
 } // namespace
 
@@ -230,135 +249,10 @@ namespace moho
   const char* func_SoundErrorCodeToMsg(int errorCode);
 }
 
-/**
- * Address: 0x004DDD80 (FUN_004DDD80, boost::shared_ptr_AudioEngine::shared_ptr_AudioEngine)
- *
- * What it does:
- * Constructs one `shared_ptr<AudioEngine>` from one raw audio-engine pointer lane.
- */
-boost::shared_ptr<moho::AudioEngine>* ConstructSharedAudioEngineFromRaw(
-  boost::shared_ptr<moho::AudioEngine>* const outEngine,
-  moho::AudioEngine* const engine
-)
-{
-  return ::new (outEngine) boost::shared_ptr<moho::AudioEngine>(engine);
-}
-
-/**
- * Address: 0x004DE470 (FUN_004DE470)
- *
- * What it does:
- * Releases one contiguous range of `AudioEngineRef` control lanes.
- */
-[[nodiscard]] std::uintptr_t ReleaseAudioEngineRefControlRange(
-  moho::AudioEngineRef* const begin,
-  moho::AudioEngineRef* const end
-) noexcept
-{
-  std::uintptr_t lastControlAddress = 0u;
-  if (begin == nullptr || end == nullptr) {
-    return lastControlAddress;
-  }
-
-  for (moho::AudioEngineRef* entry = begin; entry != end; ++entry) {
-    auto* const control = entry->mControl;
-    if (control == nullptr) {
-      continue;
-    }
-
-    lastControlAddress = reinterpret_cast<std::uintptr_t>(control);
-    control->release();
-  }
-
-  return lastControlAddress;
-}
-
 namespace
 {
-  /**
-   * The payload half of `sp_counted_impl_p<AudioEngineImpl*>`. Deriving from
-   * boost's own control-block base puts the vptr and both counts exactly where
-   * boost puts them, so the owned-pointer slot lands at +0x0C without this
-   * file having to name a vtable lane of its own.
-   */
-  struct SpCountedImplAudioEngineBlock : boost::detail::sp_counted_base
-  {
-    moho::AudioEngineImpl** mOwnedSlot; // +0x0C
-  };
-
-  static_assert(
-    sizeof(SpCountedImplAudioEngineBlock) == 0x10,
-    "SpCountedImplAudioEngineBlock size must be 0x10"
-  );
-
-  void DestroyAudioEngineImplOwnedSlotCore(moho::AudioEngineImpl** const ownedSlot) noexcept
-  {
-    if (ownedSlot == nullptr) {
-      return;
-    }
-
-    moho::AudioEngineImpl* const impl = *ownedSlot;
-    if (impl != nullptr) {
-      impl->~AudioEngineImpl();
-      operator delete(impl);
-    }
-
-    operator delete(ownedSlot);
-  }
-}
-
-/**
- * Address: 0x004DE750 (FUN_004DE750)
- *
- * What it does:
- * Releases one `sp_counted_impl_p<AudioEngine>` owned slot by destroying the
- * pointed `AudioEngineImpl` and deleting the slot storage.
- */
-[[maybe_unused]] void DestroyAudioEngineImplOwnedByCountedBlock(
-  SpCountedImplAudioEngineBlock* const countedBlock
-) noexcept
-{
-  if (countedBlock == nullptr) {
-    return;
-  }
-
-  DestroyAudioEngineImplOwnedSlotCore(countedBlock->mOwnedSlot);
-}
-
-/**
- * Address: 0x004DE7C0 (FUN_004DE7C0)
- *
- * What it does:
- * Destroys one heap-owned `AudioEngineImpl*` slot and its pointee.
- */
-void DestroyAudioEngineImplOwnedSlot(
-  moho::AudioEngineImpl** const ownedSlot
-) noexcept
-{
-  DestroyAudioEngineImplOwnedSlotCore(ownedSlot);
-}
-
-/**
- * Address: 0x004DE650 (FUN_004DE650, ??0WeakPtr_AudioEngine@Moho@@QAE@@Z)
- * Mangled: ??0WeakPtr_AudioEngine@Moho@@QAE@@Z
- *
- * What it does:
- * Rebinds one audio-engine weak/shared pair from a source shared pair by
- * copying the pointee lane, retaining the incoming control lane, and
- * weak-releasing any previously bound control lane.
- */
-boost::SharedCountPair* moho::AssignWeakAudioEnginePairFromShared(
-  boost::SharedCountPair* const outWeakPair,
-  const boost::SharedCountPair* const sourceSharedPair
-) noexcept
-{
-  return boost::AssignWeakPairFromShared(outWeakPair, sourceSharedPair);
-}
-
-
-namespace
-{
-  constexpr int kXactErrCuePreparedOnly = static_cast<int>(0x8AC70008u);
+  // XACTENGINE_E_INSTANCELIMITFAILTOPLAY: the cue's or its category's instance limit refused the play.
+  constexpr int kXactErrInstanceLimitFailToPlay = static_cast<int>(0x8AC70008u);
   constexpr int kHresultPointer = static_cast<int>(0x80004003u);
   constexpr int kHresultFail = static_cast<int>(0x80004005u);
   constexpr std::uint32_t kX3dCalculateFlags = 0x61u;
@@ -411,9 +305,9 @@ namespace
 
   struct AudioSoundBankLoader
   {
-    gpg::MemBuffer<char> mBuffer; // +0x00
-    moho::IXACTSoundBank* mBank;  // +0x10
-    fa::string mName;          // +0x14
+    gpg::MemBuffer<char> mBuffer;   // +0x00
+    moho::IXACTSoundBank* mBank;    // +0x10
+    fa::string mName;               // +0x14
     moho::AudioEngineImpl* mEngine; // +0x30
 
     /**
@@ -439,19 +333,20 @@ namespace
   class AudioWaveBankLoaderBase
   {
   public:
-    explicit AudioWaveBankLoaderBase(moho::AudioEngineImpl* const engine)
+    explicit AudioWaveBankLoaderBase(
+      moho::AudioEngineImpl* const engine
+    )
       : mWaveBank(nullptr)
       , mName()
       , mEngine(engine)
-    {
-    }
+    {}
 
     virtual ~AudioWaveBankLoaderBase() = default;
 
     [[nodiscard]] virtual bool Load(gpg::StrArg waveBankPath) = 0;
 
     moho::IXACTWaveBank* mWaveBank; // +0x04
-    fa::string mName;            // +0x08
+    fa::string mName;               // +0x08
     moho::AudioEngineImpl* mEngine; // +0x24
   };
 
@@ -465,19 +360,26 @@ namespace
   // `RWaveBankResStreaming::LoadBank` reads the same engine lane at
   // `[esi+0x24]` (0x004DAE96) - which is where a 0x1C-byte `fa::string`
   // starting at +0x08 ends.
-  static_assert(offsetof(AudioWaveBankLoaderBase, mWaveBank) == 0x04, "AudioWaveBankLoaderBase::mWaveBank offset must be 0x04");
+  static_assert(
+    offsetof(AudioWaveBankLoaderBase, mWaveBank) == 0x04,
+    "AudioWaveBankLoaderBase::mWaveBank offset must be 0x04"
+  );
   static_assert(offsetof(AudioWaveBankLoaderBase, mName) == 0x08, "AudioWaveBankLoaderBase::mName offset must be 0x08");
-  static_assert(offsetof(AudioWaveBankLoaderBase, mEngine) == 0x24, "AudioWaveBankLoaderBase::mEngine offset must be 0x24");
+  static_assert(
+    offsetof(AudioWaveBankLoaderBase, mEngine) == 0x24,
+    "AudioWaveBankLoaderBase::mEngine offset must be 0x24"
+  );
   static_assert(sizeof(AudioWaveBankLoaderBase) == 0x28, "AudioWaveBankLoaderBase size must be 0x28");
 
   class AudioStreamingWaveBankLoader final : public AudioWaveBankLoaderBase
   {
   public:
-    explicit AudioStreamingWaveBankLoader(moho::AudioEngineImpl* const engine)
+    explicit AudioStreamingWaveBankLoader(
+      moho::AudioEngineImpl* const engine
+    )
       : AudioWaveBankLoaderBase(engine)
       , mFileHandle(INVALID_HANDLE_VALUE)
-    {
-    }
+    {}
 
     ~AudioStreamingWaveBankLoader() override;
 
@@ -504,11 +406,12 @@ namespace
   class AudioInMemoryWaveBankLoader final : public AudioWaveBankLoaderBase
   {
   public:
-    explicit AudioInMemoryWaveBankLoader(moho::AudioEngineImpl* const engine)
+    explicit AudioInMemoryWaveBankLoader(
+      moho::AudioEngineImpl* const engine
+    )
       : AudioWaveBankLoaderBase(engine)
       , mMappedBuffer()
-    {
-    }
+    {}
 
     ~AudioInMemoryWaveBankLoader() override;
 
@@ -536,9 +439,14 @@ namespace
     offsetof(AudioStreamingWaveBankCreateParams, packetSize) == sizeof(HANDLE) + 8,
     "XACT streaming packet size offset mismatch"
   );
-  static_assert(sizeof(AudioStreamingWaveBankCreateParams) == (sizeof(void*) == 4 ? 0x10 : 0x18), "XACT streaming parameter size mismatch");
+  static_assert(
+    sizeof(AudioStreamingWaveBankCreateParams) == (sizeof(void*) == 4 ? 0x10 : 0x18),
+    "XACT streaming parameter size mismatch"
+  );
 
-  [[nodiscard]] bool IsCategoryArgValid(const gpg::StrArg category)
+  [[nodiscard]] bool IsCategoryArgValid(
+    const gpg::StrArg category
+  )
   {
     return category != nullptr && *category != '\0';
   }
@@ -581,7 +489,10 @@ namespace
    * all (its own descent didn't even take a hint parameter), not that the
    * real binary skips rebalancing on this instantiation.
    */
-  [[nodiscard]] float* FindOrInsertCategoryVolume(fa::map<std::uint16_t, float>& map, const std::uint16_t category)
+  [[nodiscard]] float* FindOrInsertCategoryVolume(
+    fa::map<std::uint16_t, float>& map,
+    const std::uint16_t category
+  )
   {
     auto it = map.lower_bound(category);
     if (it != map.end() && it->first == category) {
@@ -592,7 +503,10 @@ namespace
     return &it->second;
   }
 
-  [[nodiscard]] AudioSoundBankLoader* FindBankLoader(moho::AudioEngineImpl* impl, const std::uint16_t bankId)
+  [[nodiscard]] AudioSoundBankLoader* FindBankLoader(
+    moho::AudioEngineImpl* impl,
+    const std::uint16_t bankId
+  )
   {
     if (impl == nullptr || impl->mBanks.empty()) {
       return nullptr;
@@ -606,7 +520,9 @@ namespace
     return static_cast<AudioSoundBankLoader*>(impl->mBanks.begin()[bankId]);
   }
 
-  [[nodiscard]] std::uint32_t ResolveDstChannelCount(const moho::SoundConfiguration* configuration)
+  [[nodiscard]] std::uint32_t ResolveDstChannelCount(
+    const moho::SoundConfiguration* configuration
+  )
   {
     if (configuration == nullptr) {
       return 2;
@@ -638,7 +554,9 @@ namespace
    * Resolves one sound-bank path, reads the bank bytes, creates an XACT
    * sound bank, and stores the base filename for diagnostics.
    */
-  bool AudioSoundBankLoader::Load(const gpg::StrArg soundBankPath)
+  bool AudioSoundBankLoader::Load(
+    const gpg::StrArg soundBankPath
+  )
   {
     moho::FWaitHandleSet* const waitHandleSet = moho::FILE_GetWaitHandleSet();
     fa::string mountedPath{};
@@ -651,11 +569,7 @@ namespace
     }
 
     const int createResult = mEngine->mInstance->CreateSoundBank(
-      mBuffer.mBegin,
-      static_cast<std::int32_t>(mBuffer.mEnd - mBuffer.mBegin),
-      0u,
-      0u,
-      &mBank
+      mBuffer.mBegin, static_cast<std::int32_t>(mBuffer.mEnd - mBuffer.mBegin), 0u, 0u, &mBank
     );
     if (createResult < 0) {
       gpg::Warnf("Error loading soundbank '%s': %s", soundBankPath, moho::func_SoundErrorCodeToMsg(createResult));
@@ -695,7 +609,10 @@ namespace
    * Any failure while checking leaves retail's flags, so the result can only
    * differ from retail on a drive and bank that retail cannot stream.
    */
-  [[nodiscard]] DWORD ResolveStreamingWaveBankOpenFlags(const char* const resolvedPath, const gpg::StrArg waveBankPath)
+  [[nodiscard]] DWORD ResolveStreamingWaveBankOpenFlags(
+    const char* const resolvedPath,
+    const gpg::StrArg waveBankPath
+  )
   {
     const HANDLE file = ::CreateFileA(
       resolvedPath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr
@@ -711,17 +628,22 @@ namespace
     DWORD bytesRead = 0u;
     LARGE_INTEGER alignmentOffset{};
 
-    if (::GetFileInformationByHandleEx(file, FileStorageInfo, &storageInfo, sizeof(storageInfo)) &&
-        storageInfo.LogicalBytesPerSector != 0u &&
-        ::ReadFile(file, headerWords.data(), sizeof(headerWords), &bytesRead, nullptr) &&
-        bytesRead == sizeof(headerWords) && headerWords[0] == 0x444E4257u) {
+    if (
+      ::GetFileInformationByHandleEx(file, FileStorageInfo, &storageInfo, sizeof(storageInfo)) &&
+      storageInfo.LogicalBytesPerSector != 0u &&
+      ::ReadFile(file, headerWords.data(), sizeof(headerWords), &bytesRead, nullptr) &&
+      bytesRead == sizeof(headerWords) && headerWords[0] == 0x444E4257u
+    ) {
       alignmentOffset.QuadPart = static_cast<LONGLONG>(headerWords[3]) + 0x50;
-      if (::SetFilePointerEx(file, alignmentOffset, nullptr, FILE_BEGIN) &&
-          ::ReadFile(file, &alignment, sizeof(alignment), &bytesRead, nullptr) && bytesRead == sizeof(alignment) &&
-          alignment % storageInfo.LogicalBytesPerSector != 0u) {
+      if (
+        ::SetFilePointerEx(file, alignmentOffset, nullptr, FILE_BEGIN) &&
+        ::ReadFile(file, &alignment, sizeof(alignment), &bytesRead, nullptr) && bytesRead == sizeof(alignment) &&
+        alignment % storageInfo.LogicalBytesPerSector != 0u
+      ) {
         openFlags = FILE_FLAG_OVERLAPPED;
         gpg::Logf(
-          "SND: WaveBank '%s' is aligned to %u bytes and its drive reads %u-byte sectors; streaming it through the file cache",
+          "SND: WaveBank '%s' is aligned to %u bytes and its drive reads %u-byte sectors; streaming it through the "
+          "file cache",
           waveBankPath,
           alignment,
           static_cast<unsigned>(storageInfo.LogicalBytesPerSector)
@@ -747,10 +669,15 @@ namespace
    * `ResolveStreamingWaveBankOpenFlags`, which drops FILE_FLAG_NO_BUFFERING for
    * a bank its drive cannot read unbuffered.
    */
-  bool AudioStreamingWaveBankLoader::Load(const gpg::StrArg waveBankPath)
+  bool AudioStreamingWaveBankLoader::Load(
+    const gpg::StrArg waveBankPath
+  )
   {
     moho::FWaitHandleSet* const waitHandleSet = moho::FILE_GetWaitHandleSet();
-    if (waitHandleSet == nullptr || waitHandleSet->mHandle == nullptr || mEngine == nullptr || mEngine->mInstance == nullptr) {
+    if (
+      waitHandleSet == nullptr || waitHandleSet->mHandle == nullptr || mEngine == nullptr ||
+      mEngine->mInstance == nullptr
+    ) {
       gpg::Warnf("Error loading WaveBank '%s'", waveBankPath);
       return false;
     }
@@ -808,10 +735,15 @@ namespace
    * Memory-maps one non-streaming wave-bank file, creates one in-memory XACT
    * wave-bank lane from the mapped bytes, and stores the base filename.
    */
-  bool AudioInMemoryWaveBankLoader::Load(const gpg::StrArg waveBankPath)
+  bool AudioInMemoryWaveBankLoader::Load(
+    const gpg::StrArg waveBankPath
+  )
   {
     moho::FWaitHandleSet* const waitHandleSet = moho::FILE_GetWaitHandleSet();
-    if (waitHandleSet == nullptr || waitHandleSet->mHandle == nullptr || mEngine == nullptr || mEngine->mInstance == nullptr) {
+    if (
+      waitHandleSet == nullptr || waitHandleSet->mHandle == nullptr || mEngine == nullptr ||
+      mEngine->mInstance == nullptr
+    ) {
       return false;
     }
 
@@ -823,11 +755,7 @@ namespace
     }
 
     const int createResult = mEngine->mInstance->CreateInMemoryWaveBank(
-      mMappedBuffer.mBegin,
-      static_cast<std::int32_t>(mMappedBuffer.mEnd - mMappedBuffer.mBegin),
-      0u,
-      0u,
-      &mWaveBank
+      mMappedBuffer.mBegin, static_cast<std::int32_t>(mMappedBuffer.mEnd - mMappedBuffer.mBegin), 0u, 0u, &mWaveBank
     );
     if (createResult < 0) {
       gpg::Warnf("Error loading WaveBank '%s': %s", waveBankPath, moho::func_SoundErrorCodeToMsg(createResult));
@@ -835,11 +763,7 @@ namespace
     }
 
     mName = moho::FILE_Base(waveBankPath, true);
-    gpg::Debugf(
-      "SND: Loaded WaveBank '%s' at %p",
-      mName.c_str(),
-      static_cast<void*>(mWaveBank)
-    );
+    gpg::Debugf("SND: Loaded WaveBank '%s' at %p", mName.c_str(), static_cast<void*>(mWaveBank));
     return true;
   }
 
@@ -850,7 +774,9 @@ namespace
    * Opens one resolved wave-bank file, reads the header and metadata lanes,
    * and returns whether the metadata streaming bit (`bit0`) is set.
    */
-  [[nodiscard]] bool IsStreamingWaveBank(const gpg::StrArg waveBankPath)
+  [[nodiscard]] bool IsStreamingWaveBank(
+    const gpg::StrArg waveBankPath
+  )
   {
     moho::FWaitHandleSet* const waitHandleSet = moho::FILE_GetWaitHandleSet();
     if (waitHandleSet == nullptr || waitHandleSet->mHandle == nullptr || waveBankPath == nullptr) {
@@ -873,241 +799,12 @@ namespace
 
     const std::uint32_t metadataOffset = waveBankHeaderWords[3];
     (void)stream->VirtSeek(
-      gpg::Stream::ModeReceive,
-      gpg::Stream::OriginBegin,
-      static_cast<std::int64_t>(metadataOffset)
+      gpg::Stream::ModeReceive, gpg::Stream::OriginBegin, static_cast<std::int64_t>(metadataOffset)
     );
 
     std::array<std::uint8_t, 0x60> metadata{};
     reader.ReadExactArray(metadata.data(), metadata.size());
     return (metadata[0] & 0x01u) != 0u;
-  }
-
-  /**
-   * Address: 0x004DDFE0 (FUN_004DDFE0)
-   *
-   * What it does:
-   * Allocates one contiguous array of `AudioEngineRef` elements (8 bytes
-   * each on x86) and raises `std::bad_alloc` when element-count
-   * multiplication overflows.
-   */
-  [[nodiscard]] void* AllocateAudioEngineRefArrayChecked(const std::uint32_t elementCount)
-  {
-    constexpr std::size_t kElementBytes = sizeof(moho::AudioEngineRef);
-    if (elementCount != 0u && (std::numeric_limits<std::uint32_t>::max() / elementCount) < kElementBytes) {
-      throw std::bad_alloc{};
-    }
-
-    return operator new(static_cast<std::size_t>(elementCount) * kElementBytes);
-  }
-
-  /**
-   * Address: 0x004DD210 (FUN_004DD210)
-   *
-   * What it does:
-   * Stores one `AudioEngineRef*` advanced by one element index.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::AudioEngineRef** ComputeAudioEngineRefOffset(
-    moho::AudioEngineRef** const outSlot,
-    moho::AudioEngineRef* const* const base,
-    const int index
-  ) noexcept
-  {
-    *outSlot = *base + index;
-    return outSlot;
-  }
-
-  [[maybe_unused]] void ReserveEngineRefCapacity(moho::AudioEngineRefVector& engines, const std::size_t requiredCount)
-  {
-    const std::size_t currentCount =
-      engines.mStart == nullptr || engines.mFinish == nullptr ? 0u : static_cast<std::size_t>(engines.mFinish - engines.mStart);
-    const std::size_t currentCapacity = engines.mStart == nullptr || engines.mCapacity == nullptr
-      ? 0u
-      : static_cast<std::size_t>(engines.mCapacity - engines.mStart);
-    if (requiredCount <= currentCapacity) {
-      return;
-    }
-
-    const std::size_t targetCapacity = (std::max)(requiredCount, currentCapacity == 0u ? 4u : currentCapacity * 2u);
-    if (targetCapacity > std::numeric_limits<std::uint32_t>::max()) {
-      throw std::bad_alloc{};
-    }
-
-    auto* const newStorage = static_cast<moho::AudioEngineRef*>(
-      AllocateAudioEngineRefArrayChecked(static_cast<std::uint32_t>(targetCapacity))
-    );
-    if (currentCount != 0u) {
-      // Trivially relocatable element array copy in the owning array's growth path.
-      std::memcpy(newStorage, engines.mStart, currentCount * sizeof(moho::AudioEngineRef));
-    }
-
-    operator delete(engines.mStart);
-    engines.mStart = newStorage;
-    engines.mFinish = newStorage + currentCount;
-    engines.mCapacity = newStorage + targetCapacity;
-  }
-
-  [[nodiscard]] const boost::SharedPtrLayout<moho::AudioEngine>&
-  AsSharedLayout(const boost::shared_ptr<moho::AudioEngine>& value)
-  {
-    return *reinterpret_cast<const boost::SharedPtrLayout<moho::AudioEngine>*>(&value);
-  }
-
-  static_assert(sizeof(moho::AudioEngineRef) == sizeof(boost::SharedCountPair), "AudioEngineRef size must match SharedCountPair");
-
-  [[nodiscard]] boost::SharedCountPair* AsSharedCountPair(moho::AudioEngineRef* const ref) noexcept
-  {
-    return reinterpret_cast<boost::SharedCountPair*>(ref);
-  }
-
-  [[nodiscard]] const boost::SharedCountPair* AsSharedCountPair(const moho::AudioEngineRef* const ref) noexcept
-  {
-    return reinterpret_cast<const boost::SharedCountPair*>(ref);
-  }
-
-  /**
-   * Address: 0x004D9230 (FUN_004D9230)
-   *
-   * What it does:
-   * Copies one `shared_ptr<AudioEngine>` layout from one stored engine-ref
-   * lane and retains the shared control block when present.
-   */
-  [[nodiscard]] boost::shared_ptr<moho::AudioEngine> CopyEngineRefShared(const moho::AudioEngineRef& ref)
-  {
-    boost::shared_ptr<moho::AudioEngine> result;
-    auto& view = *reinterpret_cast<boost::SharedPtrLayout<moho::AudioEngine>*>(&result);
-    view.px = ref.mEngine;
-    view.pi = ref.mControl;
-    if (view.pi != nullptr) {
-      view.pi->add_ref_copy();
-    }
-    return result;
-  }
-
-  /**
-   * Address: 0x004DC3B0 (FUN_004DC3B0)
-   *
-   * What it does:
-   * Inserts one shared audio-engine pair at the requested vector position,
-   * shifting existing lanes or reallocating storage as needed while preserving
-   * shared-control retain/release semantics.
-   */
-  void InsertAudioEngineRefAt(
-    moho::AudioEngineRefVector& refs,
-    moho::AudioEngineRef* insertAt,
-    const boost::shared_ptr<moho::AudioEngine>& engineRef
-  )
-  {
-    constexpr std::size_t kMaxAudioEngineRefs = 0x1FFFFFFFu;
-
-    const auto& incoming = AsSharedLayout(engineRef);
-    struct SharedPairRetainGuard
-    {
-      boost::SharedCountPair value;
-      ~SharedPairRetainGuard()
-      {
-        if (value.pi != nullptr) {
-          value.pi->release();
-        }
-      }
-    } retained{{incoming.px, incoming.pi}};
-    if (retained.value.pi != nullptr) {
-      retained.value.pi->add_ref_copy();
-    }
-
-    const std::size_t size =
-      refs.mStart == nullptr || refs.mFinish == nullptr ? 0u : static_cast<std::size_t>(refs.mFinish - refs.mStart);
-    const std::size_t capacity =
-      refs.mStart == nullptr || refs.mCapacity == nullptr ? 0u : static_cast<std::size_t>(refs.mCapacity - refs.mStart);
-
-    if (size >= kMaxAudioEngineRefs) {
-      throw std::length_error("vector<T> too long");
-    }
-
-    std::size_t insertIndex = size;
-    if (refs.mStart != nullptr && insertAt != nullptr) {
-      insertIndex = static_cast<std::size_t>(insertAt - refs.mStart);
-      if (insertIndex > size) {
-        insertIndex = size;
-      }
-    }
-
-    if (size < capacity && refs.mStart != nullptr) {
-      moho::AudioEngineRef* const position = refs.mStart + insertIndex;
-      if (position != refs.mFinish) {
-        for (moho::AudioEngineRef* dst = refs.mFinish; dst != position; --dst) {
-          moho::AudioEngineRef* const src = dst - 1;
-          if (dst != refs.mFinish && dst->mControl != nullptr) {
-            dst->mControl->release();
-          }
-          dst->mEngine = src->mEngine;
-          dst->mControl = src->mControl;
-          if (dst->mControl != nullptr) {
-            dst->mControl->add_ref_copy();
-          }
-        }
-
-        if (position->mControl != nullptr) {
-          position->mControl->release();
-        }
-      }
-
-      position->mEngine = static_cast<moho::AudioEngine*>(retained.value.px);
-      position->mControl = retained.value.pi;
-      if (position->mControl != nullptr) {
-        position->mControl->add_ref_copy();
-      }
-      ++refs.mFinish;
-      return;
-    }
-
-    std::size_t newCapacity = 0u;
-    if (kMaxAudioEngineRefs - (capacity >> 1u) >= capacity) {
-      newCapacity = capacity + (capacity >> 1u);
-    }
-    if (newCapacity < size + 1u) {
-      newCapacity = size + 1u;
-    }
-    if (newCapacity > kMaxAudioEngineRefs) {
-      throw std::length_error("vector<T> too long");
-    }
-
-    auto* const newStorage = static_cast<moho::AudioEngineRef*>(
-      AllocateAudioEngineRefArrayChecked(static_cast<std::uint32_t>(newCapacity))
-    );
-
-    moho::AudioEngineRef* write = newStorage;
-    for (std::size_t i = 0; i < insertIndex; ++i, ++write) {
-      write->mEngine = refs.mStart[i].mEngine;
-      write->mControl = refs.mStart[i].mControl;
-      if (write->mControl != nullptr) {
-        write->mControl->add_ref_copy();
-      }
-    }
-
-    write->mEngine = static_cast<moho::AudioEngine*>(retained.value.px);
-    write->mControl = retained.value.pi;
-    if (write->mControl != nullptr) {
-      write->mControl->add_ref_copy();
-    }
-    ++write;
-
-    for (std::size_t i = insertIndex; i < size; ++i, ++write) {
-      write->mEngine = refs.mStart[i].mEngine;
-      write->mControl = refs.mStart[i].mControl;
-      if (write->mControl != nullptr) {
-        write->mControl->add_ref_copy();
-      }
-    }
-
-    if (refs.mStart != nullptr) {
-      (void)ReleaseAudioEngineRefControlRange(refs.mStart, refs.mFinish);
-      operator delete(refs.mStart);
-    }
-
-    refs.mStart = newStorage;
-    refs.mFinish = newStorage + size + 1u;
-    refs.mCapacity = newStorage + newCapacity;
   }
 
   /**
@@ -1118,46 +815,14 @@ namespace
    * engine vector, growing storage and retaining shared ownership as needed.
    */
   void RegisterEngineRef(
-    moho::SoundConfiguration& configuration, const boost::shared_ptr<moho::AudioEngine>& engineRef
+    moho::SoundConfiguration& configuration,
+    const std::shared_ptr<moho::AudioEngine>& engineRef
   )
   {
-    const auto& engineLayout = AsSharedLayout(engineRef);
-    if (engineLayout.px == nullptr) {
+    if (engineRef.get() == nullptr) {
       return;
     }
-
-    moho::AudioEngineRefVector& engines = configuration.mEngines;
-    InsertAudioEngineRefAt(engines, engines.mFinish, engineRef);
-  }
-
-  /**
-   * Address: 0x004DB240 (FUN_004DB240)
-   *
-   * What it does:
-   * Erases one `AudioEngineRef` lane at `eraseAt` by shifting the tail
-   * `[eraseAt + 1, mFinish)` left, releasing the final duplicated control lane,
-   * decrementing `mFinish`, and returning/storing the next iterator lane.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::AudioEngineRef** EraseAudioEngineRefAndStoreNext(
-    moho::AudioEngineRefVector& refs,
-    moho::AudioEngineRef** const outNext,
-    moho::AudioEngineRef* const eraseAt
-  )
-  {
-    const moho::AudioEngineRef* const oldFinish = refs.mFinish;
-    boost::SharedCountPair* destination = AsSharedCountPair(eraseAt);
-    const boost::SharedCountPair* source = AsSharedCountPair(eraseAt + 1);
-    const boost::SharedCountPair* const sourceEnd = AsSharedCountPair(oldFinish);
-    while (source != sourceEnd) {
-      (void)boost::AssignSharedPairRetain(destination, source);
-      ++destination;
-      ++source;
-    }
-
-    (void)ReleaseAudioEngineRefControlRange(refs.mFinish - 1, refs.mFinish);
-    refs.mFinish -= 1;
-    *outNext = eraseAt;
-    return outNext;
+    configuration.mEngines.push_back(engineRef);
   }
 
   /**
@@ -1167,7 +832,10 @@ namespace
    * Stores one replacement `AudioEngineImpl*` lane and destroys the previously
    * installed implementation object when present.
    */
-  void ReplaceAudioEngineImplPointer(moho::AudioEngineImpl*& destination, moho::AudioEngineImpl* const replacement)
+  void ReplaceAudioEngineImplPointer(
+    moho::AudioEngineImpl*& destination,
+    moho::AudioEngineImpl* const replacement
+  )
   {
     moho::AudioEngineImpl* const previous = destination;
     destination = replacement;
@@ -1208,7 +876,10 @@ namespace
    * Applies one mute/unmute transition for the `"Global"` category on one
    * active engine implementation and stores/restores the cached global volume.
    */
-  void ApplyGlobalMuteToEngine(moho::AudioEngineImpl& impl, const bool doMute)
+  void ApplyGlobalMuteToEngine(
+    moho::AudioEngineImpl& impl,
+    const bool doMute
+  )
   {
     if (impl.mInstance == nullptr || impl.mEngine == nullptr) {
       return;
@@ -1227,7 +898,9 @@ namespace
    * active XACT sound-bank lane, resets the filename string to empty SSO
    * state, and releases the shared mem-buffer control lane.
    */
-  void DestroyAudioSoundBankLoaderNoDelete(AudioSoundBankLoader* const loader) noexcept
+  void DestroyAudioSoundBankLoaderNoDelete(
+    AudioSoundBankLoader* const loader
+  ) noexcept
   {
     if (loader == nullptr) {
       return;
@@ -1244,10 +917,7 @@ namespace
     loader->mName.mySize = 0u;
     loader->mName.bx.buf[0] = '\0';
 
-    auto& bufferOwner = reinterpret_cast<boost::SharedPtrLayout<char>&>(loader->mBuffer.mData);
-    if (bufferOwner.pi != nullptr) {
-      bufferOwner.pi->release();
-    }
+    loader->mBuffer.mData.reset();
   }
 
   /**
@@ -1319,7 +989,10 @@ namespace
    * What it does:
    * Destroys one contiguous range of audio sound-bank loader pointers.
    */
-  void DeleteSoundBankLoaders(void** const first, void** const last) noexcept
+  void DeleteSoundBankLoaders(
+    void** const first,
+    void** const last
+  ) noexcept
   {
     if (first == nullptr || last == nullptr) {
       return;
@@ -1359,7 +1032,10 @@ namespace
    * and a `*cursor = nullptr` writeback. There is no `mov [esi], 0` anywhere
    * in the body -- the caller clears the vector on the next line.
    */
-  void DeleteWaveBankLoaders(void** const first, void** const last) noexcept
+  void DeleteWaveBankLoaders(
+    void** const first,
+    void** const last
+  ) noexcept
   {
     if (first == nullptr || last == nullptr) {
       return;
@@ -1370,7 +1046,10 @@ namespace
     }
   }
 
-  [[nodiscard]] Wm3::Vec3f NormalizeOrDefault(Wm3::Vec3f value, const Wm3::Vec3f& fallback)
+  [[nodiscard]] Wm3::Vec3f NormalizeOrDefault(
+    Wm3::Vec3f value,
+    const Wm3::Vec3f& fallback
+  )
   {
     if (Wm3::Vec3f::LengthSq(value) <= 1.0e-8f) {
       return fallback;
@@ -1380,7 +1059,11 @@ namespace
     return value;
   }
 
-  [[nodiscard]] Wm3::Quatf QuaternionFromBasis(const Wm3::Vec3f& right, const Wm3::Vec3f& up, const Wm3::Vec3f& forward)
+  [[nodiscard]] Wm3::Quatf QuaternionFromBasis(
+    const Wm3::Vec3f& right,
+    const Wm3::Vec3f& up,
+    const Wm3::Vec3f& forward
+  )
   {
     const float m00 = right.x;
     const float m01 = up.x;
@@ -1424,7 +1107,9 @@ namespace
     return out;
   }
 
-  [[nodiscard]] Wm3::Quatf BuildListenerOrientation(const moho::Audio3DListener& listener)
+  [[nodiscard]] Wm3::Quatf BuildListenerOrientation(
+    const moho::Audio3DListener& listener
+  )
   {
     Wm3::Vec3f forward{listener.mOrientFront.x, listener.mOrientFront.y, listener.mOrientFront.z};
     Wm3::Vec3f top{listener.mOrientTop.x, listener.mOrientTop.y, listener.mOrientTop.z};
@@ -1450,7 +1135,10 @@ namespace
    * Applies one X3DAudio matrix and per-cue runtime variables (`Distance`,
    * `DopplerPitchScalar`, `OrientationAngle`) to the target cue.
    */
-  int ApplySettingsToCue(const moho::Audio3DDspSettings* settings, moho::IXACTCue* cue)
+  int ApplySettingsToCue(
+    const moho::Audio3DDspSettings* settings,
+    moho::IXACTCue* cue
+  )
   {
     if (settings == nullptr || cue == nullptr) {
       return static_cast<int>(0x80004003u);
@@ -1483,6 +1171,8 @@ namespace moho
 {
   namespace
   {
+#if FAFRE_PLATFORM_WINDOWS
+    // XACT's COM class and interface ids, for CoCreateInstance; the Linux client has FAudio (#258).
     const IID kXactAuditionComInterfaceClsid =
       {0xcedde475u, 0x50b5u, 0x47efu, {0x91u, 0xa7u, 0x3bu, 0x49u, 0xa0u, 0xe8u, 0xe5u, 0x88u}};
     const IID kXactDebugComInterfaceClsid =
@@ -1491,6 +1181,7 @@ namespace moho
       {0x343e68e6u, 0x8f82u, 0x4a8du, {0xa2u, 0xdau, 0x6eu, 0x9au, 0x94u, 0x4bu, 0x37u, 0x8cu}};
     const IID kXactComInterfaceRiid =
       {0x893ff2e4u, 0x8d03u, 0x4d5fu, {0xb0u, 0xaau, 0x36u, 0x3au, 0x9cu, 0xbbu, 0xf4u, 0x37u}};
+#endif
   } // namespace
 
   /**
@@ -1500,9 +1191,22 @@ namespace moho
    * Chooses XACT engine CLSID from debug/audition mode + optional
    * `HKLM\\Software\\Microsoft\\XACT\\DebugEngine`, creates the COM instance,
    * and retries with retail CLSID when debug creation fails.
+   *
+   * FAF addition: `outEngineClass` receives the class that was created (null
+   * on the Linux client), for `SND_InstallXactClock`.
    */
-  int func_CreateXACTinstance(const std::uint32_t mode, void** const outEngine)
+  int func_CreateXACTinstance(
+    const std::uint32_t mode,
+    void** const outEngine,
+    const GUID** const outEngineClass
+  )
   {
+    *outEngineClass = nullptr;
+#if !FAFRE_PLATFORM_WINDOWS
+    // The Linux client (issue #258): XACT on FAudio's FACT; it has no debug or audition engine.
+    (void)mode;
+    return platform::posix::CreateXactEngineOverFact(outEngine);
+#else
     std::uint32_t debug = (mode >> 1u) & 1u;
     const std::uint32_t audition = mode & 1u;
     const std::uint32_t auditionMode = audition;
@@ -1522,14 +1226,8 @@ namespace moho
         selectedClsid = &kXactComInterfaceClsid;
       } else {
         if (
-          RegQueryValueExW(
-            openedKey,
-            L"DebugEngine",
-            nullptr,
-            &type,
-            reinterpret_cast<LPBYTE>(&data),
-            &cbData
-          ) == ERROR_SUCCESS
+          RegQueryValueExW(openedKey, L"DebugEngine", nullptr, &type, reinterpret_cast<LPBYTE>(&data), &cbData) ==
+          ERROR_SUCCESS
         ) {
           debug = (data != 0u) ? 1u : 0u;
         }
@@ -1540,9 +1238,12 @@ namespace moho
 
     int result = CoCreateInstance(*selectedClsid, nullptr, CLSCTX_INPROC_SERVER, kXactComInterfaceRiid, outEngine);
     if (result < 0 && debug != 0u && auditionMode == 0u) {
-      result = CoCreateInstance(kXactComInterfaceClsid, nullptr, CLSCTX_INPROC_SERVER, kXactComInterfaceRiid, outEngine);
+      selectedClsid = &kXactComInterfaceClsid;
+      result = CoCreateInstance(*selectedClsid, nullptr, CLSCTX_INPROC_SERVER, kXactComInterfaceRiid, outEngine);
     }
+    *outEngineClass = selectedClsid;
     return result;
+#endif
   }
 
   void func_RetreiveXACTCOMInterface(AudioEngineImpl* impl);
@@ -1571,8 +1272,14 @@ namespace moho
   /// startup on "Run-Time Check Failure #2 - Stack around the variable
   /// 'finalMixFormat' was corrupted". The asserts below are kept because that
   /// is the failure they catch.
-  static_assert(offsetof(WAVEFORMATEXTENSIBLE, dwChannelMask) == 0x14, "WAVEFORMATEXTENSIBLE::dwChannelMask offset must be 0x14");
-  static_assert(offsetof(WAVEFORMATEXTENSIBLE, SubFormat) == 0x18, "WAVEFORMATEXTENSIBLE::SubFormat offset must be 0x18");
+  static_assert(
+    offsetof(WAVEFORMATEXTENSIBLE, dwChannelMask) == 0x14,
+    "WAVEFORMATEXTENSIBLE::dwChannelMask offset must be 0x14"
+  );
+  static_assert(
+    offsetof(WAVEFORMATEXTENSIBLE, SubFormat) == 0x18,
+    "WAVEFORMATEXTENSIBLE::SubFormat offset must be 0x18"
+  );
   static_assert(sizeof(WAVEFORMATEXTENSIBLE) == 0x28, "WAVEFORMATEXTENSIBLE size must be 0x28");
 
   /**
@@ -1582,7 +1289,10 @@ namespace moho
    * Reads XACT global `SpeedOfSound`, fetches final mix speaker-channel mask,
    * and initializes the 3D-audio handle with those two lanes.
    */
-  int func_AudioInitialize(IXACTEngine* const engine, void* const audioHandle)
+  int func_AudioInitialize(
+    IXACTEngine* const engine,
+    void* const audioHandle
+  )
   {
     if (engine == nullptr) {
       return kHresultPointer;
@@ -1629,7 +1339,9 @@ namespace moho
    * Chooses XACT creation mode from `/xactdebug` + audition settings, creates
    * the engine COM instance, and throws `XAudioError` on failure.
    */
-  void func_RetreiveXACTCOMInterface(AudioEngineImpl* const impl)
+  void func_RetreiveXACTCOMInterface(
+    AudioEngineImpl* const impl
+  )
   {
     if (impl == nullptr) {
       return;
@@ -1642,18 +1354,20 @@ namespace moho
       mode = 1u;
     }
 
-    const int errorCode = func_CreateXACTinstance(mode, reinterpret_cast<void**>(&impl->mInstance));
+    const GUID* engineClass = nullptr;
+    const int errorCode = func_CreateXACTinstance(mode, reinterpret_cast<void**>(&impl->mInstance), &engineClass);
     if (errorCode < 0) {
       const char* const errorMessage = func_SoundErrorCodeToMsg(errorCode);
-      const fa::string fullMessage =
-        gpg::STR_Printf("SND: Error retrieving XACT COM interface. %s", errorMessage ? errorMessage : "Unknown XACT Error");
+      const fa::string fullMessage = gpg::STR_Printf(
+        "SND: Error retrieving XACT COM interface. %s", errorMessage ? errorMessage : "Unknown XACT Error"
+      );
       throw XAudioError(fullMessage.c_str());
     }
 
     // FAF addition, not in the shipped binary: XACT 2.9 stops working after
     // 24.86 days of Windows uptime; give it a clock that starts with the game.
     if (impl->mInstance != nullptr) {
-      SND_InstallXactClock(*impl->mInstance);
+      SND_InstallXactClock(engineClass);
     }
   }
 
@@ -1671,7 +1385,10 @@ namespace moho
    * file that isn't in memory takes about 12 ms alone and under 2 ms with 8 threads. Only file reads
    * run on the threads: no audio call, and no mounted file system lookup.
    */
-  void ReadSoundBanksAhead(CVirtualFileSystem& fileSystem, const gpg::StrArg voicePath)
+  void ReadSoundBanksAhead(
+    CVirtualFileSystem& fileSystem,
+    const gpg::StrArg voicePath
+  )
   {
     static const bool startupOff = CFG_GetArgOption("/nosndreadahead", 0u, nullptr);
     if (!snd_ReadAhead || startupOff) {
@@ -1695,7 +1412,13 @@ namespace moho
       std::vector<char> buffer(64u * 1024u);
       for (std::size_t index = nextPath++; index < diskPaths.size(); index = nextPath++) {
         const HANDLE file = ::CreateFileA(
-          diskPaths[index].c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr
+          diskPaths[index].c_str(),
+          GENERIC_READ,
+          FILE_SHARE_READ,
+          nullptr,
+          OPEN_EXISTING,
+          FILE_FLAG_SEQUENTIAL_SCAN,
+          nullptr
         );
         if (file != INVALID_HANDLE_VALUE) {
           DWORD bytesRead = 0u;
@@ -1731,7 +1454,10 @@ namespace moho
    * voice-path lane, constructs the corresponding loader objects, loads each
    * bank, and appends successful resources into `mHandles`/`mBanks`.
    */
-  void func_LoadSoundPath(AudioEngineImpl* const impl, const gpg::StrArg voicePath)
+  void func_LoadSoundPath(
+    AudioEngineImpl* const impl,
+    const gpg::StrArg voicePath
+  )
   {
     if (impl == nullptr || voicePath == nullptr) {
       return;
@@ -1747,14 +1473,9 @@ namespace moho
     fa::vector<fa::string> waveBankPaths{};
     waitHandleSet->mHandle->EnumerateFiles(voicePath, "*.xwb", false, &waveBankPaths);
 
-
     for (const fa::string& waveBankPath : waveBankPaths) {
       const bool streamingWaveBank = IsStreamingWaveBank(waveBankPath.c_str());
-      gpg::Logf(
-        "IsStreamingWaveBank(\"%s\") => %s",
-        waveBankPath.c_str(),
-        streamingWaveBank ? "true" : "false"
-      );
+      gpg::Logf("IsStreamingWaveBank(\"%s\") => %s", waveBankPath.c_str(), streamingWaveBank ? "true" : "false");
 
       AudioWaveBankLoaderBase* waveBankLoader = nullptr;
       if (streamingWaveBank) {
@@ -1778,7 +1499,6 @@ namespace moho
 
     fa::vector<fa::string> soundBankPaths{};
     waitHandleSet->mHandle->EnumerateFiles(voicePath, "*.xsb", false, &soundBankPaths);
-
 
     for (const fa::string& soundBankPath : soundBankPaths) {
       auto* soundBankLoader = new (std::nothrow) AudioSoundBankLoader{};
@@ -1804,7 +1524,9 @@ namespace moho
    * What it does:
    * Translates XACT/HRESULT error codes into user-facing warning strings.
    */
-  const char* func_SoundErrorCodeToMsg(const int errorCode)
+  const char* func_SoundErrorCodeToMsg(
+    const int errorCode
+  )
   {
     const std::uint32_t code = static_cast<std::uint32_t>(errorCode);
     switch (code) {
@@ -1945,7 +1667,10 @@ namespace moho
 
   namespace
   {
-    void RegisterNotificationOrWarn(AudioEngineImpl* const impl, const std::uint8_t notificationType)
+    void RegisterNotificationOrWarn(
+      AudioEngineImpl* const impl,
+      const std::uint8_t notificationType
+    )
     {
       if (impl == nullptr || impl->mInstance == nullptr) {
         return;
@@ -1988,8 +1713,7 @@ namespace moho
     , mRuntimeParams{}
     , mAudition(0u)
     , mReserved59{}
-  {
-  }
+  {}
 
   /**
    * Address: 0x004D9250 (FUN_004D9250, ??1struct_SoundConfig@@QAE@@Z)
@@ -2001,19 +1725,17 @@ namespace moho
    */
   SoundConfiguration::~SoundConfiguration()
   {
-    if (mEngines.mStart != nullptr && mEngines.mFinish != nullptr) {
-      for (AudioEngineRef* entry = mEngines.mStart; entry != mEngines.mFinish; ++entry) {
-        AudioEngine* const engine = entry->mEngine;
-        if (engine == nullptr) {
-          continue;
-        }
+    for (const std::shared_ptr<AudioEngine>& entry : mEngines) {
+      AudioEngine* const engine = entry.get();
+      if (engine == nullptr) {
+        continue;
+      }
 
-        AudioEngineImpl* const impl = engine->mImpl;
-        engine->mImpl = nullptr;
-        if (impl != nullptr) {
-          impl->~AudioEngineImpl();
-          operator delete(impl);
-        }
+      AudioEngineImpl* const impl = engine->mImpl;
+      engine->mImpl = nullptr;
+      if (impl != nullptr) {
+        impl->~AudioEngineImpl();
+        operator delete(impl);
       }
     }
 
@@ -2022,41 +1744,24 @@ namespace moho
       mAudioModule = nullptr;
     }
 
-    if (mEngines.mStart != nullptr) {
-      for (AudioEngineRef* entry = mEngines.mStart; entry != mEngines.mFinish; ++entry) {
-        auto* const control = entry->mControl;
-        if (control != nullptr) {
-          control->release();
-        }
-        entry->mEngine = nullptr;
-        entry->mControl = nullptr;
-      }
-      operator delete[](mEngines.mStart);
-    }
-
-    mEngines.mAllocatorCookie = nullptr;
-    mEngines.mStart = nullptr;
-    mEngines.mFinish = nullptr;
-    mEngines.mCapacity = nullptr;
+    // The engine references are released, and the storage freed, by `mEngines`' own destructor.
   }
 
   std::uint32_t SoundConfiguration::EngineCount() const
   {
-    if (mEngines.mStart == nullptr || mEngines.mFinish == nullptr) {
-      return 0u;
-    }
-
-    return static_cast<std::uint32_t>(mEngines.mFinish - mEngines.mStart);
+    return static_cast<std::uint32_t>(mEngines.size());
   }
 
-  AudioEngineImpl* SoundConfiguration::EngineImplAt(const std::uint32_t index) const
+  AudioEngineImpl* SoundConfiguration::EngineImplAt(
+    const std::uint32_t index
+  ) const
   {
     const std::uint32_t engineCount = EngineCount();
     if (index >= engineCount) {
       return nullptr;
     }
 
-    AudioEngine* const engine = mEngines.mStart[index].mEngine;
+    AudioEngine* const engine = mEngines[index].get();
     if (engine == nullptr) {
       return nullptr;
     }
@@ -2072,7 +1777,9 @@ namespace moho
    * variable-value changes, GUI connect/disconnect signals, and wavebank
    * streaming state changes.
    */
-  void __stdcall func_HandleSoundEvent(const AudioNotification* const eventDataBytes)
+  void __stdcall func_HandleSoundEvent(
+    const AudioNotification* const eventDataBytes
+  )
   {
     if (eventDataBytes == nullptr) {
       return;
@@ -2132,17 +1839,14 @@ namespace moho
   {
     sSoundConfiguration.reset(new SoundConfiguration());
 
-    sSoundConfiguration->mAudition = static_cast<std::uint8_t>(
-      moho::CFG_GetArgOption("/audition", 0u, nullptr) ? 1u : 0u
-    );
-    sSoundConfiguration->mNoSound = static_cast<std::uint8_t>(
-      moho::CFG_GetArgOption("/nosound", 0u, nullptr) ? 1u : 0u
-    );
+    sSoundConfiguration->mAudition =
+      static_cast<std::uint8_t>(moho::CFG_GetArgOption("/audition", 0u, nullptr) ? 1u : 0u);
+    sSoundConfiguration->mNoSound =
+      static_cast<std::uint8_t>(moho::CFG_GetArgOption("/nosound", 0u, nullptr) ? 1u : 0u);
 
     if (sSoundConfiguration->mNoSound == 0u) {
       sSoundConfiguration->mRuntimeParams.lookAheadTime = 250u;
-      sSoundConfiguration->mRuntimeParams.fnNotificationCallback =
-        &moho::func_HandleSoundEvent;
+      sSoundConfiguration->mRuntimeParams.fnNotificationCallback = &moho::func_HandleSoundEvent;
       sSoundConfiguration->mRuntimeParams.globalSettingsFlags = 0u;
 
       moho::FWaitHandleSet* const waitHandleSet = moho::FILE_GetWaitHandleSet();
@@ -2155,43 +1859,47 @@ namespace moho
 
       if (sSoundConfiguration->mGlobalSettingsBuffer.mBegin != nullptr) {
         sSoundConfiguration->mRuntimeParams.globalSettingsBufferSize = static_cast<std::uint32_t>(
-          sSoundConfiguration->mGlobalSettingsBuffer.mEnd -
-          sSoundConfiguration->mGlobalSettingsBuffer.mBegin
+          sSoundConfiguration->mGlobalSettingsBuffer.mEnd - sSoundConfiguration->mGlobalSettingsBuffer.mBegin
         );
-        sSoundConfiguration->mRuntimeParams.pGlobalSettingsBuffer =
-          sSoundConfiguration->mGlobalSettingsBuffer.mBegin;
+        sSoundConfiguration->mRuntimeParams.pGlobalSettingsBuffer = sSoundConfiguration->mGlobalSettingsBuffer.mBegin;
       }
     }
 
+#if !FAFRE_PLATFORM_WINDOWS
+    // The Linux client (issue #258) has no DirectSound to ask: stereo, the default the Windows
+    // code falls back to as well. The cues' matrices follow FAudio's final mix format.
+    sSoundConfiguration->mSpeakerConfiguration = 3u;
+#else
     LPDIRECTSOUND directSound = nullptr;
     if (::DirectSoundCreate(nullptr, &directSound, nullptr) >= 0) {
       DWORD speakerConfig = 0;
       directSound->GetSpeakerConfig(&speakerConfig);
       switch (static_cast<std::uint8_t>(speakerConfig)) {
-        case 0u:
-        case 1u:
-        case 2u:
-        case 3u:
-        case 4u:
-        case 5u:
-        case 7u:
-          sSoundConfiguration->mSpeakerConfiguration = 3u;
-          break;
-        case 6u:
-          sSoundConfiguration->mSpeakerConfiguration = 63u;
-          break;
-        default:
-          gpg::Warnf(
-            "Unknown DirectSound speaker configuration %i. Defaulting to Stereo.",
-            static_cast<unsigned>(static_cast<std::uint8_t>(speakerConfig))
-          );
-          sSoundConfiguration->mSpeakerConfiguration = 3u;
-          break;
+      case 0u:
+      case 1u:
+      case 2u:
+      case 3u:
+      case 4u:
+      case 5u:
+      case 7u:
+        sSoundConfiguration->mSpeakerConfiguration = 3u;
+        break;
+      case 6u:
+        sSoundConfiguration->mSpeakerConfiguration = 63u;
+        break;
+      default:
+        gpg::Warnf(
+          "Unknown DirectSound speaker configuration %i. Defaulting to Stereo.",
+          static_cast<unsigned>(static_cast<std::uint8_t>(speakerConfig))
+        );
+        sSoundConfiguration->mSpeakerConfiguration = 3u;
+        break;
       }
       directSound->Release();
     } else {
       gpg::Warnf("Failed to create DirectSound.");
     }
+#endif
   }
 
   /**
@@ -2203,24 +1911,6 @@ namespace moho
   void SND_Shutdown()
   {
     sSoundConfiguration.reset();
-  }
-
-  /**
-   * Address: 0x004D8F10 (FUN_004D8F10, ?SND_Enabled@Moho@@YA_NXZ)
-   *
-   * What it does:
-   * Reports whether at least one audio engine is loaded and no-sound mode is
-   * disabled.
-   */
-  bool SND_Enabled()
-  {
-    const SoundConfiguration* const configuration = GetSoundConfigurationSingletonA();
-    if (configuration == nullptr) {
-      return false;
-    }
-
-    const AudioEngineRef* const begin = configuration->mEngines.mStart;
-    return begin != nullptr && configuration->mEngines.mFinish != begin && configuration->mNoSound == 0u;
   }
 
   /**
@@ -2244,8 +1934,12 @@ namespace moho
 
       if (AudioEngineImpl* const impl = configuration->EngineImplAt(index);
           impl != nullptr && impl->mInstance != nullptr) {
+#if FAFRE_PLATFORM_WINDOWS
         const int workResult = impl->mInstance->DoWork();
         RecoverAudioOutput(*impl, workResult);
+#else
+        impl->mInstance->DoWork();
+#endif
         configuration = GetSoundConfigurationSingletonB();
       }
     }
@@ -2279,8 +1973,43 @@ namespace moho
    * Stores/restores per-engine "Global" category volume while applying
    * process-wide mute transitions.
    */
-  void SND_Mute(const bool doMute)
+  void SND_Mute(
+    const bool doMute
+  )
   {
+    SND_MuteFor(kSndMuteMinimized, doMute);
+  }
+
+  namespace
+  {
+    std::uint32_t sMuteReasons = 0;
+    std::uint32_t sMuteTransitions = 0;
+  } // namespace
+
+  std::uint32_t SND_MuteReasons()
+  {
+    return sMuteReasons;
+  }
+
+  std::uint32_t SND_MuteTransitions()
+  {
+    return sMuteTransitions;
+  }
+
+  void SND_MuteFor(
+    const std::uint32_t reason,
+    const bool on
+  )
+  {
+    // The binary's SND_Mute body, run only when the muted state changes: with two reasons (minimized, the editor's
+    // unfocused window), muting twice would save the first mute's zero as the volume to give back.
+    const bool wasMuted = sMuteReasons != 0;
+    sMuteReasons = on ? (sMuteReasons | reason) : (sMuteReasons & ~reason);
+    const bool doMute = sMuteReasons != 0;
+    if (doMute == wasMuted) {
+      return;
+    }
+    ++sMuteTransitions;
     SoundConfiguration* configuration = GetSoundConfigurationSingletonB();
     if (configuration == nullptr) {
       return;
@@ -2309,19 +2038,21 @@ namespace moho
    * What it does:
    * Resolves one global XACT variable index from the active primary engine.
    */
-  bool SND_GetGlobalVarIndex(const gpg::StrArg variableName, std::uint16_t* const outVarIndex)
+  bool SND_GetGlobalVarIndex(
+    const gpg::StrArg variableName,
+    std::uint16_t* const outVarIndex
+  )
   {
     if (outVarIndex == nullptr) {
       return false;
     }
 
     const SoundConfiguration* const configuration = sSoundConfiguration.get();
-    if (configuration == nullptr || configuration->mEngines.mStart == nullptr ||
-        configuration->mEngines.mStart == configuration->mEngines.mFinish || configuration->mNoSound != 0u) {
+    if (configuration == nullptr || configuration->mEngines.empty() || configuration->mNoSound != 0u) {
       return false;
     }
 
-    AudioEngine* const engine = configuration->mEngines.mStart->mEngine;
+    AudioEngine* const engine = configuration->mEngines[0].get();
     if (engine == nullptr || engine->mImpl == nullptr || engine->mImpl->mInstance == nullptr) {
       return false;
     }
@@ -2339,15 +2070,16 @@ namespace moho
    * What it does:
    * Reads one global XACT variable value from the active primary engine.
    */
-  float SND_GetGlobalFloat(const std::uint16_t varIndex)
+  float SND_GetGlobalFloat(
+    const std::uint16_t varIndex
+  )
   {
     const SoundConfiguration* const configuration = sSoundConfiguration.get();
-    if (configuration == nullptr || configuration->mEngines.mStart == nullptr ||
-        configuration->mEngines.mStart == configuration->mEngines.mFinish || configuration->mNoSound != 0u) {
+    if (configuration == nullptr || configuration->mEngines.empty() || configuration->mNoSound != 0u) {
       return gpg::NaN;
     }
 
-    AudioEngine* const engine = configuration->mEngines.mStart->mEngine;
+    AudioEngine* const engine = configuration->mEngines[0].get();
     if (engine == nullptr || engine->mImpl == nullptr || engine->mImpl->mInstance == nullptr) {
       return gpg::NaN;
     }
@@ -2367,15 +2099,17 @@ namespace moho
    * What it does:
    * Writes one global XACT variable value on the active primary engine.
    */
-  void SND_SetGlobalFloat(const std::uint16_t varIndex, const float value)
+  void SND_SetGlobalFloat(
+    const std::uint16_t varIndex,
+    const float value
+  )
   {
     const SoundConfiguration* const configuration = sSoundConfiguration.get();
-    if (configuration == nullptr || configuration->mEngines.mStart == nullptr ||
-        configuration->mEngines.mStart == configuration->mEngines.mFinish || configuration->mNoSound != 0u) {
+    if (configuration == nullptr || configuration->mEngines.empty() || configuration->mNoSound != 0u) {
       return;
     }
 
-    AudioEngine* const engine = configuration->mEngines.mStart->mEngine;
+    AudioEngine* const engine = configuration->mEngines[0].get();
     if (engine == nullptr || engine->mImpl == nullptr || engine->mImpl->mInstance == nullptr) {
       return;
     }
@@ -2383,7 +2117,9 @@ namespace moho
     if (engine->mImpl->mInstance->SetGlobalVariable(varIndex, value) < 0) {
       gpg::Warnf("SND: Error setting global variable [index:%i]", varIndex);
     }
+#if FAFRE_PLATFORM_WINDOWS
     sAudioRecovery[engine->mImpl].mGlobals[varIndex] = value;
+#endif
   }
 
   /**
@@ -2395,30 +2131,30 @@ namespace moho
    * Finds one loaded `AudioEngine` that owns a bank matching the supplied
    * bank name.
    */
-  boost::shared_ptr<AudioEngine> SND_FindEngine(const gpg::StrArg bankName)
+  std::shared_ptr<AudioEngine> SND_FindEngine(
+    const gpg::StrArg bankName
+  )
   {
     SoundConfiguration* const configuration = sSoundConfiguration.get();
-    if (configuration == nullptr || bankName == nullptr || configuration->mEngines.mStart == nullptr ||
-        configuration->mEngines.mFinish == nullptr) {
+    if (configuration == nullptr || bankName == nullptr || configuration->mEngines.empty()) {
       return {};
     }
 
-    const std::size_t engineCount = static_cast<std::size_t>(configuration->mEngines.mFinish - configuration->mEngines.mStart);
+    const std::size_t engineCount = configuration->mEngines.size();
     for (std::size_t engineIndex = 0; engineIndex < engineCount; ++engineIndex) {
-      const AudioEngineRef& engineRef = configuration->mEngines.mStart[engineIndex];
-      AudioEngine* const engine = engineRef.mEngine;
+      const std::shared_ptr<AudioEngine>& engineRef = configuration->mEngines[engineIndex];
+      AudioEngine* const engine = engineRef.get();
       if (engine == nullptr || engine->mImpl == nullptr || engine->mImpl->mBanks.empty()) {
         continue;
       }
 
-      const std::size_t bankCount =
-        engine->mImpl->mBanks.size();
+      const std::size_t bankCount = engine->mImpl->mBanks.size();
       for (std::size_t bankIndex = 0; bankIndex < bankCount; ++bankIndex) {
         auto* const loader = static_cast<AudioSoundBankLoader*>(engine->mImpl->mBanks.begin()[bankIndex]);
         if (loader == nullptr || ::_stricmp(bankName, loader->mName.c_str()) != 0) {
           continue;
         }
-        return CopyEngineRefShared(engineRef);
+        return engineRef;
       }
     }
 
@@ -2434,7 +2170,9 @@ namespace moho
    * Allocates and binds `AudioEngineImpl`, initializes XACT + 3D audio lanes,
    * loads voice/sound path data, and applies startup listener/category state.
    */
-  AudioEngine::AudioEngine(const gpg::StrArg voicePath)
+  AudioEngine::AudioEngine(
+    const gpg::StrArg voicePath
+  )
     : mImpl(nullptr)
   {
     SoundConfiguration* const configuration = sSoundConfiguration.get();
@@ -2451,24 +2189,71 @@ namespace moho
 
     gpg::MD5Context md5Context{};
     md5Context.Reset();
-    md5Context.Update(configuration->mRuntimeParams.pGlobalSettingsBuffer, configuration->mRuntimeParams.globalSettingsBufferSize);
+    md5Context.Update(
+      configuration->mRuntimeParams.pGlobalSettingsBuffer, configuration->mRuntimeParams.globalSettingsBufferSize
+    );
     const fa::string globalSettingsDigest = md5Context.Digest().ToString();
     gpg::Logf("MD5 of global settings: %s", globalSettingsDigest.c_str());
 
     // FUN_004D9410 passes SoundConfiguration +0x34, the embedded XACT 2.5
     // parameter object. Typed callback fields grow and align natively on x64.
+#if FAFRE_PLATFORM_WINDOWS
     const int initializeResult = InitializeSelectedOutput(*mImpl);
+#else
+    const int initializeResult = mImpl->mInstance->Initialize(&configuration->mRuntimeParams);
+#endif
     if (initializeResult < 0) {
-      gpg::Warnf("SND: Error initializing audio engine.\n%s", func_SoundErrorCodeToMsg(initializeResult));
+      // The HRESULT too (engine addition): "Unknown XACT Error" alone doesn't say which.
+      gpg::Warnf(
+        "SND: Error initializing audio engine.\n%s (0x%08X)",
+        func_SoundErrorCodeToMsg(initializeResult),
+        static_cast<unsigned>(initializeResult)
+      );
       configuration->mNoSound = 1u;
       return;
     }
 
+#if FAFRE_PLATFORM_WINDOWS
     if (!ConfigureAudioOutput(*mImpl)) {
       configuration->mNoSound = 1u;
       return;
     }
 
+#else
+    const int audio3dResult = func_AudioInitialize(mImpl->mInstance, mImpl->mAudioHandle);
+    if (audio3dResult < 0) {
+      gpg::Warnf("SND: Error initializing 3D audio.\n%s", func_SoundErrorCodeToMsg(audio3dResult));
+      configuration->mNoSound = 1u;
+      return;
+    }
+
+    // Deliberate change from retail: retail sized mSettings (mDelayTimes and
+    // mMatrixCoefficients) in AudioEngineImpl using ResolveDstChannelCount from
+    // DirectSound's speaker setting (which on modern Windows reports 9/8 for
+    // 5.1/7.1 Surround and defaults to stereo, 2 floats). X3DAudio is initialized
+    // from XACT's real output channel mask (GetFinalMixFormat). If the output has
+    // 5.1/7.1 channels (6 or 8 floats), X3DAudioCalculate writes past the 2-float
+    // buffer into adjacent heap memory (corrupting AudioEngine instances), and
+    // SetMatrixCoefficients fails with "XACT3DApply failed: Invalid arg".
+    // Size mSettings from the real output channel count from GetFinalMixFormat.
+    WAVEFORMATEXTENSIBLE finalMixFormat{};
+    if (mImpl->mInstance->GetFinalMixFormat(&finalMixFormat) >= 0) {
+      const std::uint32_t realDstChannels = finalMixFormat.Format.nChannels;
+      if (realDstChannels != 0u && realDstChannels != mImpl->mSettings.mDstChannelCount) {
+        delete[] mImpl->mSettings.mDelayTimes;
+        delete[] mImpl->mSettings.mMatrixCoefficients;
+        mImpl->mSettings.mDstChannelCount = realDstChannels;
+        mImpl->mSettings.mDelayTimes = new float[realDstChannels]();
+        mImpl->mSettings.mMatrixCoefficients = new float[realDstChannels * mImpl->mSettings.mSrcChannelCount]();
+      }
+    }
+
+    RegisterNotificationOrWarn(mImpl, 10u);
+    RegisterNotificationOrWarn(mImpl, 11u);
+    RegisterNotificationOrWarn(mImpl, 17u);
+    RegisterNotificationOrWarn(mImpl, 18u);
+
+#endif
     gpg::Logf("MEM: %i bytes SND", 0);
     func_LoadSoundPath(mImpl, voicePath);
 
@@ -2484,7 +2269,8 @@ namespace moho
   }
 
   /**
-   * Address: 0x004D9340 (FUN_004D9340, ?Create@AudioEngine@Moho@@SA?AV?$shared_ptr@VAudioEngine@Moho@@@boost@@VStrArg@gpg@@@Z)
+   * Address: 0x004D9340 (FUN_004D9340,
+   * ?Create@AudioEngine@Moho@@SA?AV?$shared_ptr@VAudioEngine@Moho@@@boost@@VStrArg@gpg@@@Z)
    *
    * gpg::StrArg voicePath
    *
@@ -2493,7 +2279,9 @@ namespace moho
    * object through the recovered constructor lane, and registers it into the
    * process-global engine lane used by `SND_Frame`/`SND_Mute`.
    */
-  boost::shared_ptr<AudioEngine> AudioEngine::Create(const gpg::StrArg voicePath)
+  std::shared_ptr<AudioEngine> AudioEngine::Create(
+    const gpg::StrArg voicePath
+  )
   {
     // The binary opens with `if (!sSoundConfiguration) func_InitSound();`, and
     // func_InitSound is the only thing that builds a *usable* configuration: it
@@ -2513,7 +2301,10 @@ namespace moho
 
     AudioEngine* const createdEngine = new AudioEngine(voicePath);
 
-    boost::shared_ptr<AudioEngine> result(createdEngine);
+    // Address: 0x004DE750 (FUN_004DE750 -- this shared_ptr's `sp_counted_impl_p<AudioEngine>::dispose`: deletes the
+    // engine, whose destructor deletes its `AudioEngineImpl`; formerly `DestroyAudioEngineImplOwnedByCountedBlock`
+    // over a hand-made control-block layout in this file.)
+    std::shared_ptr<AudioEngine> result(createdEngine);
     if (sSoundConfiguration && createdEngine != nullptr) {
       RegisterEngineRef(*sSoundConfiguration, result);
     }
@@ -2583,7 +2374,10 @@ namespace moho
    * What it does:
    * Initializes map/vector sentinels, 3D emitter/listener state, and DSP buffers.
    */
-  AudioEngineImpl::AudioEngineImpl(AudioEngine* const engine, SoundConfiguration* const configuration)
+  AudioEngineImpl::AudioEngineImpl(
+    AudioEngine* const engine,
+    SoundConfiguration* const configuration
+  )
     : mConfigs(configuration)
     , mEngine(engine)
     , mBanks{}
@@ -2597,7 +2391,6 @@ namespace moho
     , mEmitter{}
     , mAudioHandle{}
   {
-
 
     // mPausedCategoryNames (fa::set<fa::string>) and mCategoryVolumes
     // (fa::map<std::uint16_t, float>) both construct themselves via their
@@ -2636,10 +2429,12 @@ namespace moho
    */
   AudioEngineImpl::~AudioEngineImpl()
   {
+#if FAFRE_PLATFORM_WINDOWS
     if (const auto found = sAudioRecovery.find(this); found != sAudioRecovery.end()) {
       for (auto* cue : found->second.mCues) cue->Detach(true);
       sAudioRecovery.erase(found);
     }
+#endif
     // The banks and wave banks go first, while `mInstance` is still alive:
     // every loader's dtor calls `Destroy()` on an `IXACTSoundBank` /
     // `IXACTWaveBank` that the engine instance owns, so shutting the engine
@@ -2711,17 +2506,25 @@ namespace moho
 
     const int result =
       preloadOnly != 0 ? loader->mBank->Prepare(cueId, 0u, 0u, outCue) : loader->mBank->Play(cueId, 0u, 0u, outCue);
-    if ((result >= 0 || result == kXactErrCuePreparedOnly) && outCue != nullptr && *outCue != nullptr) {
+#if FAFRE_PLATFORM_WINDOWS
+    if (result >= 0 && outCue != nullptr && *outCue != nullptr) {
       *outCue = new RecoverableCue(sAudioRecovery[engine->mImpl].mCues, *outCue, bankId, cueId,
-                                 preloadOnly != 0 || result == kXactErrCuePreparedOnly,
+                                 preloadOnly != 0,
                                  &sAudioRecovery[engine->mImpl].mRestoreCues);
     }
-    if (result >= 0 || result == kXactErrCuePreparedOnly) {
+#endif
+    if (result >= 0) {
       return result;
     }
 
+    // Every failure clears the cue, a play the instance limit refused too; only that one isn't
+    // logged (0x004D9B77: `mov [edi], 0`, then 0x004D9B81: `cmp esi, 0x8ac70008` / `je` past the
+    // warning).
     if (outCue != nullptr) {
       *outCue = nullptr;
+    }
+    if (result == kXactErrInstanceLimitFailToPlay) {
+      return result;
     }
 
     gpg::Warnf(
@@ -2742,7 +2545,10 @@ namespace moho
    * What it does:
    * Finds one loaded sound-bank index by case-insensitive bank name.
    */
-  bool AudioEngine::GetBankIndex(const gpg::StrArg bankName, std::uint16_t* const outBankId)
+  bool AudioEngine::GetBankIndex(
+    const gpg::StrArg bankName,
+    std::uint16_t* const outBankId
+  )
   {
     if (bankName == nullptr || outBankId == nullptr || mImpl == nullptr || mImpl->mBanks.empty()) {
       return false;
@@ -2770,7 +2576,11 @@ namespace moho
    * What it does:
    * Resolves one cue index from one loaded sound bank.
    */
-  bool AudioEngine::GetCueIndex(const gpg::StrArg cueName, const std::uint16_t bankId, std::uint16_t* const outCueId)
+  bool AudioEngine::GetCueIndex(
+    const gpg::StrArg cueName,
+    const std::uint16_t bankId,
+    std::uint16_t* const outCueId
+  )
   {
     if (cueName == nullptr || outCueId == nullptr || mImpl == nullptr || mImpl->mBanks.empty()) {
       return false;
@@ -2800,7 +2610,10 @@ namespace moho
    * Pauses or unpauses one named sound category and updates the paused
    * category tracking map on success.
    */
-  void AudioEngine::SetPaused(const gpg::StrArg category, const bool paused)
+  void AudioEngine::SetPaused(
+    const gpg::StrArg category,
+    const bool paused
+  )
   {
     if (mImpl == nullptr || mImpl->mInstance == nullptr || !IsCategoryArgValid(category)) {
       return;
@@ -2826,23 +2639,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x004D9EC0 (FUN_004D9EC0, ?GetPaused@AudioEngine@Moho@@QAE_NVStrArg@gpg@@@Z)
-   *
-   * gpg::StrArg category
-   *
-   * What it does:
-   * Returns true when one category name exists in the paused-category map.
-   */
-  bool AudioEngine::GetPaused(const gpg::StrArg category)
-  {
-    if (mImpl == nullptr || mImpl->mInstance == nullptr || !IsCategoryArgValid(category)) {
-      return false;
-    }
-
-    return mImpl->mPausedCategoryNames.count(category) != 0;
-  }
-
-  /**
    * Address: 0x004D9F50 (FUN_004D9F50, ?StopAllSounds@AudioEngine@Moho@@QAEXVStrArg@gpg@@@Z)
    *
    * gpg::StrArg category
@@ -2850,7 +2646,9 @@ namespace moho
    * What it does:
    * Stops all playing cues in one resolved XACT category.
    */
-  void AudioEngine::StopAllSounds(const gpg::StrArg category)
+  void AudioEngine::StopAllSounds(
+    const gpg::StrArg category
+  )
   {
     if (mImpl == nullptr || mImpl->mInstance == nullptr || !IsCategoryArgValid(category)) {
       return;
@@ -2863,9 +2661,11 @@ namespace moho
     }
 
     mImpl->mInstance->Stop(categoryId, 0);
+#if FAFRE_PLATFORM_WINDOWS
     if (::_stricmp(category, kGlobalCategoryName) == 0) {
       for (auto* cue : sAudioRecovery[mImpl].mCues) cue->Stop(0);
     }
+#endif
   }
 
   /**
@@ -2876,7 +2676,10 @@ namespace moho
    * What it does:
    * Sets volume scalar for the named sound category.
    */
-  void AudioEngine::SetVolume(const gpg::StrArg category, const float value)
+  void AudioEngine::SetVolume(
+    const gpg::StrArg category,
+    const float value
+  )
   {
     if (mImpl == nullptr || mImpl->mInstance == nullptr || !IsCategoryArgValid(category)) {
       return;
@@ -2907,7 +2710,9 @@ namespace moho
    * a category for the first time persists a defaulted `1.0f` entry into the
    * category-volume map even though nothing was ever explicitly set.
    */
-  float AudioEngine::GetVolume(const gpg::StrArg category)
+  float AudioEngine::GetVolume(
+    const gpg::StrArg category
+  )
   {
     if (mImpl == nullptr || mImpl->mInstance == nullptr || !IsCategoryArgValid(category)) {
       return kDefaultCategoryVolume;
@@ -2930,7 +2735,9 @@ namespace moho
    * What it does:
    * Updates listener transform for 3D cue calculations.
    */
-  void AudioEngine::SetListenerTransform(const VTransform& transform)
+  void AudioEngine::SetListenerTransform(
+    const VTransform& transform
+  )
   {
     if (mImpl == nullptr) {
       return;
@@ -2973,7 +2780,11 @@ namespace moho
    * Applies 3D listener/emitter transform to an active cue. A failed apply is
    * warned about once per process (FAF hot-patch, see the body).
    */
-  void AudioEngine::Calculate3D(const Wm3::Vec3f* const worldPos, AudioEngine* const engine, IXACTCue* const cue)
+  void AudioEngine::Calculate3D(
+    const Wm3::Vec3f* const worldPos,
+    AudioEngine* const engine,
+    IXACTCue* const cue
+  )
   {
     AudioEngineImpl* const impl = engine->mImpl;
     if (impl->mInstance == nullptr) {
@@ -3027,7 +2838,9 @@ namespace moho
    * Queries one cue state through `IXACTCue::GetState` and returns true when
    * the state equals `0x20` (stopped).
    */
-  bool AudioEngine::IsStopped(IXACTCue* const cue) const
+  bool AudioEngine::IsStopped(
+    IXACTCue* const cue
+  ) const
   {
     // The original push ecx reserves this output local; it is not a
     // pointer-valued cue state. Successful GetState calls overwrite it.
@@ -3046,6 +2859,7 @@ namespace moho
   }
 } // namespace moho
 
+#if FAFRE_PLATFORM_WINDOWS
 namespace
 {
   int InitializeSelectedOutput(moho::AudioEngineImpl& impl)
@@ -3221,3 +3035,4 @@ namespace
     }
   }
 } // namespace
+#endif

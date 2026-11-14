@@ -89,44 +89,6 @@ namespace
   using PathCellVector = fa::vector<moho::HPathCell>;
 
   /**
-   * Address: 0x005A9890 (FUN_005A9890)
-   *
-   * What it does:
-   * Swaps two 32-bit payload lanes and returns the first lane pointer.
-   */
-  [[maybe_unused]] [[nodiscard]] std::uint32_t* SwapDwordPayloadLanes(
-    std::uint32_t* const lhs,
-    std::uint32_t* const rhs
-  ) noexcept
-  {
-    if (!lhs || !rhs) {
-      return lhs;
-    }
-
-    const std::uint32_t temp = *lhs;
-    *lhs = *rhs;
-    *rhs = temp;
-    return lhs;
-  }
-
-  /**
-   * Address: 0x005A9C90 (FUN_005A9C90)
-   *
-   * What it does:
-   * Clears one packed `HPathCell` lane to zero.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::HPathCell* ClearPackedPathCell(moho::HPathCell* const outCell) noexcept
-  {
-    if (!outCell) {
-      return nullptr;
-    }
-
-    outCell->x = 0u;
-    outCell->z = 0u;
-    return outCell;
-  }
-
-  /**
    * Address: 0x005A9CA0 (FUN_005A9CA0)
    *
    * What it does:
@@ -146,57 +108,16 @@ namespace
   }
 
   /**
-   * Address: 0x005A9CB0 (FUN_005A9CB0)
-   *
-   * What it does:
-   * Returns the first 16-bit lane from one packed path-cell payload.
-   */
-  [[maybe_unused]] [[nodiscard]] std::uint16_t ReadPackedPathCellLane0(const moho::HPathCell* const cell) noexcept
-  {
-    return cell ? cell->x : 0u;
-  }
-
-  /**
-   * Address: 0x005A9CC0 (FUN_005A9CC0)
-   *
-   * What it does:
-   * Returns the second 16-bit lane from one packed path-cell payload.
-   */
-  [[maybe_unused]] [[nodiscard]] std::uint16_t ReadPackedPathCellLane1(const moho::HPathCell* const cell) noexcept
-  {
-    return cell ? cell->z : 0u;
-  }
-
-  /**
    * Address: 0x005A9D20 (FUN_005A9D20)
    *
    * What it does:
    * Returns the owner-unit alt-footprint mode flag byte.
    */
-  [[maybe_unused]] [[nodiscard]] std::uint8_t ReadUnitAltFootprintFlag(const moho::Unit* const unit) noexcept
-  {
-    return unit ? unit->mVarDat.mUsingAltFootprint : 0u;
-  }
-
-  /**
-   * Address: 0x005AA100 (FUN_005AA100)
-   *
-   * What it does:
-   * Writes one anchor-cell `(x, z)` word pair into a path-finder instance.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::CAiPathFinder* SetPathFinderAnchorCellWords(
-    moho::CAiPathFinder* const pathFinder,
-    const std::uint16_t lane0,
-    const std::uint16_t lane1
+  [[maybe_unused]] [[nodiscard]] std::uint8_t ReadUnitAltFootprintFlag(
+    const moho::Unit* const unit
   ) noexcept
   {
-    if (!pathFinder) {
-      return nullptr;
-    }
-
-    pathFinder->mAnchorCell.x = lane0;
-    pathFinder->mAnchorCell.z = lane1;
-    return pathFinder;
+    return unit ? unit->mVarDat.mUsingAltFootprint : 0u;
   }
 
   /**
@@ -205,7 +126,9 @@ namespace
    * What it does:
    * Returns whether one path-finder currently has an active queued-path flag.
    */
-  [[maybe_unused]] [[nodiscard]] std::uint8_t ReadPathFinderQueuedFlag(const moho::CAiPathFinder& pathFinder) noexcept
+  [[maybe_unused]] [[nodiscard]] std::uint8_t ReadPathFinderQueuedFlag(
+    const moho::CAiPathFinder& pathFinder
+  ) noexcept
   {
     return pathFinder.mIsQueuedOnPathQueue;
   }
@@ -246,17 +169,6 @@ namespace
 
     pathFinder->mUseGoalBoundaryProbe = enabled;
     return pathFinder;
-  }
-
-  /**
-   * Address: 0x005AD220 (FUN_005AD220)
-   *
-   * What it does:
-   * Returns the path-finder owner unit pointer lane.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::Unit* ReadPathFinderOwnerUnit(moho::CAiPathFinder* const pathFinder) noexcept
-  {
-    return pathFinder ? pathFinder->mUnit : nullptr;
   }
 
   gpg::RType* gBroadcasterNavPathType = nullptr;
@@ -302,7 +214,11 @@ namespace
   }
 
   template <typename TObject>
-  [[nodiscard]] TObject* ReadPointerWithType(gpg::ReadArchive* const archive, const gpg::RRef& owner, gpg::RType* expectedType)
+  [[nodiscard]] TObject* ReadPointerWithType(
+    gpg::ReadArchive* const archive,
+    const gpg::RRef& owner,
+    gpg::RType* expectedType
+  )
   {
     const gpg::TrackedPointerInfo tracked = gpg::ReadRawPointer(archive, owner);
     if (!tracked.object) {
@@ -320,7 +236,11 @@ namespace
     return static_cast<TObject*>(upcast.mObj);
   }
 
-  [[nodiscard]] void* ReadPointerUnchecked(gpg::ReadArchive* const archive, const gpg::RRef& owner, gpg::RType* expectedType)
+  [[nodiscard]] void* ReadPointerUnchecked(
+    gpg::ReadArchive* const archive,
+    const gpg::RRef& owner,
+    gpg::RType* expectedType
+  )
   {
     const gpg::TrackedPointerInfo tracked = gpg::ReadRawPointer(archive, owner);
     if (!tracked.object) {
@@ -338,7 +258,10 @@ namespace
   }
 
   template <typename TObject>
-  [[nodiscard]] gpg::RRef MakeTypedRefOrRaw(TObject* object, gpg::RType* staticType)
+  [[nodiscard]] gpg::RRef MakeTypedRefOrRaw(
+    TObject* object,
+    gpg::RType* staticType
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -363,8 +286,7 @@ namespace
       return out;
     }
 
-    out.mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(object) - static_cast<std::uintptr_t>(baseOffset));
+    out.mObj = gpg::CompleteObject(object, baseOffset);
     out.mType = dynamicType;
     return out;
   }
@@ -472,7 +394,9 @@ const char* moho::RBroadcasterRType_NavPath::GetName() const
  */
 void moho::RBroadcasterRType_NavPath::Init()
 {
-  static_assert(sizeof(moho::Broadcaster<const moho::SNavPath&>) == 8, "moho::Broadcaster<const moho::SNavPath&> is 8 bytes on x86");
+  static_assert(
+    sizeof(moho::Broadcaster<const moho::SNavPath&>) == 8, "moho::Broadcaster<const moho::SNavPath&> is 8 bytes on x86"
+  );
   size_ = sizeof(moho::Broadcaster<const moho::SNavPath&>);
   version_ = 1;
   serLoadFunc_ = reinterpret_cast<load_func_t>(reinterpret_cast<void (*)()>(&gpg::ReadAndLinkNavPathListeners));
@@ -487,46 +411,6 @@ void moho::RBroadcasterRType_NavPath::Init()
  * inherited `gpg::RType` reflection storage lanes.
  */
 moho::RBroadcasterRType_NavPath::~RBroadcasterRType_NavPath() = default;
-
-/**
- * Address: 0x00763850 (FUN_00763850)
- *
- * What it does:
- * Serializes one reflected `vector<HPathCell>` payload by writing count and
- * then each path-cell element lane.
- */
-[[maybe_unused]] void SerializePathCellVectorArchive(
-  gpg::WriteArchive* const archive,
-  const std::intptr_t objectPtr,
-  const int,
-  gpg::RRef* const ownerRef
-)
-{
-  if (archive == nullptr) {
-    return;
-  }
-
-  const auto* const vectorObject = reinterpret_cast<const PathCellVector*>(
-    objectPtr
-  );
-
-  const unsigned int count = vectorObject != nullptr ? static_cast<unsigned int>(vectorObject->size()) : 0u;
-  archive->WriteUInt(count);
-  if (count == 0u || vectorObject == nullptr) {
-    return;
-  }
-
-  gpg::RType* const pathCellType = gpg::RTypeOf<HPathCell>();
-  GPG_ASSERT(pathCellType != nullptr);
-  if (!pathCellType) {
-    return;
-  }
-
-  const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-  for (unsigned int i = 0; i < count; ++i) {
-    archive->Write(pathCellType, const_cast<moho::HPathCell*>(&(*vectorObject)[static_cast<std::size_t>(i)]), owner);
-  }
-}
 
 /**
  * Address: 0x00763F50 (FUN_00763F50, preregister_RBroadcasterRType_NavPath)
@@ -565,7 +449,9 @@ const char* moho::RListenerRType_NavPath::GetName() const
  */
 void moho::RListenerRType_NavPath::Init()
 {
-  static_assert(sizeof(moho::Listener<const moho::SNavPath&>) == 12, "moho::Listener<const moho::SNavPath&> is 12 bytes on x86");
+  static_assert(
+    sizeof(moho::Listener<const moho::SNavPath&>) == 12, "moho::Listener<const moho::SNavPath&> is 12 bytes on x86"
+  );
   size_ = sizeof(moho::Listener<const moho::SNavPath&>);
 }
 
@@ -626,8 +512,7 @@ CAiPathFinder::CAiPathFinder()
   , mPad76(0)
   , mPad77(0)
   , mMaxFootprintSpan(1)
-{
-}
+{}
 
 /**
  * Address: 0x005AA000 (FUN_005AA000)
@@ -642,7 +527,9 @@ CAiPathFinder::~CAiPathFinder()
 /**
  * Address: 0x005AA060 (FUN_005AA060)
  */
-void CAiPathFinder::SetUnit(Unit* const unit)
+void CAiPathFinder::SetUnit(
+  Unit* const unit
+)
 {
   mUnit = unit;
   mFootprint = nullptr;
@@ -684,7 +571,9 @@ void CAiPathFinder::SetUnit(Unit* const unit)
 /**
  * Address: 0x005AA120 (FUN_005AA120)
  */
-void CAiPathFinder::SetGoal(const SAiNavigatorGoal& goal)
+void CAiPathFinder::SetGoal(
+  const SAiNavigatorGoal& goal
+)
 {
   mGoal = goal;
 
@@ -698,7 +587,8 @@ void CAiPathFinder::SetGoal(const SAiNavigatorGoal& goal)
   SFootprint footprint = mUnit->GetFootprint();
   if (mUseGoalBoundaryProbe != 0u) {
     footprint.mFlags = static_cast<EFootprintFlags>(
-      static_cast<std::uint8_t>(footprint.mFlags) | static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures));
+      static_cast<std::uint8_t>(footprint.mFlags) | static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures)
+    );
   }
 
   for (std::int32_t x = goal.minX; x <= goal.maxX; ++x) {
@@ -715,7 +605,8 @@ void CAiPathFinder::SetGoal(const SAiNavigatorGoal& goal)
       EOccupancyCaps caps = OCCUPY_MobileCheck(footprint, *mOGrid->sim->mMapData, cell);
       if (mUnit->mVarDat.mLayerMask == LAYER_Water) {
         caps = static_cast<EOccupancyCaps>(
-          static_cast<std::uint8_t>(caps) & ~static_cast<std::uint8_t>(EOccupancyCaps::OC_SUB));
+          static_cast<std::uint8_t>(caps) & ~static_cast<std::uint8_t>(EOccupancyCaps::OC_SUB)
+        );
       }
       if (static_cast<std::uint8_t>(OCCUPY_FootprintFits(*mOGrid, cell, footprint, caps)) != 0u) {
         mGoalBoundaryFits = 1;
@@ -777,10 +668,11 @@ void CAiPathFinder::QueueSearch()
   const SFootprint& footprint = mUnit->GetFootprint();
   const Wm3::Vec3f& position = mUnit->GetPosition();
   SOCellPos anchorCell{};
-  anchorCell.x = static_cast<std::int16_t>(static_cast<int>(std::lrintf(position.x - static_cast<float>(footprint.mSizeX) * 0.5f)));
-  anchorCell.z = static_cast<std::int16_t>(static_cast<int>(std::lrintf(position.z - static_cast<float>(footprint.mSizeZ) * 0.5f)));
-  const EOccupancyCaps anchorFitCaps =
-    OCCUPY_FootprintFits(*mOGrid, anchorCell, footprint, EOccupancyCaps::OC_ANY);
+  anchorCell.x =
+    static_cast<std::int16_t>(static_cast<int>(std::lrintf(position.x - static_cast<float>(footprint.mSizeX) * 0.5f)));
+  anchorCell.z =
+    static_cast<std::int16_t>(static_cast<int>(std::lrintf(position.z - static_cast<float>(footprint.mSizeZ) * 0.5f)));
+  const EOccupancyCaps anchorFitCaps = OCCUPY_FootprintFits(*mOGrid, anchorCell, footprint, EOccupancyCaps::OC_ANY);
   mHasOccupancyMask = (static_cast<std::uint8_t>(anchorFitCaps) != 0u) ? 1u : 0u;
 
   if (mSearchType == AIPATHSEARCH_None) {
@@ -829,7 +721,9 @@ const SFootprint* CAiPathFinder::GetFootprint() const
  * (`COGrid::UnitIsBlocked`). Leader searches use blocker mode 2, all others
  * mode 1; idle (`AIPATHSEARCH_None`) searches never consult the occupation grid.
  */
-bool CAiPathFinder::CanTraverseCell(const SOCellPos& cellPos) const
+bool CAiPathFinder::CanTraverseCell(
+  const SOCellPos& cellPos
+) const
 {
   const SOCellPos cell{cellPos.x, cellPos.z};
 
@@ -839,7 +733,8 @@ bool CAiPathFinder::CanTraverseCell(const SOCellPos& cellPos) const
       EOccupancyCaps caps = OCCUPY_MobileCheck(footprint, *mOGrid->sim->mMapData, cell);
       if (mUnit->mVarDat.mLayerMask == LAYER_Water) {
         caps = static_cast<EOccupancyCaps>(
-          static_cast<std::uint8_t>(caps) & ~static_cast<std::uint8_t>(EOccupancyCaps::OC_SUB));
+          static_cast<std::uint8_t>(caps) & ~static_cast<std::uint8_t>(EOccupancyCaps::OC_SUB)
+        );
       }
       if (static_cast<std::uint8_t>(OCCUPY_FootprintFits(*mOGrid, cell, footprint, caps)) == 0u) {
         return false;
@@ -860,12 +755,13 @@ bool CAiPathFinder::CanTraverseCell(const SOCellPos& cellPos) const
   SFootprint probeFootprint = mUnit->GetFootprint();
   probeFootprint.mFlags = static_cast<EFootprintFlags>(
     static_cast<std::uint8_t>(probeFootprint.mFlags) |
-    static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures));
+    static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures)
+  );
 
   EOccupancyCaps caps = OCCUPY_MobileCheck(probeFootprint, *mOGrid->sim->mMapData, cell);
   if (mUnit->mVarDat.mLayerMask == LAYER_Water) {
-    caps = static_cast<EOccupancyCaps>(
-      static_cast<std::uint8_t>(caps) & ~static_cast<std::uint8_t>(EOccupancyCaps::OC_SUB));
+    caps =
+      static_cast<EOccupancyCaps>(static_cast<std::uint8_t>(caps) & ~static_cast<std::uint8_t>(EOccupancyCaps::OC_SUB));
   }
   return static_cast<std::uint8_t>(OCCUPY_FootprintFits(*mOGrid, cell, probeFootprint, caps)) != 0u;
 }
@@ -873,7 +769,11 @@ bool CAiPathFinder::CanTraverseCell(const SOCellPos& cellPos) const
 /**
  * Address: 0x005AA680 (FUN_005AA680)
  */
-bool CAiPathFinder::IsInBounds(const SOCellPos& fromCell, const SOCellPos& toCell, float* const edgeCost) const
+bool CAiPathFinder::IsInBounds(
+  const SOCellPos& fromCell,
+  const SOCellPos& toCell,
+  float* const edgeCost
+) const
 {
   // This override admits an edge purely on where it lands: neither the source
   // cell nor the running cost is consulted.
@@ -898,9 +798,8 @@ bool CAiPathFinder::IsInBounds(const SOCellPos& fromCell, const SOCellPos& toCel
   if (static_cast<float>(bounds.x0) > (x - margin)) {
     return false;
   }
-  return static_cast<float>(bounds.z0) <= (z - margin)
-      && (x + margin) <= static_cast<float>(bounds.x1)
-      && (z + margin) <= static_cast<float>(bounds.z1);
+  return static_cast<float>(bounds.z0) <= (z - margin) && (x + margin) <= static_cast<float>(bounds.x1) &&
+    (z + margin) <= static_cast<float>(bounds.z1);
 }
 
 /**
@@ -910,7 +809,10 @@ bool CAiPathFinder::IsInBounds(const SOCellPos& fromCell, const SOCellPos& toCel
  * Computes the octile-distance core term `max(|a|,|b|) + min(|a|,|b|) *
  * 0.41421354f` used by AI pathfinder heuristic lanes.
  */
-float moho::ComputeOctileDistanceCore(const float a, const float b) noexcept
+float moho::ComputeOctileDistanceCore(
+  const float a,
+  const float b
+) noexcept
 {
   float major = std::fabs(a);
   float minor = std::fabs(b);
@@ -924,7 +826,9 @@ float moho::ComputeOctileDistanceCore(const float a, const float b) noexcept
 /**
  * Address: 0x005AA590 (FUN_005AA590)
  */
-float CAiPathFinder::GetHeuristicCost(const SOCellPos& cellPos) const
+float CAiPathFinder::GetHeuristicCost(
+  const SOCellPos& cellPos
+) const
 {
   const gpg::Rect2i outer = GoalOuterRect(mGoal);
 
@@ -942,7 +846,9 @@ float CAiPathFinder::GetHeuristicCost(const SOCellPos& cellPos) const
 /**
  * Address: 0x005AA850 (FUN_005AA850)
  */
-void CAiPathFinder::GetAnchorCell(HPathCell* const outCell) const
+void CAiPathFinder::GetAnchorCell(
+  HPathCell* const outCell
+) const
 {
   if (!outCell) {
     return;
@@ -953,7 +859,9 @@ void CAiPathFinder::GetAnchorCell(HPathCell* const outCell) const
 /**
  * Address: 0x005AA960 (FUN_005AA960)
  */
-bool CAiPathFinder::IsGoalCandidateCell(const SOCellPos& cellPos) const
+bool CAiPathFinder::IsGoalCandidateCell(
+  const SOCellPos& cellPos
+) const
 {
   const gpg::Rect2i outer = GoalOuterRect(mGoal);
   if (!CellInRectInclusiveExclusive(cellPos, outer)) {
@@ -970,7 +878,9 @@ bool CAiPathFinder::IsGoalCandidateCell(const SOCellPos& cellPos) const
 /**
  * Address: 0x005AA9A0 (FUN_005AA9A0)
  */
-void CAiPathFinder::OnPathAccepted(const SNavPath& path)
+void CAiPathFinder::OnPathAccepted(
+  const SNavPath& path
+)
 {
   mHasPathResult = 1;
   mIsQueuedOnPathQueue = 0;
@@ -981,7 +891,9 @@ void CAiPathFinder::OnPathAccepted(const SNavPath& path)
 /**
  * Address: 0x005AA860 (FUN_005AA860)
  */
-bool CAiPathFinder::ShouldSearchRect(const gpg::Rect2i& rect) const
+bool CAiPathFinder::ShouldSearchRect(
+  const gpg::Rect2i& rect
+) const
 {
   if (!IsStrictRect(rect)) {
     return false;
@@ -1043,7 +955,9 @@ void CAiPathFinder::OnPathSearchCancelled()
 /**
  * Address: 0x005AA9F0 (FUN_005AA9F0)
  */
-void CAiPathFinder::OnPathRejected(const SNavPath& path)
+void CAiPathFinder::OnPathRejected(
+  const SNavPath& path
+)
 {
   mHasPathResult = 0;
   mIsQueuedOnPathQueue = 0;
@@ -1086,7 +1000,9 @@ std::int32_t CAiPathFinder::GetPathcap() const
 /**
  * Address: 0x005A9D50 (FUN_005A9D50)
  */
-void CAiPathFinder::GetResultCell(HPathCell* const outCell) const
+void CAiPathFinder::GetResultCell(
+  HPathCell* const outCell
+) const
 {
   if (!outCell) {
     return;
@@ -1097,7 +1013,10 @@ void CAiPathFinder::GetResultCell(HPathCell* const outCell) const
 /**
  * Address: 0x005ABED0 (FUN_005ABED0, Moho::CAiPathFinder::MemberDeserialize)
  */
-void CAiPathFinder::MemberDeserialize(gpg::ReadArchive* const archive, const int)
+void CAiPathFinder::MemberDeserialize(
+  gpg::ReadArchive* const archive,
+  const int
+)
 {
   if (!archive) {
     return;
@@ -1173,7 +1092,10 @@ void CAiPathFinder::MemberDeserialize(gpg::ReadArchive* const archive, const int
 /**
  * Address: 0x005AC150 (FUN_005AC150, Moho::CAiPathFinder::MemberSerialize)
  */
-void CAiPathFinder::MemberSerialize(gpg::WriteArchive* const archive, const int)
+void CAiPathFinder::MemberSerialize(
+  gpg::WriteArchive* const archive,
+  const int
+)
 {
   if (!archive) {
     return;
@@ -1235,7 +1157,9 @@ void CAiPathFinder::ClearRectHistory()
 /**
  * Inlined block from FUN_005AA310: retain the three most recent rectangles.
  */
-void CAiPathFinder::PushRectHistory(const gpg::Rect2i& rect)
+void CAiPathFinder::PushRectHistory(
+  const gpg::Rect2i& rect
+)
 {
   // Original +0x70 test removes the oldest entry before pushing at the front;
   // 0x005AA4E0..0x005AA531 push the window unconditionally, empty or not
@@ -1259,8 +1183,8 @@ void CAiPathFinder::UpdatePlayableRectGate()
   mInsidePlayableRect =
     ((static_cast<float>(bounds.x0) <= (pos.x - span)) && (static_cast<float>(bounds.z0) <= (pos.z - span)) &&
      ((pos.x + span) <= static_cast<float>(bounds.x1)) && ((pos.z + span) <= static_cast<float>(bounds.z1)))
-      ? 1u
-      : 0u;
+    ? 1u
+    : 0u;
 }
 
 /**
@@ -1271,11 +1195,13 @@ void CAiPathFinder::UpdatePlayableRectGate()
  * share an edge still count. Both rects must then be non-empty
  * (0x005AA8A7..0x005AA8B6, `FUN_00416F40` = `Rect2i::IsEmpty` on the entry).
  */
-bool CAiPathFinder::RectHistoryIntersects(const gpg::Rect2i& rect) const
+bool CAiPathFinder::RectHistoryIntersects(
+  const gpg::Rect2i& rect
+) const
 {
   for (const gpg::Rect2i& historyRect : mRecentSearchRects) {
-    const bool touches = rect.x0 <= historyRect.x1 && historyRect.x0 <= rect.x1 &&
-                         rect.z0 <= historyRect.z1 && historyRect.z0 <= rect.z1;
+    const bool touches =
+      rect.x0 <= historyRect.x1 && historyRect.x0 <= rect.x1 && rect.z0 <= historyRect.z1 && historyRect.z0 <= rect.z1;
     if (touches && IsStrictRect(rect) && IsStrictRect(historyRect)) {
       return true;
     }
@@ -1283,39 +1209,56 @@ bool CAiPathFinder::RectHistoryIntersects(const gpg::Rect2i& rect) const
   return false;
 }
 
-bool CAiPathFinder::IsStrictRect(const gpg::Rect2i& rect)
+bool CAiPathFinder::IsStrictRect(
+  const gpg::Rect2i& rect
+)
 {
   return rect.x0 < rect.x1 && rect.z0 < rect.z1;
 }
 
-bool CAiPathFinder::CellInRectInclusiveExclusive(const SOCellPos& cellPos, const gpg::Rect2i& rect)
+bool CAiPathFinder::CellInRectInclusiveExclusive(
+  const SOCellPos& cellPos,
+  const gpg::Rect2i& rect
+)
 {
   const int x = static_cast<int>(cellPos.x);
   const int z = static_cast<int>(cellPos.z);
   return rect.x0 <= x && x < rect.x1 && rect.z0 <= z && z < rect.z1;
 }
 
-bool CAiPathFinder::RectsOverlapStrict(const gpg::Rect2i& lhs, const gpg::Rect2i& rhs)
+bool CAiPathFinder::RectsOverlapStrict(
+  const gpg::Rect2i& lhs,
+  const gpg::Rect2i& rhs
+)
 {
   return lhs.x0 < rhs.x1 && rhs.x0 < lhs.x1 && lhs.z0 < rhs.z1 && rhs.z0 < lhs.z1;
 }
 
-bool CAiPathFinder::RectInsideRect(const gpg::Rect2i& inner, const gpg::Rect2i& outer)
+bool CAiPathFinder::RectInsideRect(
+  const gpg::Rect2i& inner,
+  const gpg::Rect2i& outer
+)
 {
   return outer.x0 <= inner.x0 && inner.x1 <= outer.x1 && outer.z0 <= inner.z0 && inner.z1 <= outer.z1;
 }
 
-gpg::Rect2i CAiPathFinder::GoalOuterRect(const SAiNavigatorGoal& goal)
+gpg::Rect2i CAiPathFinder::GoalOuterRect(
+  const SAiNavigatorGoal& goal
+)
 {
   return {goal.minX, goal.minZ, goal.maxX, goal.maxZ};
 }
 
-gpg::Rect2i CAiPathFinder::GoalInnerRect(const SAiNavigatorGoal& goal)
+gpg::Rect2i CAiPathFinder::GoalInnerRect(
+  const SAiNavigatorGoal& goal
+)
 {
   return {goal.aux0, goal.aux1, goal.aux2, goal.aux3};
 }
 
-HPathCell CAiPathFinder::LastPathCell(const SNavPath& path)
+HPathCell CAiPathFinder::LastPathCell(
+  const SNavPath& path
+)
 {
   if (!path.start || !path.finish || path.finish <= path.start) {
     return {};
@@ -1330,8 +1273,14 @@ HPathCell CAiPathFinder::LastPathCell(const SNavPath& path)
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_RBroadcasterRType_NavPath_d4632f, preregister_RBroadcasterRType_NavPath)
-GPG_PREREGISTER_INIT(preregister_RListenerRType_NavPath_d4632f, preregister_RListenerRType_NavPath)
+GPG_PREREGISTER_INIT(
+  preregister_RBroadcasterRType_NavPath_d4632f,
+  preregister_RBroadcasterRType_NavPath
+)
+GPG_PREREGISTER_INIT(
+  preregister_RListenerRType_NavPath_d4632f,
+  preregister_RListenerRType_NavPath
+)
 
 namespace moho
 {

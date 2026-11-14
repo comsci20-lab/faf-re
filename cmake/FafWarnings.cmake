@@ -18,18 +18,17 @@ set(FAF_WARNING_OPTIONS
   # standard layout, on purpose: the binary fixes those offsets.
   -Wno-invalid-offsetof
   # Third-party headers, on every include: boost 1.34's unqualified friend
-  # declarations, wx 2.4's flag enums, which it also needs at every sizer call.
+  # declarations, the 2.4 window library's flag enums, which it also needs at every sizer call.
   -Wno-microsoft-unqualified-friend
   -Wno-deprecated-enum-enum-conversion)
 
 # Third-party headers read as system headers, so their warnings stay out of the
-# log: on x86, boost 1.34's member-function-pointer tester alone gave 50,544. By
-# include name, because /external:I would change the include search order, and
-# src/boost/ wraps boost's own headers. Generated code doesn't change.
+# log. By include name, because /external:I would change the include search
+# order. Generated code doesn't change.
 # Wild Magic is named without a folder ("Wm3Vector3.h"); its .inl files follow their
 # header. An engine header under moho/math with a Wm3 name is included by path, so
 # it isn't caught.
-foreach(_faf_third_party_prefix boost/ wx/ Wm3)
+foreach(_faf_third_party_prefix Wm3)
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     list(APPEND FAF_WARNING_OPTIONS "/clang:--system-header-prefix=${_faf_third_party_prefix}")
   else()
@@ -37,26 +36,24 @@ foreach(_faf_third_party_prefix boost/ wx/ Wm3)
   endif()
 endforeach()
 
-# Sources with wx 2.4 event tables, relative to src/. EVT_MENU and its family, and
-# the Connect calls written the way they expand, cast each handler to
-# wxObjectEventFunction, the one member-function type wx's tables hold. The cast is
-# wx's API and its headers are pinned. Per source, so everything else keeps the
-# warning.
-set(FAF_WX_EVENT_TABLE_SOURCES
+# The platform macros (src/platform/PlatformDefines.h) are always defined to 0 or 1: a `#if` on one
+# that isn't defined would read 0 and silently drop that platform's code, so it is an error.
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+  list(APPEND FAF_WARNING_OPTIONS "/clang:-Wundef-prefix=FAFRE_PLATFORM_" "/clang:-Werror=undef-prefix")
+else()
+  list(APPEND FAF_WARNING_OPTIONS "-Wundef-prefix=FAFRE_PLATFORM_" "-Werror=undef-prefix")
+endif()
+
+# Sources with the application shell's event tables (src/platform/shell), relative to
+# src/. The table macros cast each handler to the one member-function type the tables
+# hold, as the 2.4 window library's did. Per source, so everything else keeps the warning.
+set(FAF_SHELL_EVENT_TABLE_SOURCES
   moho/app/WD3DViewport.cpp
-  moho/app/WEmitterWx.cpp
-  moho/app/WRefEditDialog.cpp
   moho/app/WRenViewport.cpp
   moho/app/WSupComFrame.cpp
-  moho/app/WWinLogWindow.cpp
-  moho/app/WxAppWindows.cpp
-  moho/misc/ScrDebugWindow.cpp
-  moho/misc/ScrFileCtrl.cpp
-  moho/misc/ScrGotoDialog.cpp
-  moho/misc/ScrWatchCtrl.cpp
   moho/ui/CMauiLuaDragger.cpp
   moho/ui/UiMisc.cpp)
-set(FAF_WX_EVENT_TABLE_OPTIONS -Wno-cast-function-type-mismatch)
+set(FAF_SHELL_EVENT_TABLE_OPTIONS -Wno-cast-function-type-mismatch)
 
 # FFmpeg 7.1.3 is a pinned submodule, compiled as released. These are what its own
 # sources do: raw demuxers it builds but we don't use (unused-function), INT64_MAX

@@ -3,8 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
-#include "boost/weak_ptr.h"
+#include <memory>
+#include <memory>
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/gal/Matrix.h"
 #include "legacy/containers/String.h"
@@ -23,8 +23,6 @@ namespace moho
   class ID3DRenderTarget;
   class CWldTerrainDecal;
   class MeshRenderer;
-
-
 
   class CD3DDynamicTextureSheet;
   class CD3DIndexSheet;
@@ -56,8 +54,8 @@ namespace moho
   struct STerrainTechniqueDrawParams
   {
     fa::string mTechniqueName; // +0x00
-    VMatrix4 mProjection;         // +0x1C
-    VMatrix4 mView;               // +0x5C
+    VMatrix4 mProjection;      // +0x1C
+    VMatrix4 mView;            // +0x5C
   };
 
   static_assert(
@@ -106,10 +104,7 @@ namespace moho
      * Runs the medium-fidelity terrain destructor lane and conditionally frees
      * the object storage when the delete flag requests heap release.
      */
-    static MediumFidelityTerrain* DeleteWithFlag(
-      MediumFidelityTerrain* object,
-      std::uint8_t deleteFlags
-    ) noexcept;
+    static MediumFidelityTerrain* DeleteWithFlag(MediumFidelityTerrain* object, std::uint8_t deleteFlags) noexcept;
 
     /**
      * Address: 0x00803BF0 (FUN_00803BF0, Moho::MediumFidelityTerrain::Func1)
@@ -155,7 +150,7 @@ namespace moho
      * normalization constants, and forwards the optional terrain-normal texture
      * weak handle into the active terrain effect.
      */
-    void LoadShaderVars(const boost::shared_ptr<ID3DRenderTarget>& terrainNormalTexture);
+    void LoadShaderVars(const std::shared_ptr<ID3DRenderTarget>& terrainNormalTexture);
 
     /**
      * Address: 0x00805600 (FUN_00805600, sub_805600)
@@ -224,10 +219,7 @@ namespace moho
      * texture, loads the base terrain shader vars, and submits the terrain
      * triangle list. Releases the retained overlay-texture handle on return.
      */
-    void DrawTerrain(
-      boost::shared_ptr<CD3DDynamicTextureSheet> overlayTexture,
-      const fa::string* techniqueName
-    ) override;
+    void DrawTerrain(std::shared_ptr<CD3DDynamicTextureSheet> overlayTexture, const fa::string* techniqueName) override;
 
     /**
      * Address: 0x00807410 (FUN_00807410, Moho::MediumFidelityTerrain::DrawWaterLine)
@@ -263,7 +255,7 @@ namespace moho
     bool DrawNormals(
       std::int32_t gameTick,
       float deltaSeconds,
-      const boost::shared_ptr<ID3DRenderTarget>& terrainNormalTexture,
+      const std::shared_ptr<ID3DRenderTarget>& terrainNormalTexture,
       Shadow* shadowContext
     ) override;
 
@@ -319,8 +311,9 @@ namespace moho
     void DrawWaterTerrain(
       std::int32_t tick,
       float tickLerp,
-      boost::shared_ptr<ID3DRenderTarget> refractionTexture,
-      boost::shared_ptr<ID3DRenderTarget> reflectionTexture) override;
+      std::shared_ptr<ID3DRenderTarget> refractionTexture,
+      std::shared_ptr<ID3DRenderTarget> reflectionTexture
+    ) override;
 
     /**
      * Address: 0x00805A90 (FUN_00805A90)
@@ -434,29 +427,29 @@ namespace moho
     void DrawNormalMappedDecals(std::int32_t gameTick, float lod);
 
   public:
-    IWldTerrainRes* mTerrainResource;                        // +0x0C
-    std::int32_t mViewportOriginX;                                     // +0x10
-    std::int32_t mViewportOriginY;                                     // +0x14
-    std::int32_t mViewportWidth;                                       // +0x18
-    std::int32_t mViewportHeight;                                      // +0x1C
-    std::int32_t mViewportRenderWidth;                                 // +0x20
-    std::int32_t mViewportRenderHeight;                                // +0x24
-    GeomCamera3* mCamera;                                              // +0x28
-    std::uint32_t mSkirtStartIndex = 0u;                              // +0x2C
-    std::uint32_t mUnknown30 = 0u;                                    // +0x30
-    std::uint32_t mSkirtEndIndex = 0u;                                // +0x34
-    std::int32_t mSkirtEndVertex = 0;                                 // +0x38
-    std::int32_t mSkirtBaseVertex = 0;                                // +0x3C
+    IWldTerrainRes* mTerrainResource;                                        // +0x0C
+    std::int32_t mViewportOriginX;                                           // +0x10
+    std::int32_t mViewportOriginY;                                           // +0x14
+    std::int32_t mViewportWidth;                                             // +0x18
+    std::int32_t mViewportHeight;                                            // +0x1C
+    std::int32_t mViewportRenderWidth;                                       // +0x20
+    std::int32_t mViewportRenderHeight;                                      // +0x24
+    GeomCamera3* mCamera;                                                    // +0x28
+    std::uint32_t mSkirtStartIndex = 0u;                                     // +0x2C
+    std::uint32_t mUnknown30 = 0u;                                           // +0x30
+    std::uint32_t mSkirtEndIndex = 0u;                                       // +0x34
+    std::int32_t mSkirtEndVertex = 0;                                        // +0x38
+    std::int32_t mSkirtBaseVertex = 0;                                       // +0x3C
     gpg::core::FastVectorN<TerrainDecalDrawCommand, 500> mDecalDrawCommands; // +0x40
-    CTesselator* mTesselator;                                          // +0x2F30
-    CD3DVertexSheet* mTerrainVertexSheet;                              // +0x2F34
-    CD3DIndexSheet* mTerrainIndexSheet;                                // +0x2F38
-    std::uint32_t mPad2F3C = 0u;                                       // +0x2F3C
-    gpg::core::FastVectorN<CWldSplat::SplatVertex, 10000> mSplatVertices;  // +0x2F40
-    CD3DVertexSheet* mOverlayVertexSheet;                              // +0x47510
-    CD3DIndexSheet* mOverlayIndexSheet;                                // +0x47514
-    VTransform mOverlayTransform;                                      // +0x47518
-    std::uint32_t mUnknown47534;                                       // +0x47534
+    CTesselator* mTesselator;                                                // +0x2F30
+    CD3DVertexSheet* mTerrainVertexSheet;                                    // +0x2F34
+    CD3DIndexSheet* mTerrainIndexSheet;                                      // +0x2F38
+    std::uint32_t mPad2F3C = 0u;                                             // +0x2F3C
+    gpg::core::FastVectorN<CWldSplat::SplatVertex, 10000> mSplatVertices;    // +0x2F40
+    CD3DVertexSheet* mOverlayVertexSheet;                                    // +0x47510
+    CD3DIndexSheet* mOverlayIndexSheet;                                      // +0x47514
+    VTransform mOverlayTransform;                                            // +0x47518
+    std::uint32_t mUnknown47534;                                             // +0x47534
   };
 
   static_assert(

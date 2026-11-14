@@ -23,6 +23,8 @@ add_executable(faf_lua_tests EXCLUDE_FROM_ALL
   LuaGcTests.cpp
   ScrDebugHooksTests.cpp
   LuaCrashDumpTests.cpp
+  ScrImportTests.cpp
+  ScrFromLuaTests.cpp
   ChatMentionTests.cpp
 )
 target_compile_definitions(faf_lua_tests PRIVATE FAF_CHAT_MENTION_DIR="${PROJECT_SOURCE_DIR}/mods/Microchip-Chat-Mention")

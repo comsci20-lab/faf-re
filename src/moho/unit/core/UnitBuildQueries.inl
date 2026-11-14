@@ -70,7 +70,9 @@ gpg::Rect2f Unit::GetSkirtRect() const
  * What it does:
  * Forwards one recoil impulse into `UnitMotion` when present.
  */
-void Unit::AddRecoilImpulse(const Wm3::Vec3f& impulse)
+void Unit::AddRecoilImpulse(
+  const Wm3::Vec3f& impulse
+)
 {
   CUnitMotion* const unitMotion = UnitMotion;
   if (unitMotion != nullptr) {
@@ -85,7 +87,9 @@ void Unit::AddRecoilImpulse(const Wm3::Vec3f& impulse)
  * What it does:
  * Forwards one world impulse to `UnitMotion` when present.
  */
-void Unit::AddImpulse(const Wm3::Vec3f& impulse)
+void Unit::AddImpulse(
+  const Wm3::Vec3f& impulse
+)
 {
   CUnitMotion* const unitMotion = UnitMotion;
   if (unitMotion != nullptr) {
@@ -101,7 +105,10 @@ void Unit::AddImpulse(const Wm3::Vec3f& impulse)
  * Routes local impulse handling by motion type: airborne units use body-local
  * impulse integration, non-air units feed unit-motion impulse blending.
  */
-void Unit::AddLocalImpulse(const Wm3::Vec3f& localImpulse, const Wm3::Vec3f& localPoint)
+void Unit::AddLocalImpulse(
+  const Wm3::Vec3f& localImpulse,
+  const Wm3::Vec3f& localPoint
+)
 {
   CUnitMotion* const unitMotion = UnitMotion;
   if (unitMotion == nullptr) {
@@ -126,7 +133,9 @@ void Unit::AddLocalImpulse(const Wm3::Vec3f& localImpulse, const Wm3::Vec3f& loc
  * Picks a random index in `Blueprint->AI.TargetBones`; writes `-1` when
  * the list is empty. Returns true on all paths.
  */
-bool Unit::PickTargetPoint(std::int32_t& outTargetPoint) const
+bool Unit::PickTargetPoint(
+  std::int32_t& outTargetPoint
+) const
 {
   const RUnitBlueprint* const blueprint = GetBlueprint();
   const std::uint32_t targetBoneCount =
@@ -149,7 +158,9 @@ bool Unit::PickTargetPoint(std::int32_t& outTargetPoint) const
  * Picks one target-bone index above current water elevation, or falls back
  * to unit centerline elevation when no target-bone lanes are present.
  */
-bool Unit::PickTargetPointAboveWater(std::int32_t& outTargetPoint) const
+bool Unit::PickTargetPointAboveWater(
+  std::int32_t& outTargetPoint
+) const
 {
   outTargetPoint = -1;
 
@@ -170,7 +181,8 @@ bool Unit::PickTargetPointAboveWater(std::int32_t& outTargetPoint) const
 
     if (!candidateIndices.empty()) {
       const std::uint32_t randomValue = SimulationRef->mRngState->twister.NextUInt32();
-      const std::int32_t pick = PickUniformIndexFromU32(randomValue, static_cast<std::uint32_t>(candidateIndices.size()));
+      const std::int32_t pick =
+        PickUniformIndexFromU32(randomValue, static_cast<std::uint32_t>(candidateIndices.size()));
       outTargetPoint = candidateIndices[static_cast<std::size_t>(pick)];
       return true;
     }
@@ -188,7 +200,9 @@ bool Unit::PickTargetPointAboveWater(std::int32_t& outTargetPoint) const
  * Picks one target-bone index below current water elevation, or falls back
  * to unit centerline elevation when no target-bone lanes are present.
  */
-bool Unit::PickTargetPointBelowWater(std::int32_t& outTargetPoint) const
+bool Unit::PickTargetPointBelowWater(
+  std::int32_t& outTargetPoint
+) const
 {
   outTargetPoint = -1;
 
@@ -209,7 +223,8 @@ bool Unit::PickTargetPointBelowWater(std::int32_t& outTargetPoint) const
 
     if (!candidateIndices.empty()) {
       const std::uint32_t randomValue = SimulationRef->mRngState->twister.NextUInt32();
-      const std::int32_t pick = PickUniformIndexFromU32(randomValue, static_cast<std::uint32_t>(candidateIndices.size()));
+      const std::int32_t pick =
+        PickUniformIndexFromU32(randomValue, static_cast<std::uint32_t>(candidateIndices.size()));
       outTargetPoint = candidateIndices[static_cast<std::size_t>(pick)];
       return true;
     }
@@ -229,7 +244,9 @@ bool Unit::PickTargetPointBelowWater(std::int32_t& outTargetPoint) const
  * blueprint target-bone bounds and falling back to root bone (`-1`) when the
  * request is negative.
  */
-Wm3::Vec3f Unit::GetTargetPoint(std::int32_t targetPoint) const
+Wm3::Vec3f Unit::GetTargetPoint(
+  std::int32_t targetPoint
+) const
 {
   // FAF FA-Binary-Patches #145/#157 (Account for collision offset when picking
   // target point of unit with no target bones): a unit without target bones is
@@ -271,14 +288,18 @@ Wm3::Vec3f Unit::GetTargetPoint(std::int32_t targetPoint) const
  * `CAniActor` runtime chain so the visible animation tracks the new mesh's
  * skeleton.
  */
-void Unit::SetMesh(const RResId& meshResId, RMeshBlueprint* const meshBlueprint, const bool rebuildAniActor)
+void Unit::SetMesh(
+  const RResId& meshResId,
+  RMeshBlueprint* const meshBlueprint,
+  const bool rebuildAniActor
+)
 {
   Entity::SetMesh(meshResId, meshBlueprint, true);
   if (!rebuildAniActor) {
     return;
   }
 
-  boost::shared_ptr<const CAniSkel> skeleton;
+  std::shared_ptr<const CAniSkel> skeleton;
   if (RScmResource* const scmResource = mVarDat.mScmResource.get(); scmResource != nullptr) {
     skeleton = scmResource->GetSkeleton();
   }
@@ -312,8 +333,8 @@ void Unit::SetMesh(const RResId& meshResId, RMeshBlueprint* const meshBlueprint,
  * mirrors them into `AniActor::{mPose,mPriorPose}`.
  */
 void Unit::SetPoses(
-  const boost::shared_ptr<CAniPose>& priorSharedPose,
-  const boost::shared_ptr<CAniPose>& sharedPose
+  const std::shared_ptr<CAniPose>& priorSharedPose,
+  const std::shared_ptr<CAniPose>& sharedPose
 )
 {
   SSTIUnitVariableData& varDat = VarDat();
@@ -330,7 +351,9 @@ void Unit::SetPoses(
  * Tests whether `blueprint` is present in this unit's effective build
  * category set after army and per-unit build restrictions are applied.
  */
-bool Unit::CanBuild(const RUnitBlueprint* const blueprint) const
+bool Unit::CanBuild(
+  const RUnitBlueprint* const blueprint
+) const
 {
   // CArmyImpl +0x198 on x86: the IArmy payload at +0x08, `mVarDat` at +0x80,
   // `mCategoryFilterSet` at +0x110.
@@ -338,10 +361,9 @@ bool Unit::CanBuild(const RUnitBlueprint* const blueprint) const
   const EntityCategorySet& unitBlueprintBuildCategories = GetBlueprint()->Economy.CategoryCache;
   const EntityCategorySet& unitBuildRestrictions = GetAttributes().restrictionCategory;
 
-  const std::uint32_t categoryBitIndex = blueprint->mCategoryBitIndex;
+  const std::uint32_t categoryBitIndex = blueprint->mBlueprintOrdinal;
   return armyBuildCategories.ContainsBit(categoryBitIndex) &&
-    unitBlueprintBuildCategories.ContainsBit(categoryBitIndex) &&
-    !unitBuildRestrictions.ContainsBit(categoryBitIndex);
+    unitBlueprintBuildCategories.ContainsBit(categoryBitIndex) && !unitBuildRestrictions.ContainsBit(categoryBitIndex);
 }
 
 /**
@@ -351,7 +373,10 @@ bool Unit::CanBuild(const RUnitBlueprint* const blueprint) const
  * Returns true when this unit's army economy can start a build tick from
  * stored resources or by satisfying required income gates.
  */
-bool Unit::CanStartBuilding(const float energyCost, const float massCost) const
+bool Unit::CanStartBuilding(
+  const float energyCost,
+  const float massCost
+) const
 {
   constexpr float kBuildResourceEpsilon = 0.001f;
 
@@ -359,7 +384,7 @@ bool Unit::CanStartBuilding(const float energyCost, const float massCost) const
     return false;
   }
 
-  const CSimArmyEconomyInfo* const economyInfo = ArmyRef->GetEconomy();
+  const CEconomy* const economyInfo = ArmyRef->GetEconomy();
   if (economyInfo == nullptr) {
     return false;
   }
@@ -367,7 +392,7 @@ bool Unit::CanStartBuilding(const float energyCost, const float massCost) const
   // The tests are written the way the binary's branches read (0x0062D7A5..0x0062D7DB), not simplified: its comiss
   // leaves a NaN passing each of them, and an army's income can be NaN (replay 26939667, where a factory waited a tick
   // too long on a NaN mass income).
-  const SEconTotals& totals = economyInfo->economy;
+  const SEconTotals& totals = economyInfo->mTotals;
   if (!(kBuildResourceEpsilon >= totals.mStored.ENERGY) && !(kBuildResourceEpsilon >= totals.mStored.MASS)) {
     return true;
   }
@@ -399,62 +424,6 @@ std::int32_t Unit::DecrementCapturers()
 }
 
 /**
- * Address: 0x00603F30 (FUN_00603F30)
- *
- * What it does:
- * Returns the current non-negative captor reference count lane.
- */
-std::int32_t Unit::GetCapturerCount() const noexcept
-{
-  return CaptorCount;
-}
-
-/**
- * Address: 0x005F24C0 (FUN_005F24C0)
- *
- * What it does:
- * Returns whether this unit belongs to the MELEE category lane.
- */
-bool Unit::IsMeleeUnit() const noexcept
-{
-  return mIsMelee;
-}
-
-/**
- * Address: 0x005F5570 (FUN_005F5570)
- *
- * What it does:
- * Returns the current retaliation fire-state lane.
- */
-std::int32_t Unit::GetFireStateValue() const noexcept
-{
-  return mUnitVarDat.mFireState;
-}
-
-/**
- * Address: 0x005F5560 (FUN_005F5560)
- *
- * What it does:
- * Stores one upgraded-unit entity id lane and returns that id.
- */
-EntId Unit::SetUpgradedToEntityId(const EntId upgradedToEntityId) noexcept
-{
-  mUnitVarDat.mSelectionInheritorId = upgradedToEntityId;
-  return upgradedToEntityId;
-}
-
-/**
- * Address: 0x005F5590 (FUN_005F5590)
- *
- * What it does:
- * Returns the current silo-build implementation lane pointer.
- */
-CAiSiloBuildImpl* Unit::GetSiloBuildImpl() const noexcept
-{
-  return AiSiloBuild;
-}
-
-/**
  * Address: 0x006A75C0 (FUN_006A75C0, ?GetMaxFootprintSize@Unit@Moho@@QBEHXZ)
  *
  * What it does:
@@ -478,7 +447,9 @@ int Unit::GetMaxFootprintSize() const
  * target (non-null, non-sentinel), then unconditionally marks the unit
  * dirty for sync replication.
  */
-void Unit::SetFocusEntity(Entity* const focusEntity)
+void Unit::SetFocusEntity(
+  Entity* const focusEntity
+)
 {
   FocusEntityRef.ResetFromObject(focusEntity);
 
@@ -497,7 +468,9 @@ void Unit::SetFocusEntity(Entity* const focusEntity)
  * Rebinds target-blip weak-reference ownership and marks unit sync state
  * dirty for replication.
  */
-void Unit::SetTargetBlipEntity(Entity* const blipEntity)
+void Unit::SetTargetBlipEntity(
+  Entity* const blipEntity
+)
 {
   TargetBlipEntityRef.Set(blipEntity);
   NeedSyncGameData = true;
@@ -568,7 +541,10 @@ Wm3::Vec3f Unit::GetVelocity() const
  * Forwards unit health adjustments to the shared `Entity` health mutation
  * path.
  */
-void Unit::AdjustHealth(Entity* const instigator, const float delta)
+void Unit::AdjustHealth(
+  Entity* const instigator,
+  const float delta
+)
 {
   Entity::AdjustHealth(instigator, delta);
 }
@@ -582,7 +558,9 @@ void Unit::AdjustHealth(Entity* const instigator, const float delta)
  * `CurrentTerrainType`, and dispatches terrain-change script data when it
  * changes.
  */
-void Unit::UpdateTerrainType(const Wm3::Vector3f& position)
+void Unit::UpdateTerrainType(
+  const Wm3::Vector3f& position
+)
 {
   STIMap* const mapData = SimulationRef->mMapData;
   const SFootprint& footprint = GetFootprint();
@@ -598,11 +576,13 @@ void Unit::UpdateTerrainType(const Wm3::Vector3f& position)
   std::uint8_t nextTerrainType = 1u;
 
   const CHeightField* const heightField = mapData->mHeightField.get();
-  if (static_cast<std::uint32_t>(sampleX) < static_cast<std::uint32_t>(heightField->width - 1)
-      && static_cast<std::uint32_t>(sampleZ) < static_cast<std::uint32_t>(heightField->height - 1)) {
+  if (
+    static_cast<std::uint32_t>(sampleX) < static_cast<std::uint32_t>(heightField->width - 1) &&
+    static_cast<std::uint32_t>(sampleZ) < static_cast<std::uint32_t>(heightField->height - 1)
+  ) {
     const std::size_t index =
-      static_cast<std::size_t>(sampleZ) * static_cast<std::size_t>(mapData->mTerrainType.width)
-      + static_cast<std::size_t>(sampleX);
+      static_cast<std::size_t>(sampleZ) * static_cast<std::size_t>(mapData->mTerrainType.width) +
+      static_cast<std::size_t>(sampleX);
     nextTerrainType = mapData->mTerrainType.data[index];
   }
 
@@ -614,35 +594,4 @@ void Unit::UpdateTerrainType(const Wm3::Vector3f& position)
   LuaPlus::LuaObject previousTerrain = mapData->GetTerrainType(previousTerrainType);
   LuaPlus::LuaObject currentTerrain = mapData->GetTerrainType(CurrentTerrainType);
   RunScriptOnTerrainTypeChange(currentTerrain, previousTerrain);
-}
-
-/**
- * Address: 0x006A9A40 (FUN_006A9A40, Moho::Unit::HandleTerranEffects)
- *
- * What it does:
- * Reads terrain-type Lua data for this unit, applies periodic
- * `HealthEffectPerSecond` scaling against max health every 10 ticks, and
- * kills the unit when health reaches zero.
- */
-void Unit::HandleTerranEffects()
-{
-  LuaPlus::LuaObject terrainType = SimulationRef->mMapData->GetTerrainType(CurrentTerrainType);
-  if (!terrainType.IsTable()) {
-    return;
-  }
-
-  if ((SimulationRef->mCurTick % 10u) != 0u) {
-    return;
-  }
-
-  LuaPlus::LuaObject healthEffect = terrainType["HealthEffectPerSecond"];
-  if (healthEffect.IsNil()) {
-    return;
-  }
-
-  const float delta = healthEffect.GetNumber() * mVarDat.mMaxHealth;
-  AdjustHealth(nullptr, delta);
-  if (mVarDat.mHealth <= 0.0f) {
-    Kill(nullptr, "", 0.0f);
-  }
 }

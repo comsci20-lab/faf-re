@@ -10,7 +10,7 @@
 #include <zlib.h>
 #include <zstd.h>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/containers/WriteArchive.h"
 #include "moho/console/CConCommand.h"
@@ -47,7 +47,9 @@ namespace faf::headless
     class CKeyframeZstdSink final : public gpg::WriteArchiveSink
     {
     public:
-      explicit CKeyframeZstdSink(std::FILE* const file)
+      explicit CKeyframeZstdSink(
+        std::FILE* const file
+      )
         : mFile(file)
         , mContext(ZSTD_createCCtx())
         , mOut(ZSTD_CStreamOutSize())
@@ -60,7 +62,10 @@ namespace faf::headless
         ZSTD_freeCCtx(mContext);
       }
 
-      [[nodiscard]] bool Write(const void* const bytes, const std::size_t byteCount) override
+      [[nodiscard]] bool Write(
+        const void* const bytes,
+        const std::size_t byteCount
+      ) override
       {
         ZSTD_inBuffer in{bytes, byteCount, 0u};
         while (in.pos < in.size) {
@@ -85,7 +90,10 @@ namespace faf::headless
       }
 
     private:
-      [[nodiscard]] bool Step(ZSTD_inBuffer& in, const ZSTD_EndDirective mode)
+      [[nodiscard]] bool Step(
+        ZSTD_inBuffer& in,
+        const ZSTD_EndDirective mode
+      )
       {
         ZSTD_outBuffer out{mOut.data(), mOut.size(), 0u};
         mRemaining = ZSTD_compressStream2(mContext, &out, &in, mode);
@@ -101,7 +109,11 @@ namespace faf::headless
     class CKeyframeRequest final : public moho::ISaveRequest
     {
     public:
-      CKeyframeRequest(CReplayKeyframes& owner, std::string path, const moho::Sim* const sim)
+      CKeyframeRequest(
+        CReplayKeyframes& owner,
+        std::string path,
+        const moho::Sim* const sim
+      )
         : mOwner(owner)
         , mPath(std::move(path))
         , mSim(sim)
@@ -120,7 +132,7 @@ namespace faf::headless
           // `Sim::SaveState` writes through the archive it is given; the driver catches the throw.
           throw std::runtime_error("cannot write " + mPath);
         }
-        mFile = boost::shared_ptr<std::FILE>(file, moho::SFileStarCloser{});
+        mFile = std::shared_ptr<std::FILE>(file, moho::SFileStarCloser{});
         const bool compress = mOwner.IsPreparing() && moho::CFG_GetArgOption("--keyframe-quiet", 0, nullptr);
         if (compress) {
           mSink = std::make_unique<CKeyframeZstdSink>(file);
@@ -136,12 +148,15 @@ namespace faf::headless
         if (compress) {
           mArchive = gpg::CreateFastBinaryWriteArchive(*mSink);
         } else {
-          mArchive = save_FastKeyframeArchive ? gpg::CreateFastBinaryWriteArchive(mFile) : gpg::CreateBinaryWriteArchive(mFile);
+          mArchive =
+            save_FastKeyframeArchive ? gpg::CreateFastBinaryWriteArchive(mFile) : gpg::CreateBinaryWriteArchive(mFile);
         }
         return mArchive;
       }
 
-      void Save(const moho::SSaveGameDispatchData& data) override
+      void Save(
+        const moho::SSaveGameDispatchData& data
+      ) override
       {
         const double seconds = std::chrono::duration<double>(Clock::now() - mStart).count();
         delete mArchive;
@@ -175,7 +190,9 @@ namespace faf::headless
       }
 
       /** The header goes through a small file of its own, as it is written to a file. */
-      [[nodiscard]] bool WriteHeaderToSink(const moho::SSimKeyframeHeader& header)
+      [[nodiscard]] bool WriteHeaderToSink(
+        const moho::SSimKeyframeHeader& header
+      )
       {
         std::FILE* file = nullptr;
         if (fopen_s(&file, (mPath + ".header").c_str(), "w+bDT") != 0 || file == nullptr) {
@@ -200,13 +217,16 @@ namespace faf::headless
       const moho::Sim* mSim;
       std::uint32_t mBeat = 0;
       Clock::time_point mStart{};
-      boost::shared_ptr<std::FILE> mFile;
+      std::shared_ptr<std::FILE> mFile;
       std::unique_ptr<CKeyframeZstdSink> mSink;
       std::uint32_t mTick = 0;
       gpg::WriteArchive* mArchive = nullptr;
     };
 
-    [[nodiscard]] bool ReadWholeFile(const std::string& path, std::vector<unsigned char>& bytes)
+    [[nodiscard]] bool ReadWholeFile(
+      const std::string& path,
+      std::vector<unsigned char>& bytes
+    )
     {
       std::FILE* file = nullptr;
       if (fopen_s(&file, path.c_str(), "rb") != 0 || file == nullptr) {
@@ -223,7 +243,10 @@ namespace faf::headless
   } // namespace
 
   CReplayKeyframes::CReplayKeyframes(
-    std::string directory, const int everyBeats, const bool keep, std::string label,
+    std::string directory,
+    const int everyBeats,
+    const bool keep,
+    std::string label,
     std::map<int, std::string>* const index
   )
     : mDirectory(std::move(directory))
@@ -237,7 +260,11 @@ namespace faf::headless
     std::filesystem::create_directories(mDirectory, ignored);
   }
 
-  void CReplayKeyframes::OnBeat(moho::ISTIDriver& driver, const moho::Sim* const sim, const int beat)
+  void CReplayKeyframes::OnBeat(
+    moho::ISTIDriver& driver,
+    const moho::Sim* const sim,
+    const int beat
+  )
   {
     if (mPending || beat < mNextBeat) {
       return;
@@ -250,7 +277,10 @@ namespace faf::headless
   }
 
   void CReplayKeyframes::OnSaved(
-    const std::uint32_t beat, const std::string& path, const double saveSeconds, const bool succeeded,
+    const std::uint32_t beat,
+    const std::string& path,
+    const double saveSeconds,
+    const bool succeeded,
     const std::string& error
   )
   {
@@ -258,9 +288,7 @@ namespace faf::headless
     std::vector<unsigned char> bytes;
     if (!succeeded || !ReadWholeFile(path, bytes) || bytes.empty()) {
       ++mFailures;
-      std::printf(
-        "[%s] KEYFRAME-FAILED beat %u: %s\n", mLabel.c_str(), beat, succeeded ? "empty file" : error.c_str()
-      );
+      std::printf("[%s] KEYFRAME-FAILED beat %u: %s\n", mLabel.c_str(), beat, succeeded ? "empty file" : error.c_str());
       std::fflush(stdout);
       return;
     }
@@ -308,7 +336,10 @@ namespace faf::headless
     }
   }
 
-  void CReplayKeyframes::OnPrepared(const std::uint32_t beat, const double saveSeconds)
+  void CReplayKeyframes::OnPrepared(
+    const std::uint32_t beat,
+    const double saveSeconds
+  )
   {
     mPending = false;
     ++mCount;

@@ -104,15 +104,6 @@ namespace moho
     bool IsReady() const;
 
     /**
-     * Address: 0x0053B920 (FUN_0053B920)
-     *
-     * What it does:
-     * Returns the raw sim-rate lane tracked by this client.
-     */
-    [[nodiscard]]
-    int32_t GetSimRateRaw() const;
-
-    /**
      * Address: 0x0053C960 (FUN_0053C960)
      * Slot: 1
      */
@@ -317,21 +308,21 @@ namespace moho
     void ApplyIncomingGameSpeedRequest(int32_t speedClock, int32_t requestedSimRate);
 
   public:
-    CClientManagerImpl* mManager{nullptr};       // 0x028
-    int32_t mUnknown2C{0};                       // 0x02C
-    BVIntSet mValidCommandSources;               // 0x030
-    uint32_t mCommandSourceId{0};                // 0x050
-    bool mReady{false};                          // 0x054
-    gpg::PipeStream mPipe;                       // 0x058
-    uint32_t mQueuedBeat{0};                     // 0x0A0
-    uint32_t mDispatchedBeat{0};                 // 0x0A4
-    uint32_t mAvailableBeatRemote{0};            // 0x0A8
+    CClientManagerImpl* mManager{nullptr};    // 0x028
+    int32_t mUnknown2C{0};                    // 0x02C
+    BVIntSet mValidCommandSources;            // 0x030
+    uint32_t mCommandSourceId{0};             // 0x050
+    bool mReady{false};                       // 0x054
+    gpg::PipeStream mPipe;                    // 0x058
+    uint32_t mQueuedBeat{0};                  // 0x0A0
+    uint32_t mDispatchedBeat{0};              // 0x0A4
+    uint32_t mAvailableBeatRemote{0};         // 0x0A8
     fa::vector<int32_t> mLatestAckReceived;   // 0x0AC
-    int32_t mLatestBeatDispatchedRemote{0};      // 0x0BC
-    bool mEjectPending{false};                   // 0x0C0
-    bool mEjected{false};                        // 0x0C1
+    int32_t mLatestBeatDispatchedRemote{0};   // 0x0BC
+    bool mEjectPending{false};                // 0x0C0
+    bool mEjected{false};                     // 0x0C1
     fa::vector<SEjectRequest> mEjectRequests; // 0x0C4
-    int32_t mSimRate{0};                         // 0x0D4
+    int32_t mSimRate{0};                      // 0x0D4
   };
   MOHO_NET_STATIC_ASSERT(sizeof(CClientBase) == 0xD8, "CClientBase size must be 0xD8");
 } // namespace moho

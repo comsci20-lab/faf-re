@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/PlatformDefines.h"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -19,9 +21,9 @@ namespace moho
 
   struct SlabHeader
   {
-    std::uint32_t magic;           // 0x534C4142 ('SLAB')
-    FixedSlabPool* ownerPool;      // Owning pool
-    SlabHeader* nextSlab;          // Intrusive slab list links
+    std::uint32_t magic;      // 0x534C4142 ('SLAB')
+    FixedSlabPool* ownerPool; // Owning pool
+    SlabHeader* nextSlab;     // Intrusive slab list links
     SlabHeader* prevSlab;
     std::uint32_t allocatedBlocks; // Currently allocated blocks in this slab
     std::uint32_t totalBlocks;     // Total slots capacity in this slab
@@ -30,7 +32,7 @@ namespace moho
 
   namespace slab_region
   {
-#if defined(_WIN64)
+#if FAFRE_PLATFORM_WINDOWS && defined(_M_X64)
     constexpr std::size_t kReserveBytes = std::size_t{2} << 30; // 2 GB virtual address space
 #else
     constexpr std::size_t kReserveBytes = 128u * 1024u * 1024u; // 128 MB virtual address space

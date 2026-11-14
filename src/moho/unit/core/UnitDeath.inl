@@ -7,7 +7,11 @@
  * Applies unit death gating and teardown, notifies adjacency/transport and
  * script lanes, then updates army/platoon kill-value statistics.
  */
-void Unit::Kill(Entity* const instigator, const gpg::StrArg reason, float excessDamageRatio)
+void Unit::Kill(
+  Entity* const instigator,
+  const gpg::StrArg reason,
+  float excessDamageRatio
+)
 {
   if (IsDead()) {
     return;
@@ -58,7 +62,9 @@ void Unit::Kill(Entity* const instigator, const gpg::StrArg reason, float excess
 
       RunScriptUnit("OnNotAdjacentTo", adjacent);
       adjacent->RunScriptUnit("OnNotAdjacentTo", this);
-      adjacent->ReserveOgridRect(GetReservedOgridRect(*adjacent));
+      adjacent->ReserveOgridRect(
+        gpg::Rect2i{adjacent->mReservedOgridRect}
+      ); // a copy: ReserveOgridRect frees (zeroes) the field before reading its argument
     }
   }
 
@@ -91,26 +97,27 @@ void Unit::Kill(Entity* const instigator, const gpg::StrArg reason, float excess
     }
 
     ESquadClass squadClass = ESquadClass::Unassigned;
-    if (CPlatoon* const platoon =
-          ArmyRef->GetPlatoonFor(this, &squadClass);
-        platoon != nullptr) {
+    if (CPlatoon* const platoon = ArmyRef->GetPlatoonFor(this, &squadClass); platoon != nullptr) {
       ++platoon->mLosses;
     }
   }
 
   CArmyImpl* const instigatorArmy = (instigator != nullptr) ? instigator->ArmyRef : nullptr;
-  if (instigatorArmy == nullptr || ArmyRef == nullptr ||
-      !ArmyRef->IsEnemy(static_cast<std::uint32_t>(instigatorArmy->mConstDat.mArmyIndex))) {
+  if (
+    instigatorArmy == nullptr || ArmyRef == nullptr ||
+    !ArmyRef->IsEnemy(static_cast<std::uint32_t>(instigatorArmy->mConstDat.mArmyIndex))
+  ) {
     return;
   }
 
-  if (Unit* const instigatorUnit = instigator->IsUnit(); instigatorUnit != nullptr && instigatorUnit->ArmyRef != nullptr) {
+  if (
+    Unit* const instigatorUnit = instigator->IsUnit(); instigatorUnit != nullptr && instigatorUnit->ArmyRef != nullptr
+  ) {
     ESquadClass instigatorSquadClass = ESquadClass::Unassigned;
-    if (CPlatoon* const instigatorPlatoon = instigatorUnit->ArmyRef->GetPlatoonFor(
-          instigatorUnit,
-          &instigatorSquadClass
-        );
-        instigatorPlatoon != nullptr) {
+    if (
+      CPlatoon* const instigatorPlatoon = instigatorUnit->ArmyRef->GetPlatoonFor(instigatorUnit, &instigatorSquadClass);
+      instigatorPlatoon != nullptr
+    ) {
       ++instigatorPlatoon->mKills;
     }
   }
@@ -159,7 +166,9 @@ void Unit::OnDestroy()
         Unit* const adjacent = static_cast<Unit*>(entry);
         RunScriptUnit("OnNotAdjacentTo", adjacent);
         adjacent->RunScriptUnit("OnNotAdjacentTo", this);
-        adjacent->ReserveOgridRect(GetReservedOgridRect(*adjacent));
+        adjacent->ReserveOgridRect(
+          gpg::Rect2i{adjacent->mReservedOgridRect}
+        ); // a copy: ReserveOgridRect frees (zeroes) the field before reading its argument
       }
     }
 
@@ -261,7 +270,9 @@ void Unit::KillCleanup()
  * bare slot value 4 as an unbound sentinel, which the binary walks into; no
  * caller can produce it and the guard only turns a fault into the null path.
  */
-void Unit::GetExtraData(SExtraUnitData* out) const
+void Unit::GetExtraData(
+  SExtraUnitData* out
+) const
 {
   if (!out) {
     return;
@@ -299,7 +310,9 @@ void Unit::GetExtraData(SExtraUnitData* out) const
  * Applies pause/unpause when unit caps allow it, emits script callbacks on
  * state transitions, and marks sync game-data dirty.
  */
-void Unit::SetPaused(const bool paused)
+void Unit::SetPaused(
+  const bool paused
+)
 {
   const UnitAttributes& attributes = GetAttributes();
   const bool canToggle =
@@ -327,7 +340,9 @@ void Unit::SetPaused(const bool paused)
  * Sets repeat-queue mode, marks the dirty-sync lane, and emits
  * OnStartRepeatQueue/OnStopRepeatQueue callbacks.
  */
-void Unit::SetRepeatQueue(const bool enabled)
+void Unit::SetRepeatQueue(
+  const bool enabled
+)
 {
   if (enabled) {
     if (!mUnitVarDat.mRepeatQueue) {

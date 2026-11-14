@@ -134,9 +134,8 @@ namespace
     return 0;
   }
   /** Win32 `WM_KEYDOWN`/`WM_KEYUP` `lParam` bit 30: the key was already down. */
-  constexpr std::uint32_t kWxKeyEventRawFlagPreviouslyDown = 0x40000000u;
-}
-
+  constexpr std::uint32_t kKeyEventRawFlagPreviouslyDown = 0x40000000u;
+} // namespace
 
 /**
  * Address: 0x0079D7A0 (FUN_0079D7A0, cfunc_IsKeyDown)
@@ -217,7 +216,12 @@ int moho::cfunc_KeycodeMauiToMSW(
 moho::CScrLuaInitForm* moho::func_KeycodeMauiToMSW_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "KeycodeMauiToMSW", &moho::cfunc_KeycodeMauiToMSW, nullptr, "<global>", kKeycodeMauiToMSWHelpText
+    moho::SCR_UserLuaInitSet(),
+    "KeycodeMauiToMSW",
+    &moho::cfunc_KeycodeMauiToMSW,
+    nullptr,
+    "<global>",
+    kKeycodeMauiToMSWHelpText
   );
   return &binder;
 }
@@ -241,7 +245,7 @@ int moho::cfunc_KeycodeMauiToMSWL(
 
   const int mauiKeyCode = static_cast<int>(lua_tonumber(state->m_state, 1));
   bool isSpecial = false;
-  const int mswKeyCode = wxCharCodeWXToMSW(mauiKeyCode, &isSpecial);
+  const int mswKeyCode = ShellKeyToVirtualKey(mauiKeyCode, &isSpecial);
   (void)isSpecial;
 
   lua_pushnumber(state->m_state, static_cast<float>(mswKeyCode));
@@ -272,7 +276,12 @@ int moho::cfunc_KeycodeMSWToMaui(
 moho::CScrLuaInitForm* moho::func_KeycodeMSWToMaui_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "KeycodeMSWToMaui", &moho::cfunc_KeycodeMSWToMaui, nullptr, "<global>", kKeycodeMSWToMauiHelpText
+    moho::SCR_UserLuaInitSet(),
+    "KeycodeMSWToMaui",
+    &moho::cfunc_KeycodeMSWToMaui,
+    nullptr,
+    "<global>",
+    kKeycodeMSWToMauiHelpText
   );
   return &binder;
 }
@@ -295,7 +304,7 @@ int moho::cfunc_KeycodeMSWToMauiL(
   }
 
   const int mswKeyCode = static_cast<int>(lua_tonumber(state->m_state, 1));
-  const int mauiKeyCode = wxCharCodeMSWToWX(mswKeyCode);
+  const int mauiKeyCode = ShellKeyFromVirtualKey(mswKeyCode);
   lua_pushnumber(state->m_state, static_cast<float>(mauiKeyCode));
   (void)lua_gettop(state->m_state);
   return 1;
@@ -427,34 +436,14 @@ int moho::cfunc_IN_ClearKeyMap(
 moho::CScrLuaInitForm* moho::func_IN_ClearKeyMap_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "IN_ClearKeyMap", &moho::cfunc_IN_ClearKeyMap, nullptr, "<global>", kINClearKeyMapHelpText
+    moho::SCR_UserLuaInitSet(),
+    "IN_ClearKeyMap",
+    &moho::cfunc_IN_ClearKeyMap,
+    nullptr,
+    "<global>",
+    kINClearKeyMapHelpText
   );
   return &binder;
-}
-
-/**
- * Address: 0x00838F30 (FUN_00838F30, Moho::IN_FindKeyNameIndex)
- *
- * What it does:
- * Case-sensitive linear scan of `in_keyNames` for one key name; returns the
- * matching wxKeyCode (0..255) or -1 when no slot matches. Mirrors the binary's
- * MSVC8 `std::string::compare(0, _Mysize, needlePtr, needleSize)` per-slot
- * equality test which returns 0 on match.
- */
-int moho::IN_FindKeyNameIndex(
-  const fa::string& needle
-)
-{
-  const char* const needlePtr = needle.c_str();
-  const std::size_t needleSize = needle.size();
-
-  for (int index = 0; index < 256; ++index) {
-    const fa::string& slot = in_keyNames[index];
-    if (slot.compare(0u, slot.size(), needlePtr, needleSize) == 0) {
-      return index;
-    }
-  }
-  return -1;
 }
 
 /**
@@ -486,8 +475,7 @@ namespace
   constexpr UiKeyMask kUiKeyMaskShift = 0x80000000u;
   constexpr UiKeyMask kUiKeyMaskCtrl = 0x40000000u;
   constexpr UiKeyMask kUiKeyMaskAlt = 0x20000000u;
-}
-
+} // namespace
 
 /**
  * Address: 0x00838E70 (FUN_00838E70, Moho::IN_GetKeyName)
@@ -883,7 +871,7 @@ void moho::IN_SetKeyName(
  * See the class declaration in UiRuntimeTypes.h for the full evidence trail.
  */
 void moho::CUIKeyHandler::OnKeyDown(
-  wxKeyEvent& keyEvent
+  ShellKeyEvent& keyEvent
 )
 {
   if (moho::Maui_CurrentFocusControl.GetObjectPtr() != nullptr) {
@@ -907,7 +895,7 @@ void moho::CUIKeyHandler::OnKeyDown(
   }
 
   const bool keyIsTrackedForRepeat = gUiKeyRepeatMap.find(packedKeyMask) != gUiKeyRepeatMap.end();
-  if (!keyIsTrackedForRepeat && (keyEvent.m_rawFlags & kWxKeyEventRawFlagPreviouslyDown) != 0) {
+  if (!keyIsTrackedForRepeat && (keyEvent.m_rawFlags & kKeyEventRawFlagPreviouslyDown) != 0) {
     // Stray Win32 auto-repeat for a key this handler never saw go down
     // (e.g. focus changed mid-press): drop it rather than firing a binding.
     keyEvent.Skip();
@@ -923,7 +911,7 @@ void moho::CUIKeyHandler::OnKeyDown(
 
   // No user key binding claimed this chord: fall back to the two hardcoded
   // shortcuts. Neither branch marks the event skipped -- matches the binary
-  // exactly, so wx keeps propagating the key afterward.
+  // exactly, so window-library keeps propagating the key afterward.
   constexpr std::int32_t kKeyCodeEnter = 13;
   constexpr std::int32_t kKeyCodeTilde = 0x7E; // '~'
   switch (keyEvent.m_keyCode) {
@@ -945,7 +933,7 @@ void moho::CUIKeyHandler::OnKeyDown(
  * See the class declaration in UiRuntimeTypes.h for the full evidence trail.
  */
 void moho::CUIKeyHandler::OnKeyUp(
-  wxKeyEvent& keyEvent
+  ShellKeyEvent& keyEvent
 )
 {
   keyEvent.Skip();

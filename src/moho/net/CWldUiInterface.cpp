@@ -9,9 +9,6 @@
 #include <memory>
 #include <string>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
-
 #include "gpg/core/containers/String.h"
 #include "gpg/core/utils/Logging.h"
 #include "legacy/containers/String.h"
@@ -62,7 +59,9 @@ namespace
    * the chat. The text is passed as a value, never spliced into Lua source:
    * it holds player names.
    */
-  void ShowOrdersDifferNotice(const fa::string& text)
+  void ShowOrdersDifferNotice(
+    const fa::string& text
+  )
   {
     moho::CON_Printf("%s", text.c_str());
 
@@ -82,7 +81,6 @@ namespace
     }
   }
 } // namespace
-
 
 namespace moho
 {
@@ -146,8 +144,8 @@ namespace moho
    * main thread (so console output happens on the UI thread). The binary builds
    * this callback via `boost::bind(&ConPrintClientDisconnected, nickname)` (a
    * free-function bind storing a real `std::string` copy, per the manager RTTI)
-   * rather than a closure object -- expressed here the same way so this call
-   * site is the one that actually instantiates the cited manager/invoker pair.
+   * rather than a closure object. Ours is a lambda capturing the same copy, so the
+   * cited manager/invoker pair is the binary's only.
    *
    * FUN_0088F9F0 sits a few bytes below this chain and stamps the identical
    * {manager=FUN_0088FBD0, invoker=FUN_0088FBA0} pair FUN_0088F700 installs,
@@ -161,11 +159,14 @@ namespace moho
    * unreferenced the same way) rather than folded into this call site without
    * evidence.
    */
-  void CWldUiInterface::NoteDisconnect(const CClientBase* const client)
+  void CWldUiInterface::NoteDisconnect(
+    const CClientBase* const client
+  )
   {
     const fa::string nickname = client->GetNickname();
-    boost::function<void(), std::allocator<void>> callback = boost::bind(&ConPrintClientDisconnected, nickname);
-    THREAD_InvokeAsync(callback, 0u);
+    THREAD_InvokeAsync([nickname]() {
+      ConPrintClientDisconnected(nickname);
+    }, 0u);
   }
 
   /**
@@ -174,7 +175,10 @@ namespace moho
    * What it does:
    * Nothing: the game UI ignores eject requests (`ret 8`).
    */
-  void CWldUiInterface::NoteEjectRequest(const CClientBase* const target, const CClientBase* const requester)
+  void CWldUiInterface::NoteEjectRequest(
+    const CClientBase* const target,
+    const CClientBase* const requester
+  )
   {
     (void)target;
     (void)requester;
@@ -282,9 +286,9 @@ namespace moho
    * main thread. The binary builds this callback via
    * `boost::bind(&func_ReceiveChat, nickname, data)` (a free-function bind
    * storing real `std::string`/`MemBuffer` copies, per the manager RTTI) rather
-   * than a closure object -- expressed here the same way so this call site is
-   * the one that actually instantiates the cited manager/invoker pair. The
-   * MemBuffer's shared payload is kept alive by the bind_t's own copy.
+   * than a closure object. Ours is a lambda capturing the same copies, so the
+   * cited manager/invoker pair is the binary's only. The MemBuffer's shared
+   * payload is kept alive by the lambda's own copy, as by the bind_t's.
    *
    * FUN_0088FAA0 sits a few bytes below this chain and stamps the identical
    * stru_1104128 = {manager=FUN_0088FC70, invoker=FUN_0088FC40} pair
@@ -297,11 +301,15 @@ namespace moho
    * `bin/external/ForgedAlliance.exe`). Left `skip` rather than folded into
    * this call site without evidence.
    */
-  void CWldUiInterface::ReceiveChat(const CClientBase* const sender, const gpg::MemBuffer<const char>& data)
+  void CWldUiInterface::ReceiveChat(
+    const CClientBase* const sender,
+    const gpg::MemBuffer<const char>& data
+  )
   {
     const fa::string nickname = sender->GetNickname();
-    boost::function<void(), std::allocator<void>> callback = boost::bind(&func_ReceiveChat, nickname, data);
-    THREAD_InvokeAsync(callback, 0u);
+    THREAD_InvokeAsync([nickname, data]() {
+      func_ReceiveChat(nickname, data);
+    }, 0u);
   }
 
   /**
@@ -326,16 +334,19 @@ namespace moho
    * which forwards to the Lua UI when a sim driver is active). The binary builds
    * this callback via `boost::bind(&UI_DriverNoteGameSpeedChanged, slotZeroBased,
    * gameSpeed)` (a free-function bind, flat function_buffer, no this-adjustment)
-   * rather than a closure object -- expressed here the same way to keep this
-   * call site the one that actually instantiates the cited manager/invoker pair.
+   * rather than a closure object. Ours is a lambda capturing the same values, so
+   * the cited manager/invoker pair is the binary's only.
    */
-  void CWldUiInterface::NoteGameSpeedChanged(const CClientBase* const client, const std::int32_t gameSpeed)
+  void CWldUiInterface::NoteGameSpeedChanged(
+    const CClientBase* const client,
+    const std::int32_t gameSpeed
+  )
   {
     // `value<unsigned int>` in the bind_t RTTI: the index is bound unsigned.
     const auto clientIndex = static_cast<std::uint32_t>(client->GetIndex());
-    boost::function<void(), std::allocator<void>> callback =
-      boost::bind(&UI_DriverNoteGameSpeedChanged, clientIndex, gameSpeed);
-    THREAD_InvokeAsync(callback, 0u);
+    THREAD_InvokeAsync([clientIndex, gameSpeed]() {
+      UI_DriverNoteGameSpeedChanged(clientIndex, gameSpeed);
+    }, 0u);
   }
 
   /**
@@ -344,7 +355,9 @@ namespace moho
    * What it does:
    * Forwards one client-bottleneck snapshot to the GPGNet reporting lane.
    */
-  void CWldUiInterface::ReportBottleneck(const SClientBottleneckInfo& info)
+  void CWldUiInterface::ReportBottleneck(
+    const SClientBottleneckInfo& info
+  )
   {
     GPGNET_ReportBottleneck(info);
   }
@@ -363,7 +376,10 @@ namespace moho
   /**
    * Engine addition (issue #275), not in the binary.
    */
-  void CWldUiInterface::NoteRejoinOffer(const fa::string& localSource, const fa::string& seats)
+  void CWldUiInterface::NoteRejoinOffer(
+    const fa::string& localSource,
+    const fa::string& seats
+  )
   {
     GPGNET_ReportRejoinOffer(localSource, seats);
   }
@@ -373,7 +389,10 @@ namespace moho
    * as NoteDisconnect does.
    */
   void CWldUiInterface::NoteOrdersDiffer(
-    const fa::string& sender, const fa::string& reporter, const bool selfReport, const bool stopped
+    const fa::string& sender,
+    const fa::string& reporter,
+    const bool selfReport,
+    const bool stopped
   )
   {
     fa::string text = selfReport
@@ -390,8 +409,9 @@ namespace moho
     if (stopped) {
       text = gpg::STR_Printf("%s The game has stopped to avoid a desync.", text.c_str());
     }
-    boost::function<void(), std::allocator<void>> callback = boost::bind(&ShowOrdersDifferNotice, text);
-    THREAD_InvokeAsync(callback, 0u);
+    THREAD_InvokeAsync([text]() {
+      ShowOrdersDifferNotice(text);
+    }, 0u);
   }
 
   /**

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <utility>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/AutoPtr.h"
 #include "legacy/containers/List.h"
 #include "legacy/containers/String.h"
@@ -12,7 +12,7 @@
 #include "legacy/containers/Map.h"
 #include "moho/misc/ID3DDeviceResources.h"
 #include "moho/render/camera/VTransform.h"
-#include "moho/sim/VisibilityRect.h"
+#include "gpg/core/containers/Rect2.h"
 #include "Wm3AxisAlignedBox3.h"
 #include "Wm3Vector2.h"
 #include "Wm3Vector3.h"
@@ -55,7 +55,7 @@ namespace moho
   struct CWldPropEntry
   {
     fa::string mBlueprintPath; // +0x00
-    VTransform mTransform;        // +0x1C
+    VTransform mTransform;     // +0x1C
   };
   static_assert(offsetof(CWldPropEntry, mBlueprintPath) == 0x00, "CWldPropEntry::mBlueprintPath offset must be 0x00");
   static_assert(offsetof(CWldPropEntry, mTransform) == 0x1C, "CWldPropEntry::mTransform offset must be 0x1C");
@@ -138,7 +138,7 @@ namespace moho
    * texture when `payloadSize` is 0. moho/terrain/CWldTerrainRes.cpp sets it during
    * static initialisation; without a client a preview loads with no texture.
    */
-  using PreviewTextureLoadHook = boost::shared_ptr<ID3DTextureSheet> (*)(char* payload, std::size_t payloadSize);
+  using PreviewTextureLoadHook = std::shared_ptr<ID3DTextureSheet> (*)(char* payload, std::size_t payloadSize);
   extern PreviewTextureLoadHook sPreviewTextureLoad;
 
   /**
@@ -170,7 +170,9 @@ namespace moho
      * display name into this chunk.
      */
     RWldMapPreviewChunk(
-      boost::shared_ptr<ID3DTextureSheet> textureSheet, const Wm3::Vector2f& previewSize, const char* previewName
+      std::shared_ptr<ID3DTextureSheet> textureSheet,
+      const Wm3::Vector2f& previewSize,
+      const char* previewName
     );
 
     /**
@@ -182,28 +184,13 @@ namespace moho
     ~RWldMapPreviewChunk();
 
     /**
-     * Address: 0x00890480 (FUN_00890480, ?GetTextureSheet@RWldMapPreviewChunk@Moho@@QAE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
+     * Address: 0x00890480 (FUN_00890480,
+     * ?GetTextureSheet@RWldMapPreviewChunk@Moho@@QAE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
      *
      * What it does:
      * Returns one retained shared texture-sheet handle for this preview chunk.
      */
-    [[nodiscard]] boost::shared_ptr<ID3DTextureSheet> GetTextureSheet();
-
-    /**
-     * Address: 0x008904A0 (FUN_008904A0, ?GetTerrainDim@RWldMapPreviewChunk@Moho@@QBE?AV?$Vector2@M@Wm3@@XZ)
-     *
-     * What it does:
-     * Returns stored preview terrain dimensions.
-     */
-    [[nodiscard]] Wm3::Vector2f GetTerrainDim() const;
-
-    /**
-     * Address: 0x008904B0 (FUN_008904B0, ?GetDescription@RWldMapPreviewChunk@Moho@@QBEPBDXZ)
-     *
-     * What it does:
-     * Returns preview description text buffer pointer.
-     */
-    [[nodiscard]] const char* GetDescription() const;
+    [[nodiscard]] std::shared_ptr<ID3DTextureSheet> GetTextureSheet();
 
     /**
      * Address: 0x008904C0 (FUN_008904C0,
@@ -233,21 +220,25 @@ namespace moho
      */
     [[nodiscard]] bool Save(gpg::BinaryWriter& writer);
 
-    boost::shared_ptr<ID3DTextureSheet> mPreviewTexture; // +0x00
+    std::shared_ptr<ID3DTextureSheet> mPreviewTexture;   // +0x00
     Wm3::Vector2f mPreviewSize;                          // +0x08
-    fa::string mPreviewName;                          // +0x10
+    fa::string mPreviewName;                             // +0x10
   };
   static_assert(
-    sizeof(boost::shared_ptr<ID3DTextureSheet>) == 0x08, "boost::shared_ptr<ID3DTextureSheet> size must be 0x08"
+    sizeof(std::shared_ptr<ID3DTextureSheet>) == 0x08,
+    "boost::shared_ptr<ID3DTextureSheet> size must be 0x08"
   );
   static_assert(
-    offsetof(RWldMapPreviewChunk, mPreviewTexture) == 0x00, "RWldMapPreviewChunk::mPreviewTexture offset must be 0x00"
+    offsetof(RWldMapPreviewChunk, mPreviewTexture) == 0x00,
+    "RWldMapPreviewChunk::mPreviewTexture offset must be 0x00"
   );
   static_assert(
-    offsetof(RWldMapPreviewChunk, mPreviewSize) == 0x08, "RWldMapPreviewChunk::mPreviewSize offset must be 0x08"
+    offsetof(RWldMapPreviewChunk, mPreviewSize) == 0x08,
+    "RWldMapPreviewChunk::mPreviewSize offset must be 0x08"
   );
   static_assert(
-    offsetof(RWldMapPreviewChunk, mPreviewName) == 0x10, "RWldMapPreviewChunk::mPreviewName offset must be 0x10"
+    offsetof(RWldMapPreviewChunk, mPreviewName) == 0x10,
+    "RWldMapPreviewChunk::mPreviewName offset must be 0x10"
   );
   static_assert(sizeof(RWldMapPreviewChunk) == 0x2C, "RWldMapPreviewChunk size must be 0x2C");
 
@@ -274,13 +265,10 @@ namespace moho
      * Stores one environment lookup name and one resolved terrain texture
      * resource handle.
      */
-    TerrainEnvironmentLookupEntry(
-      const fa::string& environmentName,
-      boost::shared_ptr<RD3DTextureResource> texture
-    );
+    TerrainEnvironmentLookupEntry(const fa::string& environmentName, std::shared_ptr<RD3DTextureResource> texture);
 
-    fa::string mEnvironmentName;                  // +0x00
-    boost::shared_ptr<RD3DTextureResource> mTexture; // +0x1C
+    fa::string mEnvironmentName;                     // +0x00
+    std::shared_ptr<RD3DTextureResource> mTexture;   // +0x1C
   };
   static_assert(
     offsetof(TerrainEnvironmentLookupEntry, mEnvironmentName) == 0x00,
@@ -318,7 +306,7 @@ namespace moho
    * Vector.h members. The release build strips the debug proxy for this lane,
    * so the triple is 0x0C and the second template argument is `false`.
    */
-  using TerrainNormalMapHandleArray = fa::vector<boost::shared_ptr<CD3DDynamicTextureSheet>, false>;
+  using TerrainNormalMapHandleArray = fa::vector<std::shared_ptr<CD3DDynamicTextureSheet>, false>;
   static_assert(sizeof(TerrainNormalMapHandleArray) == 0x0C, "TerrainNormalMapHandleArray size must be 0x0C");
 
   /**
@@ -354,19 +342,19 @@ namespace moho
 
   struct SNormalMapInfo
   {
-    float mXResolution;                                    // +0x00
-    float mYResolution;                                    // +0x04
-    float mScaleBiasX;                                     // +0x08
-    float mScaleBiasY;                                     // +0x0C
-    float mOffsetScaleX;                                   // +0x10
-    float mOffsetScaleY;                                   // +0x14
-    float mOffsetScaleZ;                                   // +0x18
-    float mOffsetScaleW;                                   // +0x1C
-    boost::shared_ptr<CD3DDynamicTextureSheet> mTexture; // +0x20
-    float mTileOriginX;                                    // +0x28
-    float mTileOriginY;                                    // +0x2C
-    float mWidth;                                          // +0x30
-    float mHeight;                                         // +0x34
+    float mXResolution;                                  // +0x00
+    float mYResolution;                                  // +0x04
+    float mScaleBiasX;                                   // +0x08
+    float mScaleBiasY;                                   // +0x0C
+    float mOffsetScaleX;                                 // +0x10
+    float mOffsetScaleY;                                 // +0x14
+    float mOffsetScaleZ;                                 // +0x18
+    float mOffsetScaleW;                                 // +0x1C
+    std::shared_ptr<CD3DDynamicTextureSheet> mTexture;   // +0x20
+    float mTileOriginX;                                  // +0x28
+    float mTileOriginY;                                  // +0x2C
+    float mWidth;                                        // +0x30
+    float mHeight;                                       // +0x34
   };
   static_assert(offsetof(SNormalMapInfo, mXResolution) == 0x00, "SNormalMapInfo::mXResolution offset must be 0x00");
   static_assert(offsetof(SNormalMapInfo, mYResolution) == 0x04, "SNormalMapInfo::mYResolution offset must be 0x04");
@@ -385,12 +373,12 @@ namespace moho
 
   struct SFogInfo
   {
-    float mStartDistance;                  // +0x00
-    float mCutoffDistance;                 // +0x04
-    float mMinClamp;                       // +0x08
-    float mMaxClamp;                       // +0x0C
-    float mCurveExponent;                  // +0x10
-    std::uint8_t mUnknown14_2F[0x1C]{};    // +0x14
+    float mStartDistance;               // +0x00
+    float mCutoffDistance;              // +0x04
+    float mMinClamp;                    // +0x08
+    float mMaxClamp;                    // +0x0C
+    float mCurveExponent;               // +0x10
+    std::uint8_t mUnknown14_2F[0x1C]{}; // +0x14
   };
   static_assert(sizeof(SFogInfo) == 0x30, "SFogInfo size must be 0x30");
   static_assert(offsetof(SFogInfo, mStartDistance) == 0x00, "SFogInfo::mStartDistance offset must be 0x00");
@@ -443,13 +431,13 @@ namespace moho
     [[nodiscard]] virtual SkyDome& GetSkyDome() = 0;
     virtual void SetSkycube(const fa::string& texturePath) = 0;
     [[nodiscard]] virtual const fa::string& GetSkycubeFile() const = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetSkycube() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetSkycube() const = 0;
     virtual void SetBackground(const fa::string& texturePath) = 0;
     [[nodiscard]] virtual const fa::string& GetBackgroundFile() const = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetBackground() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetBackground() const = 0;
     virtual void AddEnvLookup(const fa::string& environmentKey, const fa::string& texturePath) = 0;
     virtual void RemoveEnvLookup(const fa::string& environmentKey) = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetEnvLookup(const fa::string& environmentKey) const = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetEnvLookup(const fa::string& environmentKey) const = 0;
     virtual void EnumerateEnvLookup(TerrainEnvironmentLookupPairs& outPairs) const = 0;
     virtual void ClearEnvLookup() = 0;
     virtual void SetTopographicSamples(std::int32_t sampleCount) = 0;
@@ -463,7 +451,7 @@ namespace moho
     [[nodiscard]] virtual StratumMaterial& GetStratumMaterial() = 0;
     [[nodiscard]] virtual WaveSystem* GetWaveSystem() = 0;
     virtual void UpdateWaveSystem(const GeomCamera3& camera, float elapsedSeconds, std::int32_t tick) = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetWaterMap() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetWaterMap() const = 0;
     virtual void UpdateWaterMap(const gpg::Rect2i& rect) = 0;
     virtual void UpdateWaterMap() = 0;
     [[nodiscard]] virtual Wm3::Vector2f GetWaterMapSize() const = 0;
@@ -503,8 +491,8 @@ namespace moho
     virtual void SetWaterElevation(float elevation) = 0;
     virtual void SetWaterElevationDeep(float elevation) = 0;
     virtual void SetWaterElevationAbyss(float elevation) = 0;
-    [[nodiscard]] virtual bool SetPlayableMapRect(const VisibilityRect& rect) = 0;
-    [[nodiscard]] virtual const VisibilityRect* GetPlayableMapRect(VisibilityRect& outRect) const = 0;
+    [[nodiscard]] virtual bool SetPlayableMapRect(const gpg::Rect2i& rect) = 0;
+    [[nodiscard]] virtual const gpg::Rect2i* GetPlayableMapRect(gpg::Rect2i& outRect) const = 0;
     [[nodiscard]] virtual bool IsInPlayableRect(const Wm3::Vec3f& worldPos) = 0;
     virtual void SetWaterShaderProperties(const CWaterShaderProperties& properties) = 0;
     [[nodiscard]] virtual CWaterShaderProperties* GetWaterShaderProperties() = 0;
@@ -579,7 +567,7 @@ namespace moho
      * - the cartographic view, the splat and clutter passes, the map imager,
      * the console's map queries - follows it straight into `STIMap`.
      */
-    STIMap* mMap;                                          // +0x004
+    STIMap* mMap; // +0x004
   };
 
   /**
@@ -618,32 +606,6 @@ namespace moho
      */
     [[nodiscard]]
     bool MapLoad(gpg::StrArg mapName, LuaPlus::LuaState* state, bool previewOnly, CBackgroundTaskControl& loadControl);
-
-    /**
-     * Address: 0x00891030 (FUN_00891030, ?MapSave@CWldMap@Moho@@QAE_NVStrArg@gpg@@@Z)
-     *
-     * IDA signature:
-     * bool __thiscall Moho::CWldMap::MapSave(Moho::CWldMap *this, gpg::StrArg mapName);
-     *
-     * What it does:
-     * Resolves `mapName` to a writable on-disk path through the virtual file
-     * system (mounted directory prefix + `\` + base name), opens it for
-     * writing, emits the `Map\x1A` / version-2 file header, then saves the
-     * preview chunk, the terrain resource and the prop set through the same
-     * `gpg::BinaryWriter`. Returns false when any owned map resource is missing
-     * or the destination stream cannot be opened.
-     */
-    [[nodiscard]] bool MapSave(gpg::StrArg mapName);
-
-    /**
-     * Address: 0x00891250 (FUN_00891250, ?MapSetPreview@CWldMap@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@ABV?$Vector2@M@Wm3@@PBD@Z)
-     *
-     * What it does:
-     * Replaces the owned preview chunk with one built from the provided
-     * texture/size/name lane and destroys any previous chunk.
-     */
-    void
-    MapSetPreview(boost::shared_ptr<ID3DTextureSheet> textureSheet, const Wm3::Vector2f& previewSize, const char* previewName);
 
   private:
     /**

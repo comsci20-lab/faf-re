@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "moho/misc/OfflineTranslation.h"
 #include <Windows.h>
 #include <condition_variable>
@@ -218,3 +219,5 @@ void moho::RegisterOfflineTranslation() {
   static CScrLuaBinder queue(*set, "MicrochipQueueTranslation", &Queue, nullptr, "<global>", "Queue local offline translation");
   static CScrLuaBinder poll(*set, "MicrochipPollTranslations", &Poll, nullptr, "<global>", "Poll local offline translations");
 }
+
+#endif

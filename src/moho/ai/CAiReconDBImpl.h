@@ -7,7 +7,7 @@
 
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/core/containers/Rect2.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "legacy/containers/Vector.h"
 #include "moho/ai/IAiReconDB.h"
 #include "moho/entity/EntityCategoryLookupResolver.h"
@@ -200,9 +200,9 @@ namespace moho
       /// One blip's displaced handles; empty where the handle did not change.
       struct SReleasedHandles
       {
-        boost::shared_ptr<RScmResource> mMesh;
-        boost::shared_ptr<CAniPose> mPriorPose;
-        boost::shared_ptr<CAniPose> mPose;
+        std::shared_ptr<RScmResource> mMesh;
+        std::shared_ptr<CAniPose> mPriorPose;
+        std::shared_ptr<CAniPose> mPose;
       };
 
       SReleasedHandles mReleased[kCapacity];
@@ -298,56 +298,56 @@ namespace moho
      * VFTable SLOT: 8
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetVisionGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetVisionGrid() const override;
 
     /**
      * Address: 0x005C1A40 (FUN_005C1A40)
      * VFTable SLOT: 9
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetWaterGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetWaterGrid() const override;
 
     /**
      * Address: 0x005C1A70 (FUN_005C1A70)
      * VFTable SLOT: 10
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetRadarGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetRadarGrid() const override;
 
     /**
      * Address: 0x005C1AA0 (FUN_005C1AA0)
      * VFTable SLOT: 11
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetSonarGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetSonarGrid() const override;
 
     /**
      * Address: 0x005C1AD0 (FUN_005C1AD0)
      * VFTable SLOT: 12
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetOmniGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetOmniGrid() const override;
 
     /**
      * Address: 0x005C1B00 (FUN_005C1B00)
      * VFTable SLOT: 13
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetRCIGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetRCIGrid() const override;
 
     /**
      * Address: 0x005C1B30 (FUN_005C1B30)
      * VFTable SLOT: 14
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetSCIGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetSCIGrid() const override;
 
     /**
      * Address: 0x005C1B60 (FUN_005C1B60)
      * VFTable SLOT: 15
      */
     [[nodiscard]]
-    boost::SharedPtrRaw<CIntelGrid> ReconGetVCIGrid() const override;
+    std::shared_ptr<CIntelGrid> ReconGetVCIGrid() const override;
 
     /**
      * Address: 0x005C08F0 (FUN_005C08F0)
@@ -454,17 +454,6 @@ namespace moho
     void GenerateNewBlips(const fa::vector<SNewBlip>& pending);
 
     /**
-     * Address: 0x005C1810 (FUN_005C1810, Moho::CAiReconDBImpl::IntelConfirmDead)
-     *
-     * ReconBlip *
-     *
-     * What it does:
-     * Returns true when a blip should be treated as confirmed-dead for this
-     * army (ally visibility or direct LOS probe).
-     */
-    [[nodiscard]] bool IntelConfirmDead(ReconBlip* blip);
-
-    /**
      * Address: 0x005C0930 (FUN_005C0930)
      *
      * SNewBlip const &
@@ -510,7 +499,10 @@ namespace moho
      * appends pending fake-blip creation requests when needed.
      */
     void UpdateBlips(
-      ReconBlipMap::iterator first, ReconBlipMap::iterator last, Unit* sourceUnit, EReconFlags detectedFlags,
+      ReconBlipMap::iterator first,
+      ReconBlipMap::iterator last,
+      Unit* sourceUnit,
+      EReconFlags detectedFlags,
       fa::vector<SNewBlip>& pending
     );
 
@@ -627,24 +619,24 @@ namespace moho
     static constexpr std::uint32_t kVisionGridCellSize = 2u;
     static constexpr std::uint32_t kIntelGridCellSize = 4u;
 
-    ReconBlipMap mBlipMap;      // +0x04
-    fa::vector<ReconBlip*> mBblips;  // +0x10
-    fa::vector<ReconBlip*> mTempBlips; // +0x20
-    SimArmy* mArmy;                     // +0x30
-    STIMap* mMapData;                   // +0x34
-    Sim* mSim;                          // +0x38
-    CInfluenceMap* mIMap;               // +0x3C
-    boost::SharedPtrRaw<CIntelGrid> mVisionGrid; // +0x40
-    boost::SharedPtrRaw<CIntelGrid> mWaterGrid;  // +0x48
-    boost::SharedPtrRaw<CIntelGrid> mRadarGrid;  // +0x50
-    boost::SharedPtrRaw<CIntelGrid> mSonarGrid;  // +0x58
-    boost::SharedPtrRaw<CIntelGrid> mOmniGrid;   // +0x60
-    boost::SharedPtrRaw<CIntelGrid> mRCIGrid;    // +0x68
-    boost::SharedPtrRaw<CIntelGrid> mSCIGrid;    // +0x70
-    boost::SharedPtrRaw<CIntelGrid> mVCIGrid;    // +0x78
-    EntityCategorySet mVisibleToReconCategory; // +0x80
-    std::uint8_t mFogOfWar;              // +0xA8
-    std::uint8_t mPadA9[0x07];           // +0xA9
+    ReconBlipMap mBlipMap;                       // +0x04
+    fa::vector<ReconBlip*> mBblips;              // +0x10
+    fa::vector<ReconBlip*> mTempBlips;           // +0x20
+    SimArmy* mArmy;                              // +0x30
+    STIMap* mMapData;                            // +0x34
+    Sim* mSim;                                   // +0x38
+    CInfluenceMap* mIMap;                        // +0x3C
+    std::shared_ptr<CIntelGrid> mVisionGrid;     // +0x40
+    std::shared_ptr<CIntelGrid> mWaterGrid;      // +0x48
+    std::shared_ptr<CIntelGrid> mRadarGrid;      // +0x50
+    std::shared_ptr<CIntelGrid> mSonarGrid;      // +0x58
+    std::shared_ptr<CIntelGrid> mOmniGrid;       // +0x60
+    std::shared_ptr<CIntelGrid> mRCIGrid;        // +0x68
+    std::shared_ptr<CIntelGrid> mSCIGrid;        // +0x70
+    std::shared_ptr<CIntelGrid> mVCIGrid;        // +0x78
+    EntityCategorySet mVisibleToReconCategory;   // +0x80
+    std::uint8_t mFogOfWar;                      // +0xA8
+    std::uint8_t mPadA9[0x07];                   // +0xA9
   };
 
   static_assert(sizeof(CAiReconDBImpl) == 0xB0, "CAiReconDBImpl size must be 0xB0");

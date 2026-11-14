@@ -33,7 +33,9 @@ namespace moho
       return CUIWorldMesh::sType;
     }
 
-    [[nodiscard]] const char* LuaStringOrEmpty(const LuaPlus::LuaObject& object) noexcept
+    [[nodiscard]] const char* LuaStringOrEmpty(
+      const LuaPlus::LuaObject& object
+    ) noexcept
     {
       const char* const value = object.GetString();
       return value != nullptr ? value : "";
@@ -82,7 +84,9 @@ namespace moho
     }
   } // namespace
 
-  CUIWorldMesh::CUIWorldMesh(const LuaPlus::LuaObject& luaObject)
+  CUIWorldMesh::CUIWorldMesh(
+    const LuaPlus::LuaObject& luaObject
+  )
     : CScriptObject()
     , mMeshInstance(nullptr)
   {
@@ -90,7 +94,9 @@ namespace moho
     LiveWorldMeshes().insert(this);
   }
 
-  int CUIWorldMesh::DestroyAllOf(LuaPlus::LuaState* const state)
+  int CUIWorldMesh::DestroyAllOf(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr) {
       return 0;
@@ -127,45 +133,15 @@ namespace moho
   }
 
   /**
-   * Address: 0x0086AE00 (FUN_0086AE00)
-   *
-   * What it does:
-   * Builds one stance transform from position/orientation components and
-   * applies it to the owned mesh instance as both start and end stance.
-   */
-  void CUIWorldMesh::SetStanceFromComponents(
-    const float positionX,
-    const float positionY,
-    const float positionZ,
-    const float orientationX,
-    const float orientationY,
-    const float orientationZ,
-    const float orientationW
-  )
-  {
-    if (mMeshInstance == nullptr) {
-      return;
-    }
-
-    VTransform transform{};
-    transform.orient_.x = orientationX;
-    transform.orient_.y = orientationY;
-    transform.orient_.z = orientationZ;
-    transform.orient_.w = orientationW;
-    transform.pos_.x = positionX;
-    transform.pos_.y = positionY;
-    transform.pos_.z = positionZ;
-    mMeshInstance->SetStance(transform, transform);
-  }
-
-  /**
    * Address: 0x0086B2C0 (FUN_0086B2C0, Moho::CUIWorldMesh::SetMesh)
    *
    * What it does:
    * Resolves one world-mesh descriptor table and updates the owned mesh
    * instance from either direct model/material lanes or unit blueprint data.
    */
-  void CUIWorldMesh::SetMesh(const LuaPlus::LuaObject& meshDescriptor)
+  void CUIWorldMesh::SetMesh(
+    const LuaPlus::LuaObject& meshDescriptor
+  )
   {
     float uniformScale = 1.0f;
     int color = -1;
@@ -194,12 +170,13 @@ namespace moho
       }
 
       // 0x0086B616: the shared `GetModel` lane, same as every other model consumer.
-      const boost::shared_ptr<RScmResource> modelResource = GetModel(LuaStringOrEmpty(meshNameObject), nullptr);
+      const std::shared_ptr<RScmResource> modelResource = GetModel(LuaStringOrEmpty(meshNameObject), nullptr);
       const fa::string textureName(LuaStringOrEmpty(textureNameObject));
       const fa::string shaderName(LuaStringOrEmpty(shaderNameObject));
       const fa::string emptyTextureName{};
-      const boost::shared_ptr<MeshMaterial> material =
-        MeshMaterial::Create(shaderName, textureName, emptyTextureName, emptyTextureName, emptyTextureName, emptyTextureName, nullptr);
+      const std::shared_ptr<MeshMaterial> material = MeshMaterial::Create(
+        shaderName, textureName, emptyTextureName, emptyTextureName, emptyTextureName, emptyTextureName, nullptr
+      );
 
       CWldSession* const worldSession = WLD_GetActiveSession();
       const int gameTick = worldSession != nullptr ? worldSession->mGameTick : 0;
@@ -223,8 +200,10 @@ namespace moho
         RResId normalizedBlueprintId{};
         gpg::STR_CopyFilename(&normalizedBlueprintId.name, &blueprintId);
 
-        if (RUnitBlueprint* const unitBlueprint = worldSession->mRules->GetUnitBlueprint(normalizedBlueprintId);
-            unitBlueprint != nullptr) {
+        if (
+          RUnitBlueprint* const unitBlueprint = worldSession->mRules->GetUnitBlueprint(normalizedBlueprintId);
+          unitBlueprint != nullptr
+        ) {
           meshBlueprint = worldSession->mRules->GetMeshBlueprint(unitBlueprint->Display.MeshBlueprint);
           blueprintUniformScale = unitBlueprint->Display.UniformScale;
         }
@@ -233,7 +212,9 @@ namespace moho
 
       const Wm3::Vec3f scale{blueprintUniformScale, blueprintUniformScale, blueprintUniformScale};
       mMeshInstance = meshRenderer != nullptr
-        ? meshRenderer->CreateMeshInstance(gameTick, color, meshBlueprint, scale, false, boost::shared_ptr<MeshMaterial>())
+        ? meshRenderer->CreateMeshInstance(
+            gameTick, color, meshBlueprint, scale, false, std::shared_ptr<MeshMaterial>()
+          )
         : nullptr;
     }
 
@@ -256,7 +237,9 @@ namespace moho
    * `[instance + 0xE0]` -- `MeshInstance::sphere` -- into the caller's storage
    * and returns that storage. There is no null check on the output pointer.
    */
-  Wm3::Sphere3f& CUIWorldMesh::GetWorldSphere(Wm3::Sphere3f& outSphere) const
+  Wm3::Sphere3f& CUIWorldMesh::GetWorldSphere(
+    Wm3::Sphere3f& outSphere
+  ) const
   {
     if (mMeshInstance != nullptr) {
       mMeshInstance->UpdateInterpolatedFields();
@@ -276,7 +259,9 @@ namespace moho
    * at 0x0086AFC6, then the six bound floats starting at `[instance + 0xF0]`
    * (0x0086AFCE) -- `MeshInstance::xMin` through `zMax`.
    */
-  Wm3::AxisAlignedBox3f& CUIWorldMesh::GetWorldBounds(Wm3::AxisAlignedBox3f& outBounds) const
+  Wm3::AxisAlignedBox3f& CUIWorldMesh::GetWorldBounds(
+    Wm3::AxisAlignedBox3f& outBounds
+  ) const
   {
     if (mMeshInstance != nullptr) {
       mMeshInstance->UpdateInterpolatedFields();

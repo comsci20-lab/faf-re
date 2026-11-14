@@ -7,51 +7,10 @@
 #include "legacy/containers/String.h"
 using namespace moho;
 
-void moho::TrimRange(const char* s, const size_t n, const char*& outBegin, const char*& outEnd)
-{
-  const char* b = s;
-  const char* e = s + n;
-  while (b < e && gpg::STR_IsAsciiWhitespace(*b)) {
-    ++b;
-  }
-  while (e > b && gpg::STR_IsAsciiWhitespace(e[-1])) {
-    --e;
-  }
-  outBegin = b;
-  outEnd = e;
-}
-
-void moho::SplitByComma(const fa::string& src, fa::vector<fa::string>& out)
-{
-  const char* s = src.c_str();
-  const size_t n = src.size();
-  size_t i = 0;
-  while (i < n) {
-    // skip delimiters and spaces
-    while (i < n && (s[i] == ',' || gpg::STR_IsAsciiWhitespace(s[i]))) {
-      ++i;
-    }
-    if (i >= n) {
-      break;
-    }
-
-    // read token till next comma
-    size_t j = i;
-    while (j < n && s[j] != ',')
-      ++j;
-
-    // trim [i, j)
-    const char* tb;
-    const char* te;
-    TrimRange(s + i, j - i, tb, te);
-    if (te > tb) {
-      out.push_back(fa::string(tb, static_cast<size_t>(te - tb)));
-    }
-    i = (j < n ? j + 1 : j);
-  }
-}
-
-fa::string moho::Join(const fa::vector<fa::string>& items, const char* sep)
+fa::string moho::Join(
+  const fa::vector<fa::string>& items,
+  const char* sep
+)
 {
   fa::string out;
   if (items.empty()) {
@@ -73,42 +32,6 @@ fa::string moho::Join(const fa::vector<fa::string>& items, const char* sep)
     out.append(items[i].c_str(), items[i].size());
   }
   return out;
-}
-
-bool moho::IsNameIgnored(const fa::string& ignoreList, const char* name)
-{
-  if (!name || ignoreList.empty()) {
-    return false;
-  }
-
-  fa::vector<fa::string> tokens;
-  tokens.reserve(8); // small, avoids reallocs
-  SplitByComma(ignoreList, tokens);
-
-  const size_t len = std::strlen(name);
-  for (const auto& t : tokens) {
-    if (t.size() == len && std::memcmp(t.c_str(), name, len) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Address: 0x0050E010 (FUN_0050E010, ?BP_ShortId@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV23@@Z)
- *
- * What it does:
- * Returns the path stem lane delimited by slash/dot markers using the same
- * index math as the original binary helper.
- */
-fa::string moho::BP_ShortId(const fa::string& idText)
-{
-  const std::string_view text = idText.view();
-  const std::size_t slash = text.find_last_of('/');
-  const std::size_t start = (slash == std::string_view::npos) ? 0u : (slash + 1u);
-  const std::size_t dot = text.find_last_of('.');
-  const std::size_t end = (dot == std::string_view::npos || dot < start) ? text.size() : dot;
-  return idText.substr(start, end - start);
 }
 
 /**
@@ -143,11 +66,13 @@ bool moho::URI_Split(
     return false;
   }
 
-  auto assignOutputs = [&](const std::string& schemeValue,
-                           const std::string& authorityValue,
-                           const std::string& pathValue,
-                           const std::string& queryValue,
-                           const std::string& fragmentValue) {
+  auto assignOutputs = [&](
+                         const std::string& schemeValue,
+                         const std::string& authorityValue,
+                         const std::string& pathValue,
+                         const std::string& queryValue,
+                         const std::string& fragmentValue
+                       ) {
     scheme->assign_owned(schemeValue);
     authority->assign_owned(authorityValue);
     path->assign_owned(pathValue);

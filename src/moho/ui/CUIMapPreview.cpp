@@ -5,7 +5,7 @@ namespace
   constexpr const char* kCUIMapPreviewSetTextureHelpText = "CUIMapPreview:SetTexture(texture_name)";
   constexpr const char* kCUIMapPreviewSetTextureFromMapHelpText = "CUIMapPreview:SetTextureFromMap(map_name)";
   constexpr const char* kCUIMapPreviewClearTextureHelpText = "CUIMapPreview::ClearTexture()";
-}
+} // namespace
 
 gpg::RType* moho::CUIMapPreview::sType = nullptr;
 
@@ -81,7 +81,7 @@ bool moho::CUIMapPreview::SetTexture(
     }
   }
 
-  mTexture = boost::static_pointer_cast<ID3DTextureSheet>(loadedTexture);
+  mTexture = std::static_pointer_cast<ID3DTextureSheet>(loadedTexture);
   return mTexture.get() != nullptr;
 }
 

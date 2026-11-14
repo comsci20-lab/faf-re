@@ -39,6 +39,22 @@ Every engine function in `src/` was rebuilt from the original binary, and its be
 - Use named fields and real virtual calls, not pointer arithmetic or offsets (`*(int*)(p + 0x78)`).
 - No stub or placeholder functions.
 
+## Code format
+
+C and C++ code under `src/`, `tests/` and `tools/` is formatted with the repository's [.clang-format](.clang-format), using clang-format 22. The `Format` check fails a pull request when a line it adds or changes is not formatted. Lines the PR doesn't touch are not checked, so older code is not a reason to reformat whole files.
+
+Before pushing, format the lines your branch changes and commit the result:
+
+```sh
+git clang-format origin/master
+```
+
+`git clang-format` comes with LLVM (Windows: `C:\Program Files\LLVM\bin`), or with `pip install clang-format==22.1.8`, which is the version the check uses.
+
+### Platform guards
+
+Platform code tests the macros in [src/platform/PlatformDefines.h](src/platform/PlatformDefines.h), never the compilers' own (`_WIN32`, `__linux__`, `__APPLE__`): `#if FAFRE_PLATFORM_WINDOWS` and `#if FAFRE_PLATFORM_POSIX`. Code that every POSIX system shares (the SDL window layer, `src/platform/posix/`, sockets, threads) tests `FAFRE_PLATFORM_POSIX`, so the macOS port gets it too. `FAFRE_PLATFORM_LINUX` and `FAFRE_PLATFORM_MACOS` are only for something one system has, named in a comment on the same line: `#if FAFRE_PLATFORM_LINUX // MSG_NOSIGNAL; macOS sets SO_NOSIGPIPE`. The `platform-macros` check fails a pull request that adds a line breaking this; run it before pushing with `python .github/scripts/platform_macros.py --diff origin/master HEAD`.
+
 ## Writing tests
 
 Use **GoogleTest (GTest)** for all unit and integration tests. Do not roll custom or ad-hoc test harnesses (such as custom `Check` loops, hand-rolled `gFailures` counters, or manual `main()` runners).
@@ -64,6 +80,7 @@ Use **GoogleTest (GTest)** for all unit and integration tests. Do not roll custo
   # Run a specific test executable with filter
   .\build\clang-x64-release\tests\faf_net_tests.exe --gtest_filter=Existing_NetRobustness.LuaValidValues
   ```
+- **Client fixes come with a test**: when a fix has logic that can run without a window or a GPU (coordinate conversion, a resize queue, a path or prefs rule), move that logic into a function or small class that a test can call without the window. The `Linux client` check builds the Linux client and every test program, and runs ctest, on each pull request that changes code or build files.
 - **Coverage**: the `clang-x64-release-coverage` preset (Linux: `linux-clang-x64-release-coverage`) builds with llvm-cov counters ([cmake/FafCoverage.cmake](cmake/FafCoverage.cmake)). `tools/coverage/report.sh <build folder>` runs ctest and writes a per-file and per-folder line coverage report of `src/` to `tmp/coverage/`.
 
 ## Commits and pull request titles

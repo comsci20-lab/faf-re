@@ -1,4 +1,4 @@
-// The smaller gpg containers (src/gpg/core/containers): DList, IntrusiveLink, IntrusiveRbTree,
+// The smaller gpg containers (src/gpg/core/containers): DList, IntrusiveLink,
 // Array2D, BitArray2D, Rect2, ChunkedVector, FlatGenerationMap, TrackedPointerIndex, ByteSpan.
 
 #include <gtest/gtest.h>
@@ -20,18 +20,24 @@
 #include "gpg/core/containers/DList.h"
 #include "gpg/core/containers/FlatGenerationMap.h"
 #include "gpg/core/containers/IntrusiveLink.h"
-#include "gpg/core/containers/IntrusiveRbTree.h"
 #include "gpg/core/containers/Rect2.h"
 #include "gpg/core/containers/TrackedPointerIndex.h"
 
 namespace
 {
-  [[nodiscard]] std::size_t Pick(std::mt19937& rng, const std::size_t maxInclusive)
+  [[nodiscard]] std::size_t Pick(
+    std::mt19937& rng,
+    const std::size_t maxInclusive
+  )
   {
     return std::uniform_int_distribution<std::size_t>(0, maxInclusive)(rng);
   }
 
-  [[nodiscard]] int PickInt(std::mt19937& rng, const int lo, const int hi)
+  [[nodiscard]] int PickInt(
+    std::mt19937& rng,
+    const int lo,
+    const int hi
+  )
   {
     return std::uniform_int_distribution<int>(lo, hi)(rng);
   }
@@ -43,7 +49,9 @@ namespace
 
   using ItemList = gpg::DList<Item>;
 
-  [[nodiscard]] std::vector<int> ListValues(ItemList& list)
+  [[nodiscard]] std::vector<int> ListValues(
+    ItemList& list
+  )
   {
     std::vector<int> out;
     for (Item* const item : list) {
@@ -59,7 +67,9 @@ namespace
     return out;
   }
 
-  [[nodiscard]] std::vector<int> ListValues(const std::list<int>& list)
+  [[nodiscard]] std::vector<int> ListValues(
+    const std::list<int>& list
+  )
   {
     return std::vector<int>(list.begin(), list.end());
   }
@@ -67,7 +77,10 @@ namespace
 
 // --- DList -------------------------------------------------------------------------------------
 
-TEST(GpgDList, EmptyListAndUnlinkedItem)
+TEST(
+  GpgDList,
+  EmptyListAndUnlinkedItem
+)
 {
   ItemList list;
   EXPECT_TRUE(list.empty());
@@ -83,7 +96,10 @@ TEST(GpgDList, EmptyListAndUnlinkedItem)
   EXPECT_TRUE(item.ListIsUnlinked());
 }
 
-TEST(GpgDList, RandomOpsMatchStdList)
+TEST(
+  GpgDList,
+  RandomOpsMatchStdList
+)
 {
   // Items 0..31 move between two lists; each item is in at most one.
   std::mt19937 rng(1);
@@ -197,7 +213,9 @@ TEST(GpgDList, RandomOpsMatchStdList)
           owner->ListUnlink();
         }
       }
-      refA.remove_if([](const int v) { return (v & 1) != 0; });
+      refA.remove_if([](const int v) {
+        return (v & 1) != 0;
+      });
       break;
     }
     default: {
@@ -224,7 +242,10 @@ TEST(GpgDList, RandomOpsMatchStdList)
   }
 }
 
-TEST(GpgDList, DestroyedItemsLeaveTheList)
+TEST(
+  GpgDList,
+  DestroyedItemsLeaveTheList
+)
 {
   ItemList list;
   auto first = std::make_unique<Item>();
@@ -249,124 +270,22 @@ TEST(GpgDList, DestroyedItemsLeaveTheList)
   EXPECT_EQ(constList.back()->value, 3);
 }
 
-TEST(GpgIntrusiveLink, StartsUnlinked)
+TEST(
+  GpgIntrusiveLink,
+  StartsUnlinked
+)
 {
   const gpg::core::IntrusiveLink<int*> link;
   EXPECT_EQ(link.prev, nullptr);
   EXPECT_EQ(link.next, nullptr);
 }
 
-// --- IntrusiveRbTree ---------------------------------------------------------------------------
-
-namespace
-{
-  struct TreeLinks
-  {
-    std::uint8_t* left;
-    std::uint8_t* parent;
-    std::uint8_t* right;
-  };
-
-  struct TreeOwner
-  {
-    int key;
-    TreeLinks links;
-  };
-
-  struct TreeContainer
-  {
-    std::uint64_t pad;
-    TreeLinks head;
-  };
-
-  using OwnerTree = gpg::core::IntrusiveRbTree<
-    TreeOwner,
-    offsetof(TreeOwner, links),
-    offsetof(TreeContainer, head),
-    offsetof(TreeLinks, left),
-    offsetof(TreeLinks, parent),
-    offsetof(TreeLinks, right)>;
-
-  [[nodiscard]] std::uint8_t* LinksOf(TreeOwner& owner)
-  {
-    return reinterpret_cast<std::uint8_t*>(&owner.links);
-  }
-
-  /** A search tree over `owners` hung from `container.head`; empty children are `nil`. */
-  void BuildOwnerTree(TreeContainer& container, std::vector<TreeOwner>& owners, const bool nilIsHead)
-  {
-    std::uint8_t* const head = reinterpret_cast<std::uint8_t*>(&container.head);
-    std::uint8_t* const nil = nilIsHead ? head : nullptr;
-    container.head = TreeLinks{nullptr, nullptr, nullptr};
-    TreeOwner* root = nullptr;
-    TreeOwner* minimum = nullptr;
-    TreeOwner* maximum = nullptr;
-    for (TreeOwner& owner : owners) {
-      owner.links = TreeLinks{nil, head, nil};
-      if (root == nullptr) {
-        root = &owner;
-        minimum = &owner;
-        maximum = &owner;
-        continue;
-      }
-      TreeOwner* cur = root;
-      for (;;) {
-        std::uint8_t*& child = owner.key < cur->key ? cur->links.left : cur->links.right;
-        if (child == nil) {
-          child = LinksOf(owner);
-          owner.links.parent = LinksOf(*cur);
-          break;
-        }
-        cur = reinterpret_cast<TreeOwner*>(child - offsetof(TreeOwner, links));
-      }
-      if (owner.key < minimum->key) {
-        minimum = &owner;
-      }
-      if (owner.key >= maximum->key) {
-        maximum = &owner;
-      }
-    }
-    if (root != nullptr) {
-      container.head = TreeLinks{LinksOf(*minimum), LinksOf(*root), LinksOf(*maximum)};
-    }
-  }
-} // namespace
-
-TEST(GpgIntrusiveRbTree, WalksEmbeddedNodesInOrder)
-{
-  std::mt19937 rng(2);
-  for (int round = 0; round < 400; ++round) {
-    const bool nilIsHead = (round & 1) != 0;
-    std::vector<TreeOwner> owners(Pick(rng, 30));
-    std::vector<int> keys;
-    for (TreeOwner& owner : owners) {
-      owner.key = static_cast<int>(rng() % 50u);
-      keys.push_back(owner.key);
-    }
-    TreeContainer container{};
-    BuildOwnerTree(container, owners, nilIsHead);
-    const OwnerTree tree(&container);
-    EXPECT_EQ(tree.head_node(), &container.head);
-    std::vector<int> walked;
-    for (auto it = tree.begin(); it != tree.end(); ++it) {
-      walked.push_back(it->key);
-    }
-    std::sort(keys.begin(), keys.end());
-    ASSERT_EQ(walked, keys) << "round " << round;
-    std::vector<int> postIncrement;
-    for (auto it = tree.begin(); it != tree.end();) {
-      postIncrement.push_back((*it++).key);
-    }
-    ASSERT_EQ(postIncrement, keys);
-    if (owners.empty()) {
-      ASSERT_EQ(tree.root_node(), nullptr);
-    }
-  }
-}
-
 // --- Array2D -----------------------------------------------------------------------------------
 
-TEST(GpgArray2D, ContainsRectMatchesAScanOfTheClippedRect)
+TEST(
+  GpgArray2D,
+  ContainsRectMatchesAScanOfTheClippedRect
+)
 {
   std::mt19937 rng(3);
   for (int round = 0; round < 3000; ++round) {
@@ -406,18 +325,30 @@ namespace
     int height;
     std::vector<bool> bits;
 
-    BitModel(const int w, const int h)
+    BitModel(
+      const int w,
+      const int h
+    )
       : width(w)
       , height(h)
       , bits(static_cast<std::size_t>(w * h), false)
     {}
 
-    [[nodiscard]] bool Get(const int x, const int z) const
+    [[nodiscard]] bool Get(
+      const int x,
+      const int z
+    ) const
     {
       return bits[static_cast<std::size_t>(z * width + x)];
     }
 
-    void FillRect(const int x0, const int z0, const int w, const int h, const bool fill)
+    void FillRect(
+      const int x0,
+      const int z0,
+      const int w,
+      const int h,
+      const bool fill
+    )
     {
       for (int z = std::max(z0, 0); z < std::min(z0 + h, height); ++z) {
         for (int x = std::max(x0, 0); x < std::min(x0 + w, width); ++x) {
@@ -426,7 +357,12 @@ namespace
       }
     }
 
-    [[nodiscard]] bool AnyInRect(const int x0, const int z0, const int w, const int h) const
+    [[nodiscard]] bool AnyInRect(
+      const int x0,
+      const int z0,
+      const int w,
+      const int h
+    ) const
     {
       for (int z = std::max(z0, 0); z < std::min(z0 + h, height); ++z) {
         for (int x = std::max(x0, 0); x < std::min(x0 + w, width); ++x) {
@@ -439,18 +375,25 @@ namespace
     }
   };
 
-  [[nodiscard]] bool BitOf(const gpg::BitArray2D& array, const int x, const int z)
+  [[nodiscard]] bool BitOf(
+    const gpg::BitArray2D& array,
+    const int x,
+    const int z
+  )
   {
     return array.IsBitSetOrOutOfBounds(static_cast<unsigned int>(x), static_cast<unsigned int>(z));
   }
 } // namespace
 
-TEST(GpgBitArray2D, ResetGivesAZeroedGridOfWholeWords)
+TEST(
+  GpgBitArray2D,
+  ResetGivesAZeroedGridOfWholeWords
+)
 {
   gpg::BitArray2D array(7u, 40u);
   EXPECT_EQ(array.width, 7);
   EXPECT_EQ(array.height, 40);
-  EXPECT_EQ(array.size, 14);  // 7 columns of two 32-bit words
+  EXPECT_EQ(array.size, 14); // 7 columns of two 32-bit words
   for (int i = 0; i < array.size; ++i) {
     ASSERT_EQ(array.ptr[i], 0);
   }
@@ -461,7 +404,10 @@ TEST(GpgBitArray2D, ResetGivesAZeroedGridOfWholeWords)
   EXPECT_EQ(empty.size, 0);
 }
 
-TEST(GpgBitArray2D, RandomFillsAndQueriesMatchAPlainGrid)
+TEST(
+  GpgBitArray2D,
+  RandomFillsAndQueriesMatchAPlainGrid
+)
 {
   std::mt19937 rng(4);
   for (int round = 0; round < 60; ++round) {
@@ -474,8 +420,10 @@ TEST(GpgBitArray2D, RandomFillsAndQueriesMatchAPlainGrid)
       const int z0 = PickInt(rng, -40, height + 5);
       const int w = PickInt(rng, -2, width + 4);
       const int h = PickInt(rng, -2, height + 40);
-      SCOPED_TRACE(::testing::Message() << "round " << round << " step " << step << " grid " << width << "x" << height
-                                        << " rect " << x0 << "," << z0 << " " << w << "x" << h);
+      SCOPED_TRACE(
+        ::testing::Message() << "round " << round << " step " << step << " grid " << width << "x" << height << " rect "
+                             << x0 << "," << z0 << " " << w << "x" << h
+      );
       switch (rng() % 5u) {
       case 0:
       case 1: {
@@ -545,7 +493,10 @@ TEST(GpgBitArray2D, RandomFillsAndQueriesMatchAPlainGrid)
   }
 }
 
-TEST(GpgBitArray2D, AnyBitSetOnAnEmptyGrid)
+TEST(
+  GpgBitArray2D,
+  AnyBitSetOnAnEmptyGrid
+)
 {
   gpg::BitArray2D array(4u, 4u);
   unsigned int x = 99;
@@ -561,7 +512,10 @@ TEST(GpgBitArray2D, AnyBitSetOnAnEmptyGrid)
 
 // --- Rect2 -------------------------------------------------------------------------------------
 
-TEST(GpgRect2, PredicatesMatchCellCounts)
+TEST(
+  GpgRect2,
+  PredicatesMatchCellCounts
+)
 {
   std::mt19937 rng(5);
   for (int round = 0; round < 20000; ++round) {
@@ -601,7 +555,10 @@ TEST(GpgRect2, PredicatesMatchCellCounts)
   }
 }
 
-TEST(GpgRect2, FloatRect)
+TEST(
+  GpgRect2,
+  FloatRect
+)
 {
   const gpg::Rect2f a{0.0f, 0.0f, 1.0f, 1.0f};
   const gpg::Rect2f b{0.5f, 0.5f, 2.0f, 2.0f};
@@ -617,9 +574,12 @@ TEST(GpgRect2, FloatRect)
 
 // --- ChunkedVector -----------------------------------------------------------------------------
 
-TEST(GpgChunkedVector, PushAcrossChunksAndKeepAddresses)
+TEST(
+  GpgChunkedVector,
+  PushAcrossChunksAndKeepAddresses
+)
 {
-  gpg::core::ChunkedVector<int, 2> v;  // chunks of 4
+  gpg::core::ChunkedVector<int, 2> v; // chunks of 4
   EXPECT_EQ(v.size(), 0u);
   std::vector<int*> addresses;
   for (int i = 0; i < 1000; ++i) {
@@ -652,7 +612,11 @@ TEST(GpgChunkedVector, PushAcrossChunksAndKeepAddresses)
 
 namespace
 {
-  void RunFlatMapRandomOps(const unsigned seed, const unsigned capacityLog2, const std::uint32_t keyRange)
+  void RunFlatMapRandomOps(
+    const unsigned seed,
+    const unsigned capacityLog2,
+    const std::uint32_t keyRange
+  )
   {
     std::mt19937 rng(seed);
     gpg::core::FlatGenerationMap<int> map(capacityLog2);
@@ -698,7 +662,10 @@ namespace
   }
 } // namespace
 
-TEST(GpgFlatGenerationMap, RandomOpsMatchUnorderedMap)
+TEST(
+  GpgFlatGenerationMap,
+  RandomOpsMatchUnorderedMap
+)
 {
   RunFlatMapRandomOps(1, 1, 64);
   RunFlatMapRandomOps(2, 2, 300);
@@ -706,7 +673,10 @@ TEST(GpgFlatGenerationMap, RandomOpsMatchUnorderedMap)
   RunFlatMapRandomOps(4, 3, 20);
 }
 
-TEST(GpgFlatGenerationMap, ClearForgetsEveryKeyAtOnce)
+TEST(
+  GpgFlatGenerationMap,
+  ClearForgetsEveryKeyAtOnce
+)
 {
   gpg::core::FlatGenerationMap<int> map(4);
   for (std::uint32_t round = 0; round < 50; ++round) {
@@ -727,7 +697,10 @@ TEST(GpgFlatGenerationMap, ClearForgetsEveryKeyAtOnce)
 
 // --- TrackedPointerIndex -----------------------------------------------------------------------
 
-TEST(GpgTrackedPointerIndex, FindsEveryInsertedKeyAcrossGrowth)
+TEST(
+  GpgTrackedPointerIndex,
+  FindsEveryInsertedKeyAcrossGrowth
+)
 {
   // 40000 entries: past one chunk of 16384 and past the first growth at 32768.
   auto index = std::make_unique<gpg::TrackedPointerIndex>();
@@ -765,7 +738,10 @@ TEST(GpgTrackedPointerIndex, FindsEveryInsertedKeyAcrossGrowth)
   EXPECT_EQ(index->Find(gpg::RRef{objectOf(1), typeOf(1)})->record.index, 77);
 }
 
-TEST(GpgByteSpan, SizeIsTheDistance)
+TEST(
+  GpgByteSpan,
+  SizeIsTheDistance
+)
 {
   const char text[] = "abcdef";
   const gpg::ByteSpan span{text + 1, text + 4};

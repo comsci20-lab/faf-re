@@ -59,8 +59,7 @@ namespace
 
     return static_cast<moho::CLuaWldUIProvider*>(upcast.mObj);
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x0086A530 (??0CLuaWldUIProvider@Moho@@QAE@@Z, Moho::CLuaWldUIProvider::CLuaWldUIProvider)
@@ -310,7 +309,7 @@ void moho::CLuaWldUIProvider::CreateGameInterface(
       }
 
       const char* const texturePath = iter.m_valueObj.GetString();
-      boost::shared_ptr<PrefetchData> handle{};
+      std::shared_ptr<PrefetchData> handle{};
       resources->LoadPrefetchData(handle, texturePath);
       mPrefetchData.push_back(handle);
     }

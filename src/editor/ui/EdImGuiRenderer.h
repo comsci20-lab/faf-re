@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+
+#include "gpg/gal/RenderTarget.hpp"
 #include <vector>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 
 struct ImDrawData;
 struct ImDrawVert;
@@ -13,7 +15,7 @@ namespace gpg::gal
 {
   class GpuBuffer;
   class GpuProgram;
-}
+} // namespace gpg::gal
 
 namespace faf::editor
 {
@@ -42,15 +44,28 @@ namespace faf::editor
      * row. Returns its ImTextureID (0 when it can't be made); it lives until DestroyImage.
      */
     static std::uint64_t CreateImage(int width, int height, const std::uint32_t* bgra);
+    /**
+     * The game's view as an image: a fixed id, its target looked up when the panels draw (`SetGameViewSource`), as a
+     * device reset (a play starting) between building the draw lists and drawing them makes the surface a new one.
+     */
+    static constexpr std::uint64_t kGameViewImage = 3U;
+    static void SetGameViewSource(gpg::gal::RenderTarget* (*source)());
+    /** A colour target as an image for `ImGui::Image` and the draw lists (its pointer with the low bit set). */
+    static std::uint64_t TargetImage(
+      gpg::gal::RenderTarget* target
+    )
+    {
+      return target != nullptr ? (static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(target)) | 1U) : 0U;
+    }
     static void DestroyImage(std::uint64_t image);
 
   private:
     void UpdateTexture(ImTextureData* texture);
     void EnsureCapacity(std::uint32_t vertexCount, std::uint32_t indexCount);
 
-    boost::shared_ptr<gpg::gal::GpuProgram> mProgram;
-    boost::shared_ptr<gpg::gal::GpuBuffer> mVertices;
-    boost::shared_ptr<gpg::gal::GpuBuffer> mIndices;
+    std::shared_ptr<gpg::gal::GpuProgram> mProgram;
+    std::shared_ptr<gpg::gal::GpuBuffer> mVertices;
+    std::shared_ptr<gpg::gal::GpuBuffer> mIndices;
     std::uint32_t mVertexCapacity = 0U;
     std::uint32_t mIndexCapacity = 0U;
     std::vector<std::uint8_t> mVertexStage;

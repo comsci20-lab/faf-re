@@ -17,7 +17,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/ArchiveSerialization.h"
 #include "gpg/core/containers/ReadArchive.h"
 #include "gpg/core/containers/String.h"
@@ -55,7 +55,9 @@
 // Engine addition: helpers shared with the file these functions came from.
 namespace
 {
-  [[nodiscard]] moho::SSavedGameHeader BuildSavedGameHeader(const moho::CWldSession* const session)
+  [[nodiscard]] moho::SSavedGameHeader BuildSavedGameHeader(
+    const moho::CWldSession* const session
+  )
   {
     moho::SSavedGameHeader header{};
     if (!session) {
@@ -75,15 +77,16 @@ namespace
 
     header.mScenarioInfoText = moho::SCR_ToString(session->GetScenarioInfo());
 
-    header.mLaunchInfo = boost::SharedPtrRawFromSharedRetained(session->mLaunchInfo);
+    header.mLaunchInfo = session->mLaunchInfo;
     return header;
   }
-  [[nodiscard]] fa::string MakeTempSavePath(const fa::string& basePath)
+  [[nodiscard]] fa::string MakeTempSavePath(
+    const fa::string& basePath
+  )
   {
     return basePath + ".NEW";
   }
 } // namespace
-
 
 namespace
 {
@@ -93,12 +96,12 @@ namespace
     return kNullOwner;
   }
 
-  [[nodiscard]] bool MatchesSavedGameIdentity(const moho::SSaveGameFileHeader& header)
+  [[nodiscard]] bool MatchesSavedGameIdentity(
+    const moho::SSaveGameFileHeader& header
+  )
   {
-    return header.mGameIdPart1 == moho::APP_GetGameIdPart(0) &&
-           header.mGameIdPart2 == moho::APP_GetGameIdPart(1) &&
-           header.mGameIdPart3 == moho::APP_GetGameIdPart(2) &&
-           header.mGameIdPart4 == moho::APP_GetGameIdPart(3);
+    return header.mGameIdPart1 == moho::APP_GetGameIdPart(0) && header.mGameIdPart2 == moho::APP_GetGameIdPart(1) &&
+      header.mGameIdPart3 == moho::APP_GetGameIdPart(2) && header.mGameIdPart4 == moho::APP_GetGameIdPart(3);
   }
 
   using moho::EGpgNetOpenMode;
@@ -111,7 +114,8 @@ namespace
   constexpr const char* kLaunchSinglePlayerSessionBusyMessage =
     "Can't launch a session while one is already launching or running.";
   constexpr const char* kNoActiveGameMessage = "GameSendChatMessage(): No active game.";
-  constexpr const char* kInvalidClientIndexMessage = "Invalid client index.  Must be between 1 and %d inclusive, not %d.";
+  constexpr const char* kInvalidClientIndexMessage =
+    "Invalid client index.  Must be between 1 and %d inclusive, not %d.";
   constexpr const char* kInvalidClientSelectorMessage =
     "Invalid value for client-or-clients.  Must be either a single integer or a table of integers.";
   constexpr const char* kChatEncodeFailureMessage = "Can't encode message.";
@@ -125,12 +129,16 @@ namespace
   constexpr const char* kGetSessionClientsHelpText =
     "GetSessionClients() -- return a table of the various clients in the current session.";
 
-  [[nodiscard]] LuaPlus::LuaState* ResolveBindingLuaState(lua_State* const luaContext) noexcept
+  [[nodiscard]] LuaPlus::LuaState* ResolveBindingLuaState(
+    lua_State* const luaContext
+  ) noexcept
   {
     return luaContext ? luaContext->stateUserData : nullptr;
   }
 
-  void EnsureDirectoryExistsOrThrow(const fa::string& directoryPath)
+  void EnsureDirectoryExistsOrThrow(
+    const fa::string& directoryPath
+  )
   {
     const std::wstring widePath = gpg::STR_Utf8ToWide(directoryPath.c_str());
     if (::CreateDirectoryW(widePath.c_str(), nullptr) == FALSE && ::GetLastError() != ERROR_ALREADY_EXISTS) {
@@ -138,7 +146,9 @@ namespace
     }
   }
 
-  [[nodiscard]] gpg::RRef MakeSessionSaveDataRef(moho::SSessionSaveData* const saveData)
+  [[nodiscard]] gpg::RRef MakeSessionSaveDataRef(
+    moho::SSessionSaveData* const saveData
+  )
   {
     gpg::RRef out{};
     out.mObj = saveData;
@@ -176,7 +186,8 @@ namespace
    * when the incoming pointer differs.
    */
   [[nodiscard]] gpg::ReadArchive* ReplaceReadArchiveLane(
-    gpg::ReadArchive*& current, gpg::ReadArchive* const replacement
+    gpg::ReadArchive*& current,
+    gpg::ReadArchive* const replacement
   )
   {
     if (current != replacement && current != nullptr) {
@@ -232,7 +243,10 @@ namespace moho
    *   index as one byte, and 0xFF to close the list,
    *   u32 init seed.
    */
-  fa::auto_ptr<gpg::Stream> VCR_CreateReplay(const SWldSessionInfo* const sessionInfo, const gpg::StrArg name)
+  fa::auto_ptr<gpg::Stream> VCR_CreateReplay(
+    const SWldSessionInfo* const sessionInfo,
+    const gpg::StrArg name
+  )
   {
     LaunchInfoBase* const launchInfoBase = sessionInfo != nullptr ? sessionInfo->mLaunchInfo.get() : nullptr;
     LaunchInfoNew* const launchInfo = launchInfoBase != nullptr ? launchInfoBase->GetNew() : nullptr;
@@ -280,7 +294,6 @@ namespace moho
     return fa::auto_ptr<gpg::Stream>(replayStream.release());
   }
 
-
   /**
    * Address: 0x0088BBB0 (FUN_0088BBB0, sub_88BBB0)
    *
@@ -289,7 +302,10 @@ namespace moho
    * and binds a one-client local client-manager lane for single-player startup.
    * `WLD_SetupSessionInfo` and the session restart (0x0088C9D0) both use it.
    */
-  void SetupSinglePlayerCommandSourceLane(SWldSessionInfo& sessionInfo, const char* playerName)
+  void SetupSinglePlayerCommandSourceLane(
+    SWldSessionInfo& sessionInfo,
+    const char* playerName
+  )
   {
     auto* const launchInfo = sessionInfo.mLaunchInfo.get();
     if (launchInfo == nullptr) {
@@ -333,9 +349,11 @@ namespace moho
    * What it does:
    * Builds one single-player session bootstrap payload from Lua launch data.
    */
-  fa::auto_ptr<SWldSessionInfo> WLD_SetupSessionInfo(const LuaPlus::LuaObject& launchData)
+  fa::auto_ptr<SWldSessionInfo> WLD_SetupSessionInfo(
+    const LuaPlus::LuaObject& launchData
+  )
   {
-    boost::shared_ptr<LaunchInfoNew> launchInfo(new LaunchInfoNew());
+    std::shared_ptr<LaunchInfoNew> launchInfo(new LaunchInfoNew());
     launchInfo->mCommandSources.mOriginalSource = 0;
     launchInfo->mCheatsEnabled = gSessionCheats || USER_DebugFacilitiesEnabled();
 
@@ -365,7 +383,7 @@ namespace moho
     fa::auto_ptr<SWldSessionInfo> sessionInfo(new SWldSessionInfo());
     const char* const mapName = scenarioInfo["map"].GetString();
     sessionInfo->mMapName = mapName != nullptr ? mapName : "";
-    sessionInfo->mLaunchInfo = boost::static_pointer_cast<LaunchInfoBase>(launchInfo);
+    sessionInfo->mLaunchInfo = std::static_pointer_cast<LaunchInfoBase>(launchInfo);
     sessionInfo->mIsBeingRecorded = launchData["createReplay"].GetBoolean();
     sessionInfo->mIsReplay = false;
     sessionInfo->mIsMultiplayer = false;
@@ -384,7 +402,9 @@ namespace moho
    * Lua C callback thunk that unwraps `lua_State*` and forwards to
    * `cfunc_LaunchReplaySessionL`.
    */
-  int cfunc_LaunchReplaySession(lua_State* const luaContext)
+  int cfunc_LaunchReplaySession(
+    lua_State* const luaContext
+  )
   {
     return cfunc_LaunchReplaySessionL(ResolveBindingLuaState(luaContext));
   }
@@ -415,7 +435,9 @@ namespace moho
    * Validates one replay filename arg, builds replay session info, starts
    * world-session begin flow on success, and returns one boolean status.
    */
-  int cfunc_LaunchReplaySessionL(LuaPlus::LuaState* const state)
+  int cfunc_LaunchReplaySessionL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kLaunchReplaySessionHelpText);
 
@@ -443,7 +465,9 @@ namespace moho
    * Lua C callback thunk that unwraps `lua_State*` and forwards to
    * `cfunc_LaunchSinglePlayerSessionL`.
    */
-  int cfunc_LaunchSinglePlayerSession(lua_State* const luaContext)
+  int cfunc_LaunchSinglePlayerSession(
+    lua_State* const luaContext
+  )
   {
     return cfunc_LaunchSinglePlayerSessionL(ResolveBindingLuaState(luaContext));
   }
@@ -475,7 +499,9 @@ namespace moho
    * startup/runtime is active, builds single-player session info, and starts
    * world-session begin flow.
    */
-  int cfunc_LaunchSinglePlayerSessionL(LuaPlus::LuaState* const state)
+  int cfunc_LaunchSinglePlayerSessionL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kLaunchSinglePlayerSessionHelpText);
 
@@ -496,7 +522,9 @@ namespace moho
    * Lua C callback thunk that unwraps `lua_State*` and forwards to
    * `cfunc_SessionSendChatMessageL`.
    */
-  int cfunc_SessionSendChatMessage(lua_State* const luaContext)
+  int cfunc_SessionSendChatMessage(
+    lua_State* const luaContext
+  )
   {
     return cfunc_SessionSendChatMessageL(ResolveBindingLuaState(luaContext));
   }
@@ -528,7 +556,9 @@ namespace moho
    * payload to byte-stream form, enforces length cap, and broadcasts to the
    * selected network clients.
    */
-  int cfunc_SessionSendChatMessageL(LuaPlus::LuaState* const state)
+  int cfunc_SessionSendChatMessageL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -625,7 +655,9 @@ namespace moho
    * Lua C callback thunk that unwraps `lua_State*` and forwards to
    * `cfunc_SessionGetCommandSourceNamesL`.
    */
-  int cfunc_SessionGetCommandSourceNames(lua_State* const luaContext)
+  int cfunc_SessionGetCommandSourceNames(
+    lua_State* const luaContext
+  )
   {
     return cfunc_SessionGetCommandSourceNamesL(ResolveBindingLuaState(luaContext));
   }
@@ -656,7 +688,9 @@ namespace moho
    * What it does:
    * Builds and returns a Lua table of active session command-source names.
    */
-  int cfunc_SessionGetCommandSourceNamesL(LuaPlus::LuaState* const state)
+  int cfunc_SessionGetCommandSourceNamesL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -686,7 +720,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_LoadSavedGameL`.
    */
-  int cfunc_LoadSavedGame(lua_State* const luaContext)
+  int cfunc_LoadSavedGame(
+    lua_State* const luaContext
+  )
   {
     return cfunc_LoadSavedGameL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -698,7 +734,9 @@ namespace moho
    * Parses one `(filename)` argument, builds a `CSavedGame`, and creates the
    * single-player session info, schedules loading, and returns status/error results.
    */
-  int cfunc_LoadSavedGameL(LuaPlus::LuaState* const state)
+  int cfunc_LoadSavedGameL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kLoadSavedGameHelpText);
@@ -757,7 +795,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_PrefetchSessionL`.
    */
-  int cfunc_PrefetchSession(lua_State* const luaContext)
+  int cfunc_PrefetchSession(
+    lua_State* const luaContext
+  )
   {
     return cfunc_PrefetchSessionL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -774,7 +814,9 @@ namespace moho
    * `CWldSessionLoaderImpl::GetScenarioInfo` (confirmed from the
    * `??_7CWldSessionLoaderImpl@Moho@@6B@` vtable at 0x00E49FC4).
    */
-  int cfunc_PrefetchSessionL(LuaPlus::LuaState* const state)
+  int cfunc_PrefetchSessionL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 3, kPrefetchSessionHelpText);
@@ -841,7 +883,9 @@ namespace moho
    * Lua C callback thunk that unwraps `lua_State*` and forwards to
    * `cfunc_GetSessionClientsL`.
    */
-  int cfunc_GetSessionClients(lua_State* const luaContext)
+  int cfunc_GetSessionClients(
+    lua_State* const luaContext
+  )
   {
     return cfunc_GetSessionClientsL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -858,7 +902,9 @@ namespace moho
    * authorizedCommandSources, ejectedBy). Returns nil when no simulation
    * driver is active.
    */
-  int cfunc_GetSessionClientsL(LuaPlus::LuaState* const state)
+  int cfunc_GetSessionClientsL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 0, kGetSessionClientsHelpText);
 
@@ -961,9 +1007,11 @@ namespace moho
         // The link's loss is only noticed long after it goes quiet. This is when
         // FAF's dialog opens, so the panel says why from the same moment.
         constexpr float kQuietMilliseconds = 5000.0f;
-        if (rejoin.stage == ERejoinStage::None && static_cast<IClient*>(client) != localClient &&
-            static_cast<float>(client->GetStatusMetricB()) > kQuietMilliseconds &&
-            clientManager->mPeerFeatures->EveryoneSupports(*clientManager, EPeerFeature::Rejoin)) {
+        if (
+          rejoin.stage == ERejoinStage::None && static_cast<IClient*>(client) != localClient &&
+          static_cast<float>(client->GetStatusMetricB()) > kQuietMilliseconds &&
+          clientManager->mPeerFeatures->EveryoneSupports(*clientManager, EPeerFeature::Rejoin)
+        ) {
           rejoin.stage = ERejoinStage::Lost;
         }
         if (rejoin.stage != ERejoinStage::None) {
@@ -974,7 +1022,9 @@ namespace moho
           if (rejoin.stage != ERejoinStage::Lost) {
             clientEntry.SetNumber("quiet", 0.0f);
             if (static_cast<IClient*>(client) != localClient) {
-              clientEntry.SetNumber("rejoinSilent", clientManager->mPeerFeatures->RejoinSilenceSeconds(static_cast<int>(clientIndex)));
+              clientEntry.SetNumber(
+                "rejoinSilent", clientManager->mPeerFeatures->RejoinSilenceSeconds(static_cast<int>(clientIndex))
+              );
             }
           }
         }
@@ -1014,7 +1064,9 @@ namespace moho
    * Lua C callback thunk that unwraps `lua_State*` and forwards to
    * `cfunc_InternalSaveGameL`.
    */
-  int cfunc_InternalSaveGame(lua_State* const luaContext)
+  int cfunc_InternalSaveGame(
+    lua_State* const luaContext
+  )
   {
     return cfunc_InternalSaveGameL(ResolveBindingLuaState(luaContext));
   }
@@ -1046,7 +1098,9 @@ namespace moho
    * archive lanes with shared `SSessionSaveData`, and queues request dispatch
    * on the active sim driver.
    */
-  int cfunc_InternalSaveGameL(LuaPlus::LuaState* const state)
+  int cfunc_InternalSaveGameL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -1084,11 +1138,13 @@ namespace moho
     auto* const request = new CSaveGameRequestImpl(savePath, sessionName, completionCallback);
 
     CWldSession* const session = WLD_GetActiveSession();
-    const boost::shared_ptr<SSessionSaveData> saveData =
-      session != nullptr ? session->GetSaveData() : boost::shared_ptr<SSessionSaveData>{};
+    const std::shared_ptr<SSessionSaveData> saveData =
+      session != nullptr ? session->GetSaveData() : std::shared_ptr<SSessionSaveData>{};
 
     gpg::WriteArchive* const archive = request->GetArchive();
-    gpg::WriteRawPointer(archive, MakeSessionSaveDataRef(saveData.get()), gpg::TrackedPointerState::Shared, NullOwnerRef());
+    gpg::WriteRawPointer(
+      archive, MakeSessionSaveDataRef(saveData.get()), gpg::TrackedPointerState::Shared, NullOwnerRef()
+    );
     archive->EndSection(false);
 
     driver->RequestSaveGame(request);
@@ -1101,7 +1157,9 @@ namespace moho
    * What it does:
    * Opens and validates one saved-game file and loads its header archive lane.
    */
-  CSavedGame::CSavedGame(const gpg::StrArg filename)
+  CSavedGame::CSavedGame(
+    const gpg::StrArg filename
+  )
     : mFilename(filename != nullptr ? filename : "")
     , mReader(nullptr)
     , mHeader()
@@ -1111,15 +1169,17 @@ namespace moho
     if (_wfopen_s(&rawFile, widePath.c_str(), L"rb") != 0) {
       rawFile = nullptr;
     }
-    boost::shared_ptr<std::FILE> file(rawFile, moho::SFileStarCloser{});
+    std::shared_ptr<std::FILE> file(rawFile, moho::SFileStarCloser{});
     if (!file.get()) {
       throw SaveLoadError("CantOpen");
     }
 
     SSaveGameFileHeader fileHeader{};
-    if (std::fread(&fileHeader, sizeof(fileHeader), 1, file.get()) != 1 ||
-        fileHeader.mMagic != kSaveGameFileHeaderMagic || fileHeader.mVersion != kSaveGameFileHeaderVersion ||
-        !MatchesSavedGameIdentity(fileHeader)) {
+    if (
+      std::fread(&fileHeader, sizeof(fileHeader), 1, file.get()) != 1 ||
+      fileHeader.mMagic != kSaveGameFileHeaderMagic || fileHeader.mVersion != kSaveGameFileHeaderVersion ||
+      !MatchesSavedGameIdentity(fileHeader)
+    ) {
       throw SaveLoadError("InvalidFormat");
     }
 
@@ -1151,11 +1211,9 @@ namespace moho
    */
   fa::auto_ptr<SWldSessionInfo> CSavedGame::CreateSinglePlayerSessionInfo()
   {
-    // MSVC8 emitted the boost::shared_ptr<LaunchInfoLoad>(LaunchInfoLoad*) ctor
-    // out-of-line (FUN_00883F60); invoke it by name so the front-end keeps that
-    // per-type templated-ctor symbol (a plain `shared_ptr x(new T())` may inline it).
-    boost::shared_ptr<LaunchInfoLoad> launchInfo;
-    (void)boost::ConstructSharedLaunchInfoLoadFromRaw(&launchInfo, new LaunchInfoLoad());
+    // Address: 0x00883F60 (FUN_00883F60 -- `boost::shared_ptr<LaunchInfoLoad>(LaunchInfoLoad*)`, emitted out of line by
+    // MSVC8; formerly `boost::ConstructSharedLaunchInfoLoadFromRaw` in BoostWrappers.)
+    std::shared_ptr<LaunchInfoLoad> launchInfo(new LaunchInfoLoad());
     mReader->ReadPointerShared(&launchInfo->mLoadSessionData, &NullOwnerRef());
     mReader->EndSection(false);
 
@@ -1193,8 +1251,8 @@ namespace moho
     delete launchInfo->mReadArchive;
     launchInfo->mReadArchive = loadedArchive;
 
-    launchInfo->mSharedLaunchInfo.assign_retain(mHeader.mLaunchInfo);
-    launchInfo->mGameMods = launchInfo->mSharedLaunchInfo.px->mGameMods;
+    launchInfo->mSharedLaunchInfo = mHeader.mLaunchInfo;
+    launchInfo->mGameMods = launchInfo->mSharedLaunchInfo->mGameMods;
     launchInfo->mScenarioInfo = mHeader.mScenarioInfoText;
     launchInfo->mCheatsEnabled = USER_DebugFacilitiesEnabled();
 
@@ -1206,7 +1264,7 @@ namespace moho
 
     fa::auto_ptr<SWldSessionInfo> sessionInfo(new SWldSessionInfo());
     sessionInfo->mMapName = mHeader.mMapName;
-    sessionInfo->mLaunchInfo = boost::static_pointer_cast<LaunchInfoBase>(launchInfo);
+    sessionInfo->mLaunchInfo = std::static_pointer_cast<LaunchInfoBase>(launchInfo);
     sessionInfo->mIsBeingRecorded = false;
     sessionInfo->mIsReplay = false;
     sessionInfo->mIsMultiplayer = false;
@@ -1268,7 +1326,9 @@ namespace
       (void)::moho::func_PrefetchSession_LuaFuncDef();
       (void)::moho::func_GetSessionClients_LuaFuncDef();
       (void)::moho::func_InternalSaveGame_LuaFuncDef();
+#ifdef _WIN32
       ::moho::RegisterOfflineTranslation();
+#endif
     }
   };
 
@@ -1287,7 +1347,9 @@ namespace moho
    * placeholder file header block, and serializes `SSavedGameHeader`.
    */
   CSaveGameRequestImpl::CSaveGameRequestImpl(
-    const gpg::StrArg savePath, const gpg::StrArg sessionName, const LuaPlus::LuaObject& completionCallback
+    const gpg::StrArg savePath,
+    const gpg::StrArg sessionName,
+    const LuaPlus::LuaObject& completionCallback
   )
     : mSavePath(savePath != nullptr ? savePath : "")
     , mSessionName(sessionName != nullptr ? sessionName : "")

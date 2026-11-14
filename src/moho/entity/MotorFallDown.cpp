@@ -52,17 +52,6 @@ namespace
     return moho::MotorFallDown::sType;
   }
 
-  /**
-   * Address: 0x006959F0 (FUN_006959F0)
-   *
-   * What it does:
-   * Secondary duplicated RTTI-resolve lane for `MotorFallDown`.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::RType* CachedMotorFallDownTypeVariantB()
-  {
-    return CachedMotorFallDownType();
-  }
-
   [[nodiscard]] gpg::RType* CachedMotorType()
   {
     if (!moho::Motor::sType) {
@@ -83,8 +72,11 @@ namespace
     return moho::CScriptObject::sType;
   }
 
-  [[nodiscard]] float
-  ReadSimConVarFloat(moho::Sim* const sim, moho::CSimConVarBase* const conVar, const float fallback)
+  [[nodiscard]] float ReadSimConVarFloat(
+    moho::Sim* const sim,
+    moho::CSimConVarBase* const conVar,
+    const float fallback
+  )
   {
     if (!sim || !conVar) {
       return fallback;
@@ -103,11 +95,13 @@ namespace
     return *static_cast<float*>(valueStorage);
   }
 
-  [[nodiscard]] Wm3::Vec3f BuildCurrentFallAxis(const Wm3::Quatf& orientation) noexcept
+  [[nodiscard]] Wm3::Vec3f BuildCurrentFallAxis(
+    const Wm3::Quatf& orientation
+  ) noexcept
   {
     return Wm3::Vec3f{
       // Column 1 - the local up axis - scalar-first:
-      // (2(xy-wz), 1-2(x*x+z*z), 2(yz+wx)). The previous spelling carried a
+      // (2(xy-wz), 1-2(x*x+z*z), 2(yz+xw)). The previous spelling carried a
       // `w*w` diagonal term, which no matrix expansion in this binary computes.
       ((orientation.y * orientation.x) - (orientation.w * orientation.z)) * 2.0f,
       1.0f - ((orientation.z * orientation.z + orientation.x * orientation.x) * 2.0f),
@@ -118,37 +112,11 @@ namespace
   /**
    * Address: 0x00695CA0 (FUN_00695CA0, Lua factory lookup thunk)
    */
-  [[nodiscard]] LuaPlus::LuaObject GetMotorFallDownLuaFactoryObject(LuaPlus::LuaState* const state)
+  [[nodiscard]] LuaPlus::LuaObject GetMotorFallDownLuaFactoryObject(
+    LuaPlus::LuaState* const state
+  )
   {
     return moho::CScrLuaMetatableFactory<moho::MotorFallDown>::Instance().Get(state);
-  }
-
-  /**
-   * Address: 0x00695F00 (FUN_00695F00, gpg::RRef_MotorFallDown)
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::RRef MakeMotorFallDownRef(moho::MotorFallDown* const object)
-  {
-    gpg::RRef ref{};
-    ref.mObj = object;
-    ref.mType = CachedMotorFallDownType();
-    return ref;
-  }
-
-  /**
-   * Address: 0x006960D0 (FUN_006960D0)
-   *
-   * What it does:
-   * Upcasts one reflected reference lane to `MotorFallDown` object storage
-   * using the cached motor-fall-down RTTI descriptor.
-   */
-  [[maybe_unused]] [[nodiscard]] void* TryUpcastMotorFallDownRefObject(gpg::RRef* const sourceRef)
-  {
-    if (!sourceRef) {
-      return nullptr;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(*sourceRef, CachedMotorFallDownType());
-    return upcast.mObj;
   }
 
   /**
@@ -177,7 +145,9 @@ namespace moho
   /**
    * Address: 0x00695B90 (FUN_00695B90, Moho::CScrLuaMetatableFactory<Moho::MotorFallDown>::Create)
    */
-  LuaPlus::LuaObject CScrLuaMetatableFactory<MotorFallDown>::Create(LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject CScrLuaMetatableFactory<MotorFallDown>::Create(
+    LuaPlus::LuaState* const state
+  )
   {
     return SCR_CreateSimpleMetatable(state);
   }
@@ -192,31 +162,32 @@ namespace moho
     , mFallAngleRadians(0.0f)
     , mFallDepth(0.0f)
     , mBreakOnWhack(false)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00694BD0 (FUN_00694BD0, Lua ctor lane)
    */
-  MotorFallDown::MotorFallDown(LuaPlus::LuaState* const state)
+  MotorFallDown::MotorFallDown(
+    LuaPlus::LuaState* const state
+  )
     : Motor()
     , CScriptObject(
-        GetMotorFallDownLuaFactoryObject(state), LuaPlus::LuaObject{}, LuaPlus::LuaObject{}, LuaPlus::LuaObject{}
+        GetMotorFallDownLuaFactoryObject(state),
+        LuaPlus::LuaObject{},
+        LuaPlus::LuaObject{},
+        LuaPlus::LuaObject{}
       )
     , mFallDirectionRadians(0.0f)
     , mFallAngleRadians(0.0f)
     , mFallDepth(0.0f)
     , mBreakOnWhack(false)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00694D70 (FUN_00694D70, deleting-thunk chain)
    * Address: 0x00694DA0 (FUN_00694DA0, non-deleting body)
    */
-  MotorFallDown::~MotorFallDown()
-  {
-  }
+  MotorFallDown::~MotorFallDown() {}
 
   /**
    * Address: 0x00694B90 (FUN_00694B90, Moho::MotorFallDown::GetClass)
@@ -242,7 +213,9 @@ namespace moho
    * direction through the shortest-arc delta (0x0050CB50), uproots past 45
    * degrees, and composes `delta * orientation` into the pending transform.
    */
-  void MotorFallDown::Update(Entity* const entity)
+  void MotorFallDown::Update(
+    Entity* const entity
+  )
   {
     if (!entity || !entity->SimulationRef) {
       return;
@@ -333,7 +306,9 @@ namespace moho
    * Clears reflected base/field vector lanes for one `MotorFallDownTypeInfo`
    * instance while preserving outer storage ownership.
    */
-  void DestroyMotorFallDownTypeInfoBody(MotorFallDownTypeInfo* const typeInfo) noexcept
+  void DestroyMotorFallDownTypeInfoBody(
+    MotorFallDownTypeInfo* const typeInfo
+  ) noexcept
   {
     gpg::ClearTypeLists(typeInfo);
   }
@@ -357,17 +332,21 @@ namespace moho
   /**
    * Address: 0x00695CC0 (FUN_00695CC0, Moho::MotorFallDownTypeInfo::AddBase_CScriptObject)
    */
-  void MotorFallDownTypeInfo::AddBase_CScriptObject(gpg::RType* const typeInfo)
+  void MotorFallDownTypeInfo::AddBase_CScriptObject(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = CachedCScriptObjectType();
-    gpg::AddReflectedBaseType(typeInfo, baseType, gpg::RType::BaseSubobjectOffset<MotorFallDown, CScriptObject>());
+    gpg::AddReflectedBaseType(typeInfo, baseType, gpg::BaseSubobjectOffset<MotorFallDown, CScriptObject>());
   }
 
   /**
    * Address: 0x00695D20 (FUN_00695D20, Moho::MotorFallDownTypeInfo::AddBase_Motor)
    * Address: 0x00694F40 (FUN_00694F40, add-base thunk lane)
    */
-  void MotorFallDownTypeInfo::AddBase_Motor(gpg::RType* const typeInfo)
+  void MotorFallDownTypeInfo::AddBase_Motor(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = CachedMotorType();
     gpg::AddReflectedBaseType(typeInfo, baseType);
@@ -419,7 +398,10 @@ namespace moho
       return fallbackSet;
     }
 
-    [[nodiscard]] float ReadLuaNumberArg(LuaPlus::LuaState* const state, const int stackIndex)
+    [[nodiscard]] float ReadLuaNumberArg(
+      LuaPlus::LuaState* const state,
+      const int stackIndex
+    )
     {
       LuaPlus::LuaStackObject arg(state, stackIndex);
       if (lua_type(state->m_state, stackIndex) != LUA_TNUMBER) {
@@ -460,7 +442,9 @@ namespace moho
    * Unwraps the raw `lua_State` callback context and forwards to
    * `cfunc_MotorFallDownWhackL`.
    */
-  int cfunc_MotorFallDownWhack(lua_State* const luaContext)
+  int cfunc_MotorFallDownWhack(
+    lua_State* const luaContext
+  )
   {
     return cfunc_MotorFallDownWhackL(SCR_ResolveBindingState(luaContext));
   }
@@ -478,7 +462,9 @@ namespace moho
    * (vertical component of the hit normal) is intentionally ignored —
    * only the horizontal XZ direction drives the fall orientation.
    */
-  int cfunc_MotorFallDownWhackL(LuaPlus::LuaState* const state)
+  int cfunc_MotorFallDownWhackL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -545,7 +531,10 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_MotorFallDownTypeInfo_920782, moho::register_MotorFallDownTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_MotorFallDownTypeInfo_920782,
+  moho::register_MotorFallDownTypeInfo
+)
 
 namespace
 {
@@ -580,7 +569,9 @@ namespace moho
   /**
    * Address: 0x00696110 (FUN_00696110)
    */
-  void MotorFallDown::MemberDeserialize(gpg::ReadArchive* const archive)
+  void MotorFallDown::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef owner{};
     archive->Read(CachedMotorType(), static_cast<Motor*>(this), owner);
@@ -594,7 +585,9 @@ namespace moho
   /**
    * Address: 0x006961D0 (FUN_006961D0)
    */
-  void MotorFallDown::MemberSerialize(gpg::WriteArchive* const archive) const
+  void MotorFallDown::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     const gpg::RRef owner{};
     archive->Write(CachedMotorType(), static_cast<const Motor*>(this), owner);
@@ -611,7 +604,12 @@ namespace moho
   /**
    * Address: 0x00694FF0 (FUN_00694FF0)
    */
-  void MotorFallDown::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void MotorFallDown::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new MotorFallDown()), 0u);
   }

@@ -13,7 +13,9 @@
  * `CreateArmies`/`PostInitialize`. See the class declaration for the ordered
  * list of subsystems constructed here.
  */
-void Sim::Setup(LaunchInfoNew* const info)
+void Sim::Setup(
+  LaunchInfoNew* const info
+)
 {
   mCheatsEnabled = info->mCheatsEnabled;
   SIM_ResetFlattenLog(); // engine addition (replay keyframes)
@@ -70,9 +72,8 @@ void Sim::Setup(LaunchInfoNew* const info)
     // string made GetString raise a Lua error out of sim construction; such an
     // army is named by its slot the way FAF names armies.
     const LuaPlus::LuaObject armyNameObject = armySetup["ArmyName"];
-    const fa::string armyName = armyNameObject.IsString()
-      ? fa::string(armyNameObject.GetString())
-      : gpg::STR_Printf("ARMY_%d", static_cast<int>(armyIndex + 1));
+    const fa::string armyName = armyNameObject.IsString() ? fa::string(armyNameObject.GetString())
+                                                          : gpg::STR_Printf("ARMY_%d", static_cast<int>(armyIndex + 1));
     armySetupTable.SetObject(armyName.c_str(), armySetup);
   }
   scenarioInfo.SetObject("ArmySetup", armySetupTable);
@@ -111,18 +112,9 @@ void Sim::Setup(LaunchInfoNew* const info)
     }
   }
 
-  // Sim resources (shared-pointer lane). The binary assigns a freshly-owned
-  // control block (use_count = 1); build one via the deleter ctor and transfer
-  // ownership into the member (which starts null).
-  {
-    auto* const newResources = new CSimResources();
-    boost::SharedPtrRaw<CSimResources> owningResources(
-      newResources, [](CSimResources* const p) noexcept { delete p; });
-    mSimResources.px = owningResources.px;
-    mSimResources.pi = owningResources.pi;
-    owningResources.px = nullptr;
-    owningResources.pi = nullptr;
-  }
+  // Sim resources: the binary assigns a freshly-owned control block (use_count = 1) to the member, which starts
+  // null; ~Sim releases it (FUN_007458E0, 0x0074615D).
+  mSimResources.reset(new CSimResources());
 
   // Resolve ScenarioInfo.Options for the army/post-init callbacks.
   LuaPlus::LuaObject scenarioInfoOptions = mLuaState->GetGlobals().Lookup("ScenarioInfo.Options");
@@ -221,9 +213,11 @@ void Sim::Setup(LaunchInfoNew* const info)
  * game) or `Load` (saved game). Throws `std::runtime_error` when the launch info
  * is neither a `LaunchInfoNew` nor a `LaunchInfoLoad`.
  */
-Sim* Sim::Create(const boost::SharedPtrRaw<LaunchInfoBase>& launchInfo)
+Sim* Sim::Create(
+  const std::shared_ptr<LaunchInfoBase>& launchInfo
+)
 {
-  LaunchInfoBase* const info = launchInfo.px;
+  LaunchInfoBase* const info = launchInfo.get();
 
   // Allocate + placement-construct the Sim (0xAF8-byte layout). The EH unwind of
   // this `new` expression is what references ~Sim in the binary.
@@ -240,8 +234,7 @@ Sim* Sim::Create(const boost::SharedPtrRaw<LaunchInfoBase>& launchInfo)
     return sim;
   }
 
-  const fa::string message =
-    gpg::STR_Printf("Unknown subclass of LaunchInfoBase: %s", typeid(*info).name());
+  const fa::string message = gpg::STR_Printf("Unknown subclass of LaunchInfoBase: %s", typeid(*info).name());
   throw std::runtime_error(message.c_str());
 }
 
@@ -366,6 +359,10 @@ Sim::~Sim()
     mLuaState = nullptr;
   }
 
+  // The sim resources' reference goes right after the Lua state (+0x8D8) and before the map data (+0x8CC), as in the
+  // binary: 0x0074615D releases the count block at +0x8D4.
+  mSimResources.reset();
+
   // Clear the global "current sim" singleton (before member teardown, matching
   // the binary ordering).
   Sim::sInstance = nullptr;
@@ -418,8 +415,7 @@ void Sim::CreateArmies(
   mArmiesList.resize(armyCount);
 
   for (std::size_t armyIndex = 0; armyIndex < armyCount; ++armyIndex) {
-    const bool isFocusArmy =
-      (static_cast<std::int32_t>(armyIndex) == mSyncFilter.focusArmy);
+    const bool isFocusArmy = (static_cast<std::int32_t>(armyIndex) == mSyncFilter.focusArmy);
 
     CArmyImpl* const army = AllocateScenarioArmy(
       this,
@@ -455,7 +451,9 @@ void Sim::CreateArmies(
  * global Lua function `InitializePrebuiltUnits` once for each non-civilian
  * army using the army name string.
  */
-void Sim::PostInitialize(const LuaPlus::LuaObject& launchOptions)
+void Sim::PostInitialize(
+  const LuaPlus::LuaObject& launchOptions
+)
 {
   const LuaPlus::LuaObject prebuiltUnitsOption = launchOptions["PrebuiltUnits"];
   if (prebuiltUnitsOption.IsNil()) {
@@ -490,7 +488,7 @@ void Sim::PostInitialize(const LuaPlus::LuaObject& launchOptions)
  */
 const ISimResources* Sim::GetResources() const
 {
-  return mSimResources.px;
+  return mSimResources.get();
 }
 
 /**
@@ -511,7 +509,9 @@ CDebugCanvas* Sim::GetDebugCanvas()
  * Unlinks one entity-set node from its current ring and inserts it into the
  * sim EntityDB registered-set list.
  */
-void Sim::RegisterEntitySet(EntitySetBase* const set)
+void Sim::RegisterEntitySet(
+  EntitySetBase* const set
+)
 {
   if (!set || !mEntityDB) {
     return;
@@ -520,52 +520,12 @@ void Sim::RegisterEntitySet(EntitySetBase* const set)
   mEntityDB->RegisterEntitySet(*set);
 }
 
-/**
- * Address: 0x007538C0 (FUN_007538C0, boost::shared_ptr_SParticleBuffer::shared_ptr_SParticleBuffer)
- *
- * What it does:
- * Constructs one `shared_ptr<SParticleBuffer>` from one raw particle-buffer
- * pointer lane.
- */
-boost::shared_ptr<SParticleBuffer>* ConstructSharedParticleBufferFromRaw(
-  boost::shared_ptr<SParticleBuffer>* const outBuffer,
-  SParticleBuffer* const buffer
-)
-{
-  return ::new (outBuffer) boost::shared_ptr<SParticleBuffer>(buffer);
-}
-
-/**
+/*
  * Address: 0x00751220 (FUN_00751220, boost::shared_ptr_SParticleBuffer::operator=)
  *
  * What it does:
  * Rebinds one `shared_ptr<SParticleBuffer>` from a raw pointer and releases
  * prior ownership.
- */
-boost::shared_ptr<SParticleBuffer>* AssignSharedParticleBufferFromRaw(
-  boost::shared_ptr<SParticleBuffer>* const outBuffer,
-  SParticleBuffer* const buffer
-)
-{
-  outBuffer->reset(buffer);
-  return outBuffer;
-}
-
-/**
- * Address: 0x00743180 (FUN_00743180)
  *
- * What it does:
- * Copies one `shared_ptr<CHeightField>` lane and retains the control block.
+ * `Sim::GetParticleBuffer` calls `mParticleBuffer.reset(new SParticleBuffer())`.
  */
-boost::shared_ptr<CHeightField>* CopySharedHeightFieldPtr(
-  boost::shared_ptr<CHeightField>* const destination,
-  const boost::shared_ptr<CHeightField>* const source
-)
-{
-  if (destination == nullptr || source == nullptr) {
-    return destination;
-  }
-
-  *destination = *source;
-  return destination;
-}

@@ -10,7 +10,13 @@ namespace moho
    * Validates whether `moveUnit` can occupy/move through `*pos` while filtering
    * nearby collision occupants against movement/attachment/formation rules.
    */
-  bool COORDS_CanMoveAt(SOCellPos* pos, COGrid* grid, Unit* moveUnit, bool disallowAttached, Unit* ignoreUnit)
+  bool COORDS_CanMoveAt(
+    SOCellPos* pos,
+    COGrid* grid,
+    Unit* moveUnit,
+    bool disallowAttached,
+    Unit* ignoreUnit
+  )
   {
     if (moveUnit == nullptr) {
       return false;
@@ -156,7 +162,11 @@ namespace moho
    * The conversion is the same one `SFootprint::ToCellPos` performs, and it
    * rounds: the binary uses two bare fistp stores with no __ftol call.
    */
-  bool UnitIsBlockedAt(const Wm3::Vec3f& worldPosition, Unit* const unit, const int mode)
+  bool UnitIsBlockedAt(
+    const Wm3::Vec3f& worldPosition,
+    Unit* const unit,
+    const int mode
+  )
   {
     const SFootprint& footprint = unit->GetFootprint();
     const SOCellPos cellPos = footprint.ToCellPos(worldPosition);
@@ -170,7 +180,9 @@ namespace moho
    * What it does:
    * See the header declaration - density folded over the bounding-box volume.
    */
-  float BlueprintCollisionMass(const RUnitBlueprint& blueprint) noexcept
+  float BlueprintCollisionMass(
+    const RUnitBlueprint& blueprint
+  ) noexcept
   {
     return blueprint.mAverageDensity * blueprint.mSizeZ * blueprint.mSizeY * blueprint.mSizeX;
   }
@@ -183,7 +195,10 @@ namespace moho
    * See the header declaration - the footprint-flag gate on receiving an
    * impulse.
    */
-  bool CollisionImpulseAllowed(const Unit& pushed, const Unit& against) noexcept
+  bool CollisionImpulseAllowed(
+    const Unit& pushed,
+    const Unit& against
+  ) noexcept
   {
     const std::uint8_t pushedFlags = static_cast<std::uint8_t>(pushed.GetFootprint().mFlags);
     const std::uint8_t againstFlags = static_cast<std::uint8_t>(against.GetFootprint().mFlags);
@@ -206,7 +221,10 @@ namespace moho
    *   - the mass comparison is the momentum split, strengthened from the
    *     binary's `share > 0.1` acceptance to a clear-dominance margin.
    */
-  bool UnitCanShoveAside(const Unit& mover, const Unit& obstacle) noexcept
+  bool UnitCanShoveAside(
+    const Unit& mover,
+    const Unit& obstacle
+  ) noexcept
   {
     if constexpr (!kBumpThroughSpamEnabled) {
       return false;
@@ -236,7 +254,10 @@ namespace moho
    * Returns true when `unit` cannot place its footprint at `worldPosition`
    * due to map bounds or occupancy-cap fit checks.
    */
-  bool UnitWontFitAt(const Wm3::Vec3f& worldPosition, const Unit* const unit)
+  bool UnitWontFitAt(
+    const Wm3::Vec3f& worldPosition,
+    const Unit* const unit
+  )
   {
     const SFootprint& footprint = unit->GetFootprint();
     const Sim& sim = *unit->SimulationRef;
@@ -273,7 +294,9 @@ namespace
   constexpr const char* kUnitOnProductionActiveScript = "OnProductionActive";
   constexpr const char* kUnitOnProductionInactiveScript = "OnProductionInActive";
 
-  void ClearGuardFormation(Unit* const unit)
+  void ClearGuardFormation(
+    Unit* const unit
+  )
   {
     if (unit == nullptr) {
       return;
@@ -284,110 +307,15 @@ namespace
     delete guardFormation;
   }
 
-  [[nodiscard]] const char* UnitStateToDebugLexical(const EUnitState state) noexcept
-  {
-    switch (state) {
-    case UNITSTATE_Immobile:
-      return "Immobile";
-    case UNITSTATE_Moving:
-      return "Moving";
-    case UNITSTATE_Attacking:
-      return "Attacking";
-    case UNITSTATE_Guarding:
-      return "Guarding";
-    case UNITSTATE_Building:
-      return "Building";
-    case UNITSTATE_Upgrading:
-      return "Upgrading";
-    case UNITSTATE_WaitingForTransport:
-      return "WaitingForTransport";
-    case UNITSTATE_TransportLoading:
-      return "TransportLoading";
-    case UNITSTATE_TransportUnloading:
-      return "TransportUnloading";
-    case UNITSTATE_MovingDown:
-      return "MovingDown";
-    case UNITSTATE_MovingUp:
-      return "MovingUp";
-    case UNITSTATE_Patrolling:
-      return "Patrolling";
-    case UNITSTATE_Busy:
-      return "Busy";
-    case UNITSTATE_Attached:
-      return "Attached";
-    case UNITSTATE_BeingReclaimed:
-      return "BeingReclaimed";
-    case UNITSTATE_Repairing:
-      return "Repairing";
-    case UNITSTATE_Diving:
-      return "Diving";
-    case UNITSTATE_Surfacing:
-      return "Surfacing";
-    case UNITSTATE_Teleporting:
-      return "Teleporting";
-    case UNITSTATE_Ferrying:
-      return "Ferrying";
-    case UNITSTATE_WaitForFerry:
-      return "WaitForFerry";
-    case UNITSTATE_AssistMoving:
-      return "AssistMoving";
-    case UNITSTATE_PathFinding:
-      return "PathFinding";
-    case UNITSTATE_ProblemGettingToGoal:
-      return "ProblemGettingToGoal";
-    case UNITSTATE_NeedToTerminateTask:
-      return "NeedToTerminateTask";
-    case UNITSTATE_Capturing:
-      return "Capturing";
-    case UNITSTATE_BeingCaptured:
-      return "BeingCaptured";
-    case UNITSTATE_Reclaiming:
-      return "Reclaiming";
-    case UNITSTATE_AssistingCommander:
-      return "AssistingCommander";
-    case UNITSTATE_Refueling:
-      return "Refueling";
-    case UNITSTATE_GuardBusy:
-      return "GuardBusy";
-    case UNITSTATE_ForceSpeedThrough:
-      return "ForceSpeedThrough";
-    case UNITSTATE_UnSelectable:
-      return "UnSelectable";
-    case UNITSTATE_DoNotTarget:
-      return "DoNotTarget";
-    case UNITSTATE_LandingOnPlatform:
-      return "LandingOnPlatform";
-    case UNITSTATE_CannotFindPlaceToLand:
-      return "CannotFindPlaceToLand";
-    case UNITSTATE_BeingUpgraded:
-      return "BeingUpgraded";
-    case UNITSTATE_Enhancing:
-      return "Enhancing";
-    case UNITSTATE_BeingBuilt:
-      return "BeingBuilt";
-    case UNITSTATE_NoReclaim:
-      return "NoReclaim";
-    case UNITSTATE_NoCost:
-      return "NoCost";
-    case UNITSTATE_BlockCommandQueue:
-      return "BlockCommandQueue";
-    case UNITSTATE_MakingAttackRun:
-      return "MakingAttackRun";
-    case UNITSTATE_HoldingPattern:
-      return "HoldingPattern";
-    case UNITSTATE_SiloBuildingAmmo:
-      return "SiloBuildingAmmo";
-    default:
-      return "";
-    }
-  }
-
-  void AddIntStatCounter(StatItem* const statItem, const long delta) noexcept
+  void AddIntStatCounter(
+    StatItem* const statItem,
+    const long delta
+  ) noexcept
   {
     if (!statItem) {
       return;
     }
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
     statItem->AddPrimaryBits(delta);
 #else
     statItem->mPrimaryValueBits += static_cast<std::int32_t>(delta);
@@ -426,7 +354,10 @@ namespace
     (void)armyStats->AddBlueprintStatDelta(statPath, blueprint, delta);
   }
 
-  void IncrementArmyIntStatByName(CArmyStats* const armyStats, const char* const statPath)
+  void IncrementArmyIntStatByName(
+    CArmyStats* const armyStats,
+    const char* const statPath
+  )
   {
     if (armyStats == nullptr || statPath == nullptr) {
       return;
@@ -441,7 +372,9 @@ namespace
     AddIntStatCounter(item, 1L);
   }
 
-  [[nodiscard]] bool IsWithinPlayableRectOrNotCommander(const Unit& unit)
+  [[nodiscard]] bool IsWithinPlayableRectOrNotCommander(
+    const Unit& unit
+  )
   {
     static const std::string kCommanderCategory = "COMMAND";
     if (!unit.Entity::IsInCategory(kCommanderCategory.c_str())) {
@@ -456,32 +389,25 @@ namespace
 
     const Wm3::Vec3f& position = unit.GetPosition();
     const gpg::Rect2i playableRect = mapData->mPlayableRect;
-    return !(static_cast<float>(playableRect.x0) > position.x || static_cast<float>(playableRect.z0) > position.z ||
-             position.x > static_cast<float>(playableRect.x1) || position.z > static_cast<float>(playableRect.z1));
+    return !(
+      static_cast<float>(playableRect.x0) > position.x || static_cast<float>(playableRect.z0) > position.z ||
+      position.x > static_cast<float>(playableRect.x1) || position.z > static_cast<float>(playableRect.z1)
+    );
   }
 
-  void IncrementAIDebugStateStat(CArmyStats* const armyStats, const fa::string& statPath)
-  {
-    if (!armyStats || statPath.empty()) {
-      return;
-    }
-
-    CArmyStatItem* const item = armyStats->TraverseTables(statPath.c_str(), true);
-    if (!item) {
-      return;
-    }
-
-    item->SynchronizeAsInt();
-    AddIntStatCounter(item, 1L);
-  }
-
-  [[nodiscard]] std::int32_t PickUniformIndexFromU32(const std::uint32_t randomValue, const std::uint32_t count) noexcept
+  [[nodiscard]] std::int32_t PickUniformIndexFromU32(
+    const std::uint32_t randomValue,
+    const std::uint32_t count
+  ) noexcept
   {
     const std::uint64_t product = static_cast<std::uint64_t>(randomValue) * static_cast<std::uint64_t>(count);
     return static_cast<std::int32_t>(product >> 32u);
   }
 
-  [[nodiscard]] bool HasFootprintFlag(const EFootprintFlags value, const EFootprintFlags flag) noexcept
+  [[nodiscard]] bool HasFootprintFlag(
+    const EFootprintFlags value,
+    const EFootprintFlags flag
+  ) noexcept
   {
     return (static_cast<std::uint8_t>(value) & static_cast<std::uint8_t>(flag)) != 0u;
   }
@@ -501,7 +427,9 @@ namespace
   // (0x0044F7E0, called at 0x006A8CF3; inlined with the same length-> 0
   // threshold and reciprocal multiply at 0x0062EAD8-0x0062EB4B). There is
   // no near-zero tolerance: any positive length normalises.
-  [[nodiscard]] Wm3::Vector3f ForwardXZ(const Unit& unit) noexcept
+  [[nodiscard]] Wm3::Vector3f ForwardXZ(
+    const Unit& unit
+  ) noexcept
   {
     const moho::VAxes3 axes(unit.GetTransform().orient_);
     const Wm3::Vector3f flattened{axes.vZ.x, 0.0f, axes.vZ.z};
@@ -539,7 +467,8 @@ namespace
     const Wm3::Vector3f& currentPosition
   ) noexcept
   {
-    const float gravityMagnitude = std::sqrt((gravity.x * gravity.x) + (gravity.y * gravity.y) + (gravity.z * gravity.z));
+    const float gravityMagnitude =
+      std::sqrt((gravity.x * gravity.x) + (gravity.y * gravity.y) + (gravity.z * gravity.z));
 
     // 0x0062CF38-0x0062CF83: `-0.0f - g` per lane, then Wm3 `Normalize`
     // (0x00452AF0).
@@ -611,13 +540,16 @@ namespace
     return out;
   }
 
-  void FillReservedOgridRect(Unit& unit, const bool occupied) noexcept
+  void FillReservedOgridRect(
+    Unit& unit,
+    const bool occupied
+  ) noexcept
   {
     if (!unit.SimulationRef || !unit.SimulationRef->mOGrid) {
       return;
     }
 
-    const gpg::Rect2i ogridRect = GetReservedOgridRect(unit);
+    const gpg::Rect2i ogridRect = unit.mReservedOgridRect;
     if (occupied) {
       unit.SimulationRef->mOGrid->OccupyRect(ogridRect);
     } else {
@@ -626,29 +558,20 @@ namespace
   }
 
   // 0x006A7827..0x006A784F: `addss 0.5`, stored to float, then the inlined floor.
-  [[nodiscard]] std::int32_t RoundOccupyRectEdge(const float value) noexcept
+  [[nodiscard]] std::int32_t RoundOccupyRectEdge(
+    const float value
+  ) noexcept
   {
     return fa::FloorToIntX87(value + 0.5f);
-  }
-
-  void DrawRaisedPlatformEdge(
-    CDebugCanvas& canvas,
-    const Wm3::Vector3f& a,
-    const Wm3::Vector3f& b
-  )
-  {
-    SDebugLine line{};
-    line.p0 = a;
-    line.p1 = b;
-    line.depth0 = -16711936;
-    line.depth1 = -16711936;
-    canvas.DebugDrawLine(line);
   }
 
   /**
    * Address: 0x0062EAC0 (FUN_0062EAC0, func_UnitMoreInLineToOther)
    */
-  [[nodiscard]] const Unit* UnitMoreInLineToOther(const Unit* const a1, const Unit* const a2) noexcept
+  [[nodiscard]] const Unit* UnitMoreInLineToOther(
+    const Unit* const a1,
+    const Unit* const a2
+  ) noexcept
   {
     if (!a1 || !a2) {
       return nullptr;
@@ -674,10 +597,8 @@ namespace
 
     // 0x0062ED8F-0x0062EDD4: dot products accumulate `(y + z) + x` for the
     // first and `(z + y) + x` for the second.
-    const float a2Alignment =
-      ((a2ToA1.y * a2Forward.y) + (a2ToA1.z * a2Forward.z)) + (a2ToA1.x * a2Forward.x);
-    const float a1Alignment =
-      ((a1ToA2.z * a1Forward.z) + (a1ToA2.y * a1Forward.y)) + (a1ToA2.x * a1Forward.x);
+    const float a2Alignment = ((a2ToA1.y * a2Forward.y) + (a2ToA1.z * a2Forward.z)) + (a2ToA1.x * a2Forward.x);
+    const float a1Alignment = ((a1ToA2.z * a1Forward.z) + (a1ToA2.y * a1Forward.y)) + (a1ToA2.x * a1Forward.x);
     if (a2Alignment <= 0.0f && a1Alignment <= 0.0f) {
       return nullptr;
     }
@@ -687,17 +608,17 @@ namespace
   }
 }
 
-
-
 /**
-  * Alias of FUN_00593970 (non-canonical helper lane).
+ * Alias of FUN_00593970 (non-canonical helper lane).
  *
  * What it does:
  * Public wrapper that mirrors the anonymous-namespace `GetUnitOptional`
  * helper: non-throwing conversion from Lua payload to `Unit*`, returning
  * null when the payload is missing or of a non-unit runtime type.
  */
-moho::Unit* moho::SCR_GetUnitOptional(const LuaPlus::LuaObject& unitObject)
+moho::Unit* moho::SCR_GetUnitOptional(
+  const LuaPlus::LuaObject& unitObject
+)
 {
   static gpg::RType* sUnitType = nullptr;
   if (sUnitType == nullptr) {
@@ -725,13 +646,16 @@ CScrLuaMetatableFactory<Unit>& CScrLuaMetatableFactory<Unit>::Instance()
   return sInstance;
 }
 
-LuaPlus::LuaObject CScrLuaMetatableFactory<Unit>::Create(LuaPlus::LuaState* const state)
+LuaPlus::LuaObject CScrLuaMetatableFactory<Unit>::Create(
+  LuaPlus::LuaState* const state
+)
 {
   return SCR_CreateSimpleMetatable(state);
 }
 
 /**
- * Address: 0x00564660 (FUN_00564660, ?ARMOR_GetArmorDefinations@Moho@@YA?AV?$list@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@PAVLuaState@LuaPlus@@VStrArg@gpg@@@Z)
+ * Address: 0x00564660 (FUN_00564660,
+ * ?ARMOR_GetArmorDefinations@Moho@@YA?AV?$list@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@PAVLuaState@LuaPlus@@VStrArg@gpg@@@Z)
  *
  * What it does:
  * Loads `/lua/armordefinition.lua`, resolves `armordefinition` table rows for
@@ -790,101 +714,16 @@ fa::list<fa::string> moho::ARMOR_GetArmorDefinations(
 }
 
 /**
- * Address: 0x006C3A10 (FUN_006C3A10)
- *
- * What it does:
- * Stores one stunned-state tick lane.
- */
-void Unit::SetStunnedStateRaw(const std::int32_t stunnedState) noexcept
-{
-  mUnitVarDat.mStunTicks = stunnedState;
-}
-
-/**
- * Address: 0x006C3A20 (FUN_006C3A20)
- *
- * What it does:
- * Stores one overcharge-paused boolean lane.
- */
-void Unit::SetOverchargePausedFlag(const bool paused) noexcept
-{
-  mUnitVarDat.mOverchargePaused = paused;
-}
-
-/**
- * Address: 0x006C3A30 (FUN_006C3A30)
- *
- * What it does:
- * Returns the overcharge-paused boolean lane.
- */
-bool Unit::IsOverchargePausedFlag() const noexcept
-{
-  return mUnitVarDat.mOverchargePaused;
-}
-
-/**
- * Address: 0x006C3A40 (FUN_006C3A40)
- *
- * What it does:
- * Returns the consumption-active boolean lane.
- */
-bool Unit::IsConsumptionActiveFlag() const noexcept
-{
-  return ConsumptionActive;
-}
-
-/**
- * Address: 0x006C3A50 (FUN_006C3A50)
- *
- * What it does:
- * Returns the valid-target boolean lane.
- */
-bool Unit::IsValidTargetFlag() const noexcept
-{
-  return mUnitVarDat.mIsValidTarget;
-}
-
-/**
- * Address: 0x006C3A60 (FUN_006C3A60)
- *
- * What it does:
- * Stores one valid-target boolean lane.
- */
-void Unit::SetIsValidTargetFlag(const bool validTarget) noexcept
-{
-  mUnitVarDat.mIsValidTarget = validTarget;
-}
-
-/**
- * Address: 0x006C3A70 (FUN_006C3A70)
- *
- * What it does:
- * Returns the shield-ratio float lane.
- */
-float Unit::GetShieldRatioRaw() const noexcept
-{
-  return mUnitVarDat.mShieldRatio;
-}
-
-/**
- * Address: 0x006C3A80 (FUN_006C3A80)
- *
- * What it does:
- * Stores one shield-ratio float lane.
- */
-void Unit::SetShieldRatioRaw(const float shieldRatio) noexcept
-{
-  mUnitVarDat.mShieldRatio = shieldRatio;
-}
-
-/**
  * Address: 0x006C39F0 (FUN_006C39F0)
  *
  * What it does:
  * Rebinds this unit's creator weak-reference lane and marks game-data sync
  * dirty for replication.
  */
-void moho::AssignCreatorWeakRefAndMarkSyncDirty(Unit* const unit, Unit* const creator)
+void moho::AssignCreatorWeakRefAndMarkSyncDirty(
+  Unit* const unit,
+  Unit* const creator
+)
 {
   unit->CreatorRef.Set(creator);
   unit->NeedSyncGameData = true;
@@ -974,121 +813,23 @@ namespace
       Finish();
     }
   };
-
-  /**
-   * Address: 0x0055C160 (FUN_0055C160, Moho::UnitWeaponInfoSerializer::Deserialize)
-   *
-   * What it does:
-   * Reflection load-callback facade for `UnitWeaponInfo`. Forwards the
-   * reflected object pointer to `UnitWeaponInfo::MemberDeserialize`; `version`
-   * and the owner-ref lane are unused by the member (mirrors the binary tail
-   * call).
-   */
-  [[maybe_unused]] void DeserializeUnitWeaponInfoSerializerCallback(
-    gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const info = reinterpret_cast<moho::UnitWeaponInfo*>(objectPtr);
-    if (info == nullptr) {
-      return;
-    }
-    info->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x0055C170 (FUN_0055C170, Moho::UnitWeaponInfoSerializer::Serialize)
-   *
-   * What it does:
-   * Reflection save-callback facade for `UnitWeaponInfo`. Forwards the
-   * reflected object pointer to `UnitWeaponInfo::MemberSerialize`; `version`
-   * and the owner-ref lane are unused by the member (mirrors the binary tail
-   * call).
-   */
-  [[maybe_unused]] void SerializeUnitWeaponInfoSerializerCallback(
-    gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const info = reinterpret_cast<moho::UnitWeaponInfo*>(objectPtr);
-    if (info == nullptr) {
-      return;
-    }
-    info->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x0055C760 (FUN_0055C760, Moho::SSTIUnitVariableDataSerializer::Deserialize)
-   *
-   * IDA signature:
-   * int sub_55C760(); // elided tail-jump: return sub_55E030();
-   *
-   * What it does:
-   * Reflection load-callback facade for `SSTIUnitVariableData`. Forwards the
-   * reflected object pointer to the class member load body; `version` and the
-   * owner-ref lane are unused by the member (mirrors the binary tail-jump into
-   * FUN_0055E030).
-   */
-  [[maybe_unused]] void SSTIUnitVariableDataSerializerDeserialize(
-    gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const data = reinterpret_cast<moho::SSTIUnitVariableData*>(objectPtr);
-    if (data == nullptr) {
-      return;
-    }
-    data->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x0055C770 (FUN_0055C770, Moho::SSTIUnitVariableDataSerializer::Serialize)
-   *
-   * IDA signature:
-   * int sub_55C770(); // elided tail-jump: return sub_55E420();
-   *
-   * What it does:
-   * Reflection save-callback facade for `SSTIUnitVariableData`. Forwards the
-   * reflected object pointer to the class member save body; `version` and the
-   * owner-ref lane are unused by the member (mirrors the binary tail-jump into
-   * FUN_0055E420).
-   */
-  [[maybe_unused]] void SSTIUnitVariableDataSerializerSerialize(
-    gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const data = reinterpret_cast<moho::SSTIUnitVariableData*>(objectPtr);
-    if (data == nullptr) {
-      return;
-    }
-    data->MemberSerialize(archive);
-  }
 }
 
 namespace moho
 {
 
-/**
- * Address: 0x0055C020 (FUN_0055C020, preregister_UnitWeaponInfoTypeInfo)
- *
- * What it does:
- * Constructs/preregisters RTTI metadata for `UnitWeaponInfo`.
- */
-gpg::RType* preregister_UnitWeaponInfoTypeInfo()
-{
-  static UnitWeaponInfoTypeInfo typeInfo;
-  gpg::PreRegisterRType(typeid(UnitWeaponInfo), &typeInfo);
-  return &typeInfo;
-}
+  /**
+   * Address: 0x0055C020 (FUN_0055C020, preregister_UnitWeaponInfoTypeInfo)
+   *
+   * What it does:
+   * Constructs/preregisters RTTI metadata for `UnitWeaponInfo`.
+   */
+  gpg::RType* preregister_UnitWeaponInfoTypeInfo()
+  {
+    static UnitWeaponInfoTypeInfo typeInfo;
+    gpg::PreRegisterRType(typeid(UnitWeaponInfo), &typeInfo);
+    return &typeInfo;
+  }
 
 #include "UnitReflection.inl"
 

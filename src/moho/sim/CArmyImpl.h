@@ -27,7 +27,7 @@ namespace moho
   class CAiReconDBImpl;
   class CArmyStats;
   class CPlatoon;
-  class CSimArmyEconomyInfo;
+  class CEconomy;
   class CIntelGrid;
   class UserArmy;
   class Unit;
@@ -64,7 +64,8 @@ namespace moho
   static_assert(offsetof(ArmyPool, platoons.end_) == 0x04, "ArmyPool::platoons.end_ offset must be 0x04");
   static_assert(offsetof(ArmyPool, platoons.capacity_) == 0x08, "ArmyPool::platoons.capacity_ offset must be 0x08");
   static_assert(
-    offsetof(ArmyPool, platoons.originalVec_) == 0x0C, "ArmyPool::platoons.originalVec_ offset must be 0x0C"
+    offsetof(ArmyPool, platoons.originalVec_) == 0x0C,
+    "ArmyPool::platoons.originalVec_ offset must be 0x0C"
   );
   static_assert(offsetof(ArmyPool, platoons.inlineVec_) == 0x10, "ArmyPool::platoons.inlineVec_ offset must be 0x10");
 
@@ -125,7 +126,7 @@ namespace moho
     /** Address: 0x006FDCA0 (FUN_006FDCA0, Moho::CArmyImpl::GetReconDB) */
     CAiReconDBImpl* GetReconDB() override;
     /** Address: 0x006FDCB0 (FUN_006FDCB0, Moho::CArmyImpl::GetEconomy) */
-    CSimArmyEconomyInfo* GetEconomy() override;
+    CEconomy* GetEconomy() override;
     /** Address: 0x006FFCB0 (FUN_006FFCB0, Moho::CArmyImpl::GenerateArmyStart) */
     void GenerateArmyStart() override;
     /** Address: 0x006FDCC0 (FUN_006FDCC0, Moho::CArmyImpl::SetArmyStart) */
@@ -181,9 +182,9 @@ namespace moho
     /** Address: 0x006FDDE0 (FUN_006FDDE0, Moho::CArmyImpl::GetPathFinder) */
     void* GetPathFinder() override;
     /** Address: 0x006FDDF0 (FUN_006FDDF0, Moho::CArmyImpl::SetUnknownSharedRef) */
-    boost::SharedPtrRaw<void>* SetUnknownSharedRef(boost::SharedPtrRaw<void>* value) override;
+    std::shared_ptr<void>* SetUnknownSharedRef(std::shared_ptr<void>* value) override;
     /** Address: 0x006FDE40 (FUN_006FDE40, Moho::CArmyImpl::GetUnknownSharedRef) */
-    boost::SharedPtrRaw<void>* GetUnknownSharedRef(boost::SharedPtrRaw<void>* outValue) override;
+    std::shared_ptr<void>* GetUnknownSharedRef(std::shared_ptr<void>* outValue) override;
     /** Address: 0x006FDE70 (FUN_006FDE70, Moho::CArmyImpl::SetUnknownVectorWithMeta) */
     std::uint32_t SetUnknownVectorWithMeta(const SArmyVectorWithMeta* value) override;
     /** Address: 0x006FDE90 (FUN_006FDE90, Moho::CArmyImpl::GetPlatoonsList) */
@@ -227,7 +228,9 @@ namespace moho
     int GetNumPlatoonWithPlan(const char* planName) override;
     /** Address: 0x00700A00 (FUN_00700A00, Moho::CArmyImpl::CountUnitsInBoundsXZ) */
     int CountUnitsInBoundsXZ(
-      const Wm3::Vector3f& minBounds, const Wm3::Vector3f& maxBounds, const EntitySetTemplate<Unit>& unitSet
+      const Wm3::Vector3f& minBounds,
+      const Wm3::Vector3f& maxBounds,
+      const EntitySetTemplate<Unit>& unitSet
     ) override;
     /** Address: 0x00700A70 (FUN_00700A70, Moho::CArmyImpl::UpdateAIDebugPlatoonStats) */
     void UpdateAIDebugPlatoonStats(Unit* unit) override;
@@ -306,16 +309,16 @@ namespace moho
     // +0x00 vfptr (SimArmy), +0x04 alignment padding, +0x08..+0x1E8 the
     // replicated IArmy payload (mConstDat / mVarDat, see IArmy.h). This class's
     // own state starts here.
-    Sim* Simulation;                                     // 0x01E8
-    CAiBrain* AiBrain;                                   // 0x01EC
-    CAiReconDBImpl* AiReconDb;                           // 0x01F0
-    CSimArmyEconomyInfo* EconomyInfo;                    // 0x01F4
-    fa::string ArmyPlans;                             // 0x01F8
-    CArmyStats* Stats;                                   // 0x0214
-    CInfluenceMap* InfluenceMap;                         // 0x0218 (FUN_006FDC80 / mIMmap)
-    void* PathFinder;                                    // 0x021C
-    boost::SharedPtrRaw<void> UnknownShared220;          // 0x0220
-    ArmyPool PlatoonPool;                                // 0x0228
+    Sim* Simulation;                            // 0x01E8
+    CAiBrain* AiBrain;                          // 0x01EC
+    CAiReconDBImpl* AiReconDb;                  // 0x01F0
+    CEconomy* EconomyInfo;                      // 0x01F4
+    fa::string ArmyPlans;                       // 0x01F8
+    CArmyStats* Stats;                          // 0x0214
+    CInfluenceMap* InfluenceMap;                // 0x0218 (FUN_006FDC80 / mIMmap)
+    PathQueue* PathFinder;                      // 0x021C
+    std::shared_ptr<void> UnknownShared220;     // 0x0220
+    ArmyPool PlatoonPool;                       // 0x0228
     /**
      * Real `fa::vector<EntitySetTemplate<Unit>>` (0x258: myProxy_,
      * 0x25C: first_/begin, 0x260: last_/end, 0x264: end_/capacityEnd),
@@ -326,15 +329,15 @@ namespace moho
      * and the `MemberSerialize`/`MemberDeserialize` reflection lanes.
      */
     fa::vector<EntitySetTemplate<Unit>> UnitCategorySets; // 0x0258
-    std::uint32_t UnitCategoryBaseIndex;                 // 0x0268
-    std::uint32_t UnitCategoryMaxIndex;                  // 0x026C
-    float UnitCapacity;                                  // 0x0270
-    std::uint8_t IgnoreUnitCapFlag;                      // 0x0274
-    char pad_0275[3];                                    // 0x0275
-    std::int32_t PathCapacityLand;                       // 0x0278
-    std::int32_t PathCapacitySea;                        // 0x027C
-    std::int32_t PathCapacityBoth;                       // 0x0280
-    char pad_0284[4];                                    // 0x0284
+    std::uint32_t UnitCategoryBaseIndex;                  // 0x0268
+    std::uint32_t UnitCategoryMaxIndex;                   // 0x026C
+    float UnitCapacity;                                   // 0x0270
+    std::uint8_t IgnoreUnitCapFlag;                       // 0x0274
+    char pad_0275[3];                                     // 0x0275
+    std::int32_t PathCapacityLand;                        // 0x0278
+    std::int32_t PathCapacitySea;                         // 0x027C
+    std::int32_t PathCapacityBoth;                        // 0x0280
+    char pad_0284[4];                                     // 0x0284
   };
 
   // The IArmy payload ends at +0x1E8 (vfptr + padding + 0x1E0); this pins the
@@ -349,10 +352,12 @@ namespace moho
   static_assert(offsetof(CArmyImpl, PlatoonPool) == 0x228, "CArmyImpl::PlatoonPool offset must be 0x228");
   static_assert(offsetof(CArmyImpl, UnitCategorySets) == 0x258, "CArmyImpl::UnitCategorySets offset must be 0x258");
   static_assert(
-    offsetof(CArmyImpl, UnitCategoryBaseIndex) == 0x268, "CArmyImpl::UnitCategoryBaseIndex offset must be 0x268"
+    offsetof(CArmyImpl, UnitCategoryBaseIndex) == 0x268,
+    "CArmyImpl::UnitCategoryBaseIndex offset must be 0x268"
   );
   static_assert(
-    offsetof(CArmyImpl, UnitCategoryMaxIndex) == 0x26C, "CArmyImpl::UnitCategoryMaxIndex offset must be 0x26C"
+    offsetof(CArmyImpl, UnitCategoryMaxIndex) == 0x26C,
+    "CArmyImpl::UnitCategoryMaxIndex offset must be 0x26C"
   );
   static_assert(offsetof(CArmyImpl, IgnoreUnitCapFlag) == 0x274, "CArmyImpl::IgnoreUnitCapFlag offset must be 0x274");
   static_assert(sizeof(CArmyImpl) == 0x288, "CArmyImpl size must be 0x288");
@@ -373,11 +378,4 @@ namespace moho
     bool isFocusArmy
   );
 
-  /**
-   * Address: 0x005A2C20 (FUN_005A2C20, Moho::AI_Tick)
-   *
-   * What it does:
-   * Advances one AI brain tick for an army across its three task-thread stages.
-   */
-  void AI_Tick(CArmyImpl* army);
 } // namespace moho

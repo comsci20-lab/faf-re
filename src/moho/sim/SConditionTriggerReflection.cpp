@@ -9,19 +9,20 @@
 #include <string>
 #include <typeinfo>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/ArchiveSerialization.h"
 #include "gpg/core/containers/ReadArchive.h"
 #include "gpg/core/containers/String.h"
 #include "gpg/core/containers/WriteArchive.h"
 #include "gpg/core/reflection/RListType.h"
 #include "gpg/core/utils/Global.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "moho/misc/Stats.h"
 #include "moho/resource/blueprints/RUnitBlueprint.h"
 #include "moho/sim/CArmyStats.h"
 #include "gpg/core/reflection/RSharedPointerType.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "legacy/thread/Mutex.h"
 
 namespace
 {
@@ -75,7 +76,6 @@ namespace
   };
   static_assert(sizeof(ETriggerOperatorTypeInfo) == 0x78, "ETriggerOperatorTypeInfo size must be 0x78");
 
-
   class SConditionTypeInfo final : public gpg::RType
   {
   public:
@@ -113,7 +113,9 @@ namespace
   };
   static_assert(sizeof(SConditionTypeInfo) == 0x64, "SConditionTypeInfo size must be 0x64");
 
-  [[nodiscard]] gpg::RRef MakeSTriggerRef(moho::STrigger* const trigger)
+  [[nodiscard]] gpg::RRef MakeSTriggerRef(
+    moho::STrigger* const trigger
+  )
   {
     gpg::RRef out{};
     out.mObj = trigger;
@@ -153,27 +155,33 @@ namespace
       return MakeSTriggerRef(object);
     }
 
-    static gpg::RRef CtrRef(void* const objectPtr)
+    static gpg::RRef CtrRef(
+      void* const objectPtr
+    )
     {
       // Address: 0x007110F0 (FUN_007110F0)
-      auto* const object = reinterpret_cast<moho::STrigger*>(objectPtr);
+      auto* const object = static_cast<moho::STrigger*>(objectPtr);
       if (object) {
         new (object) moho::STrigger();
       }
       return MakeSTriggerRef(object);
     }
 
-    static void Delete(void* const objectPtr)
+    static void Delete(
+      void* const objectPtr
+    )
     {
       // Address: 0x007110D0 (FUN_007110D0)
-      auto* const object = reinterpret_cast<moho::STrigger*>(objectPtr);
+      auto* const object = static_cast<moho::STrigger*>(objectPtr);
       delete object;
     }
 
-    static void Destruct(void* const objectPtr)
+    static void Destruct(
+      void* const objectPtr
+    )
     {
       // Address: 0x00711190 (FUN_00711190)
-      auto* const object = reinterpret_cast<moho::STrigger*>(objectPtr);
+      auto* const object = static_cast<moho::STrigger*>(objectPtr);
       if (object) {
         object->~STrigger();
       }
@@ -186,7 +194,9 @@ namespace
      * Installs `STrigger` allocation/construct/delete/destruct callback slots
      * on one reflected type descriptor.
      */
-    static gpg::RType* AssignSTriggerLifecycleCallbacks(gpg::RType* const typeInfo)
+    static gpg::RType* AssignSTriggerLifecycleCallbacks(
+      gpg::RType* const typeInfo
+    )
     {
       typeInfo->newRefFunc_ = &STriggerTypeInfo::NewRef;
       typeInfo->ctorRefFunc_ = &STriggerTypeInfo::CtrRef;
@@ -248,7 +258,9 @@ namespace
      * What it does:
      * Formats inherited lexical text and appends current fastvector size.
      */
-    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override
+    [[nodiscard]] fa::string GetLexical(
+      const gpg::RRef& ref
+    ) const override
     {
       const fa::string base = gpg::RType::GetLexical(ref);
       return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
@@ -283,9 +295,14 @@ namespace
      * Invocation: installed as this type's `serLoadFunc_` in the
      * registration block below, which is how the archive layer reaches it.
      */
-    static void Deserialize(gpg::ReadArchive* archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+    static void Deserialize(
+      gpg::ReadArchive* archive,
+      void* const objectPtr,
+      const int,
+      gpg::RRef* const ownerRef
+    )
     {
-      auto& vec = *reinterpret_cast<gpg::fastvector_n<moho::SCondition, 2>*>(objectPtr);
+      auto& vec = *static_cast<gpg::fastvector_n<moho::SCondition, 2>*>(objectPtr);
       unsigned int count = 0;
       archive->ReadUInt(&count);
 
@@ -305,9 +322,14 @@ namespace
      * Serializes one `fastvector<SCondition>` lane by writing element count and
      * then each `SCondition` payload through reflected write callbacks.
      */
-    static void Serialize(gpg::WriteArchive* archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+    static void Serialize(
+      gpg::WriteArchive* archive,
+      void* const objectPtr,
+      const int,
+      gpg::RRef* const ownerRef
+    )
     {
-      auto& vec = *reinterpret_cast<gpg::fastvector_n<moho::SCondition, 2>*>(objectPtr);
+      auto& vec = *static_cast<gpg::fastvector_n<moho::SCondition, 2>*>(objectPtr);
       const unsigned int count = static_cast<unsigned int>(vec.size());
       archive->WriteUInt(count);
 
@@ -319,14 +341,20 @@ namespace
 
     void Init() override
     {
-      static_assert(sizeof(gpg::core::FastVectorInline<moho::SCondition>) == 0x10, "gpg::core::FastVectorInline<moho::SCondition> is 0x10 bytes on x86");
+      static_assert(
+        sizeof(gpg::core::FastVectorInline<moho::SCondition>) == 0x10,
+        "gpg::core::FastVectorInline<moho::SCondition> is 0x10 bytes on x86"
+      );
       size_ = sizeof(gpg::core::FastVectorInline<moho::SCondition>);
       version_ = 1;
       serLoadFunc_ = &RFastVectorSConditionTypeInfo::Deserialize;
       serSaveFunc_ = &RFastVectorSConditionTypeInfo::Serialize;
     }
 
-    gpg::RRef SubscriptIndex(void* const obj, const int ind) const override
+    gpg::RRef SubscriptIndex(
+      void* const obj,
+      const int ind
+    ) const override
     {
       gpg::RRef out{};
       out.mType = moho::SCondition::StaticGetClass();
@@ -344,7 +372,9 @@ namespace
       return out;
     }
 
-    size_t GetCount(void* const obj) const override
+    size_t GetCount(
+      void* const obj
+    ) const override
     {
       if (!obj) {
         return 0u;
@@ -361,7 +391,10 @@ namespace
      * Resizes one reflected `fastvector<SCondition>` lane and value-initializes
      * appended elements.
      */
-    void SetCount(void* const obj, const int count) const override
+    void SetCount(
+      void* const obj,
+      const int count
+    ) const override
     {
       if (!obj || count < 0) {
         return;
@@ -388,7 +421,7 @@ namespace
    */
   void DeserializeUnitBlueprintWeightMap(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -397,7 +430,7 @@ namespace
       return;
     }
 
-    auto* const destination = reinterpret_cast<UnitBlueprintWeightMap*>(objectPtr);
+    auto* const destination = static_cast<UnitBlueprintWeightMap*>(objectPtr);
     unsigned int count = 0u;
     archive->ReadUInt(&count);
     destination->clear();
@@ -421,7 +454,7 @@ namespace
    */
   void SerializeUnitBlueprintWeightMap(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -430,7 +463,7 @@ namespace
       return;
     }
 
-    const auto* const source = reinterpret_cast<const UnitBlueprintWeightMap*>(objectPtr);
+    const auto* const source = static_cast<const UnitBlueprintWeightMap*>(objectPtr);
     const unsigned int count = source != nullptr ? static_cast<unsigned int>(source->size()) : 0u;
     archive->WriteUInt(count);
     if (source == nullptr) {
@@ -461,7 +494,7 @@ namespace
    */
   void DeserializeStringArmyStatItemMap(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -470,7 +503,7 @@ namespace
       return;
     }
 
-    auto* const destination = reinterpret_cast<StringToArmyStatItemMap*>(objectPtr);
+    auto* const destination = static_cast<StringToArmyStatItemMap*>(objectPtr);
     unsigned int count = 0u;
     archive->ReadUInt(&count);
     destination->clear();
@@ -494,7 +527,7 @@ namespace
    */
   void SerializeStringArmyStatItemMap(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -503,7 +536,7 @@ namespace
       return;
     }
 
-    const auto* const source = reinterpret_cast<const StringToArmyStatItemMap*>(objectPtr);
+    const auto* const source = static_cast<const StringToArmyStatItemMap*>(objectPtr);
     const unsigned int count = source != nullptr ? static_cast<unsigned int>(source->size()) : 0u;
     archive->WriteUInt(count);
     if (source == nullptr) {
@@ -527,16 +560,19 @@ namespace
    * Locks one `Stats<CArmyStatItem>` lane, reads an owned root pointer from
    * archive, swaps it into `mItem`, and deletes the previous root.
    */
-  void DeserializeStatsCArmyStatItemOwnedRootLane(gpg::ReadArchive* const archive, const std::intptr_t ownerToken)
+  void DeserializeStatsCArmyStatItemOwnedRootLane(
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    int,
+    gpg::RRef*
+  )
   {
-    auto* const stats = reinterpret_cast<moho::Stats<moho::CArmyStatItem>*>(
-      ownerToken
-    );
+    auto* const stats = static_cast<moho::Stats<moho::CArmyStatItem>*>(objectPtr);
     if (archive == nullptr || stats == nullptr) {
       return;
     }
 
-    boost::mutex::scoped_lock lock(stats->mLock);
+    fa::mutex::scoped_lock lock(stats->mLock);
     moho::CArmyStatItem* loadedRoot = nullptr;
     const gpg::RRef owner{};
     archive->ReadPointerOwned(&loadedRoot, &owner);
@@ -554,12 +590,15 @@ namespace
    * (`lea esi, [edi+8]`), so the binary's lock is embedded where this layout
    * keeps a pointer; the load half above locks the same way.
    */
-  void SerializeStatsCArmyStatItemOwnedRoot(gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const)
+  void SerializeStatsCArmyStatItemOwnedRoot(
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const
+  )
   {
-    auto* const stats = reinterpret_cast<moho::Stats<moho::CArmyStatItem>*>(
-      objectPtr
-    );
-    boost::mutex::scoped_lock lock(stats->mLock);
+    auto* const stats = static_cast<moho::Stats<moho::CArmyStatItem>*>(objectPtr);
+    fa::mutex::scoped_lock lock(stats->mLock);
     archive->WritePointer(stats->mItem.get(), gpg::TrackedPointerState::Owned, gpg::RRef{});
   }
 
@@ -571,7 +610,10 @@ namespace
    * publishes it as an unowned serializer construct result.
    */
   void ConstructStatsCArmyStatItemForSerializer(
-    const int, const int, gpg::RRef* const, gpg::SerConstructResult* const constructResult
+    gpg::ReadArchive* const,
+    const int,
+    gpg::RRef* const,
+    gpg::SerConstructResult* const constructResult
   )
   {
     auto* const stats = new (std::nothrow) moho::Stats<moho::CArmyStatItem>();
@@ -592,7 +634,9 @@ namespace
    * Destroys one `Stats<CArmyStatItem>` object and releases its storage when
    * the pointer is non-null.
    */
-  void DeleteStatsCArmyStatItemOwnedObject(void* const object)
+  void DeleteStatsCArmyStatItemOwnedObject(
+    void* const object
+  )
   {
     GPG_NONVIRTUAL_DESTROY(delete static_cast<moho::Stats<moho::CArmyStatItem>*>(object));
   }
@@ -634,7 +678,9 @@ namespace
      * What it does:
      * Formats inherited lexical text and appends current map element count.
      */
-    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override
+    [[nodiscard]] fa::string GetLexical(
+      const gpg::RRef& ref
+    ) const override
     {
       const fa::string base = gpg::RType::GetLexical(ref);
       const auto* const map = static_cast<const UnitBlueprintWeightMap*>(ref.mObj);
@@ -692,9 +738,9 @@ namespace
     {
       size_ = sizeof(moho::Stats<moho::CArmyStatItem>);
       version_ = 1;
-      serLoadFunc_ = reinterpret_cast<gpg::RType::load_func_t>(reinterpret_cast<void (*)()>(&DeserializeStatsCArmyStatItemOwnedRootLane));
+      serLoadFunc_ = &DeserializeStatsCArmyStatItemOwnedRootLane;
       serSaveFunc_ = &SerializeStatsCArmyStatItemOwnedRoot;
-      serConstructFunc_ = reinterpret_cast<gpg::RType::construct_func_t>(reinterpret_cast<void (*)()>(&ConstructStatsCArmyStatItemForSerializer));
+      serConstructFunc_ = &ConstructStatsCArmyStatItemForSerializer;
       deleteFunc_ = &DeleteStatsCArmyStatItemOwnedObject;
     }
   };
@@ -737,7 +783,9 @@ namespace
      * What it does:
      * Formats inherited lexical text and appends current map element count.
      */
-    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override
+    [[nodiscard]] fa::string GetLexical(
+      const gpg::RRef& ref
+    ) const override
     {
       const fa::string base = gpg::RType::GetLexical(ref);
       const auto* const map = static_cast<const StringToArmyStatItemMap*>(ref.mObj);
@@ -849,9 +897,10 @@ namespace
    * Address: 0x0070F420 (FUN_0070F420 -- `GetLexical`.)
    * Address: 0x0070F400 (FUN_0070F400 -- `Init`.)
    * Address: 0x00710620 (FUN_00710620 -- `SerLoad`; each trigger read by `ReadPointerShared<STrigger>` 0x007142F0.)
-   * Address: 0x00710720 (FUN_00710720 -- `SerSave`; each trigger written `Shared` through `MakeRRef<STrigger>` 0x00713700.)
+   * Address: 0x00710720 (FUN_00710720 -- `SerSave`; each trigger written `Shared` through `MakeRRef<STrigger>`
+   * 0x00713700.)
    */
-  gpg::RListType<boost::shared_ptr<moho::STrigger>> gListSharedPtrSTriggerTypeInfo;
+  gpg::RListType<std::shared_ptr<moho::STrigger>> gListSharedPtrSTriggerTypeInfo;
   RMapUnitBlueprintFloatTypeInfo gMapUnitBlueprintFloatTypeInfo;
   StatsCArmyStatItemTypeInfo gStatsCArmyStatItemTypeInfo;
   RMapStringArmyStatItemPtrTypeInfo gMapStringArmyStatItemPtrTypeInfo;
@@ -1016,6 +1065,15 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_ETriggerOperatorTypeInfo_61eef0, moho::register_ETriggerOperatorTypeInfo)
-GPG_PREREGISTER_INIT(register_SConditionTypeInfo_61eef0, moho::register_SConditionTypeInfo)
-GPG_PREREGISTER_INIT(register_STriggerTypeInfo_61eef0, moho::register_STriggerTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_ETriggerOperatorTypeInfo_61eef0,
+  moho::register_ETriggerOperatorTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_SConditionTypeInfo_61eef0,
+  moho::register_SConditionTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_STriggerTypeInfo_61eef0,
+  moho::register_STriggerTypeInfo
+)

@@ -6,6 +6,7 @@
 #include "moho/sim/CBackgroundTaskControl.h"
 #include "moho/sim/CWldMap.h"
 #include "moho/sim/STIMap.h"
+#include "moho/render/DynamicLights.h"
 #include "moho/render/WRenViewport.h"
 
 namespace moho
@@ -41,9 +42,8 @@ namespace moho
   // Engine addition (`ui_IconRecords`): counts applied sync beats on the user side, so the
   // strategic-icon pass can tell that no entity changed since it last looked. Main thread only.
   std::uint64_t gUserSyncBeats = 0u;
-namespace
-{
-
+  namespace
+  {
 
     // `DestroyBuildTemplateInfo` (0x00823E10, per-element blueprint-id string
     // release) and `DestroyBuildTemplateRange` (0x00823DD0, the loop over it)
@@ -58,7 +58,10 @@ namespace
     // than a hand-rolled per-type free function; there is no separate body to
     // recover them into.
 
-    void SortBuildTemplateRangeByOrder(SBuildTemplateInfo* const begin, SBuildTemplateInfo* const end)
+    void SortBuildTemplateRangeByOrder(
+      SBuildTemplateInfo* const begin,
+      SBuildTemplateInfo* const end
+    )
     {
       if (begin == nullptr || end == nullptr || begin == end || begin + 1 == end) {
         return;
@@ -71,14 +74,15 @@ namespace
       // 32-element insertion-sort cutoff, the same 40-element ninther
       // threshold in the median pick, and the same three-quarters recursion
       // budget before it falls back to heapsort.
-      fa::sort(
-        begin,
-        end,
-        [](const SBuildTemplateInfo& lhs, const SBuildTemplateInfo& rhs) noexcept { return lhs.mBuildOrder < rhs.mBuildOrder; }
-      );
+      fa::sort(begin, end, [](const SBuildTemplateInfo& lhs, const SBuildTemplateInfo& rhs) noexcept {
+        return lhs.mBuildOrder < rhs.mBuildOrder;
+      });
     }
 
-    void BuildSelectionSyncMask(const WeakSet<UserEntity>& selection, SSyncFilterMaskBlock& outMask)
+    void BuildSelectionSyncMask(
+      const WeakSet<UserEntity>& selection,
+      SSyncFilterMaskBlock& outMask
+    )
     {
       BVIntSet selectionIds{};
       for (UserEntity* const entity : selection) {
@@ -90,44 +94,26 @@ namespace
       outMask = selectionIds;
     }
 
-    [[nodiscard]] bool ApplyTerrainPlayableRect(IWldTerrainRes* const terrainRes, const gpg::Rect2i& playableRect)
+    [[nodiscard]] bool ApplyTerrainPlayableRect(
+      IWldTerrainRes* const terrainRes,
+      const gpg::Rect2i& playableRect
+    )
     {
       if (terrainRes == nullptr) {
         return false;
       }
-      return terrainRes->SetPlayableMapRect(VisibilityRect::FromRect2i(playableRect));
+      return terrainRes->SetPlayableMapRect(playableRect);
     }
-}
-
+  } // namespace
 
   MouseInfo& CWldSession::CursorInfo() noexcept
   {
-    static_assert(
-      offsetof(CWldSession, CursorWorldPos) - offsetof(CWldSession, mCursorWorldState)
-        == offsetof(MouseInfo, mMouseWorldPos),
-      "CWldSession's flattened cursor snapshot must line up with MouseInfo"
-    );
-    static_assert(
-      offsetof(CWldSession, mCursorUnitHover) - offsetof(CWldSession, mCursorWorldState)
-        == offsetof(MouseInfo, mUnitHover),
-      "CWldSession's flattened cursor snapshot must line up with MouseInfo"
-    );
-    static_assert(
-      offsetof(CWldSession, HighlightCommandId) - offsetof(CWldSession, mCursorWorldState)
-        == offsetof(MouseInfo, mIsDragger),
-      "CWldSession's flattened cursor snapshot must line up with MouseInfo"
-    );
-    static_assert(
-      offsetof(CWldSession, CursorScreenPos) - offsetof(CWldSession, mCursorWorldState)
-        == offsetof(MouseInfo, mMouseScreenPos),
-      "CWldSession's flattened cursor snapshot must line up with MouseInfo"
-    );
-    return *reinterpret_cast<MouseInfo*>(&mCursorWorldState[0]);
+    return mCursorInfo;
   }
 
   const MouseInfo& CWldSession::CursorInfo() const noexcept
   {
-    return *reinterpret_cast<const MouseInfo*>(&mCursorWorldState[0]);
+    return mCursorInfo;
   }
 
   /**
@@ -240,8 +226,8 @@ namespace
 
     // 0x0089349D..0x008934D9 is `MouseInfo`'s default constructor, inlined
     // over the cursor lane this class still spells out field by field
-    // (`mCursorWorldState` / `CursorWorldPos` / `mCursorUnitHover` /
-    // `HighlightCommandId` / `CursorScreenPos` - see `CursorInfo()`):
+    // (`mCursorWorldState` / `mCursorInfo.mMouseWorldPos` / `mCursorInfo.mUnitHover` /
+    // `mCursorInfo.mIsDragger` / `mCursorInfo.mMouseScreenPos` - see `CursorInfo()`):
     //
     //   0x0089349D  mov  [ebp+4B0h], bl    ; mHitValid   = 0
     //   0x008934A3  movss [ebp+4B4h], xmm0 ; mMouseWorldPos = (0,0,0)
@@ -259,27 +245,27 @@ namespace
     // walked a garbage owner chain and faulted in
     // `WeakPtr<UserEntity>::ResetFromOwnerLinkSlot`. Whether a given build
     // survived startup came down to heap layout. The two stores are now
-    // `mCursorUnitHover`'s own default constructor, run as a member.
-    mCursorWorldState[0] = 0u;
+    // `mCursorInfo.mUnitHover`'s own default constructor, run as a member.
+    mCursorInfo.mHitValid = 0u;
 
     // 0x00893160 line ~288-293: seeds the initial cursor world position from
     // the map's own bounds midpoint, not the origin - matters because
-    // nothing else writes CursorWorldPos until the first real mouse-move
+    // nothing else writes mCursorInfo.mMouseWorldPos until the first real mouse-move
     // event, so any UI/camera code reading it on the first frame otherwise
     // sees world-origin instead of a point actually on the map.
     if (const STIMap* const stiMap = GetSTIMap(); stiMap != nullptr) {
       const Wm3::AxisAlignedBox3f mapBounds = stiMap->GetBounds3D();
-      CursorWorldPos.x = (mapBounds.Min.x + mapBounds.Max.x) * 0.5f;
-      CursorWorldPos.y = (mapBounds.Min.y + mapBounds.Max.y) * 0.5f;
-      CursorWorldPos.z = (mapBounds.Min.z + mapBounds.Max.z) * 0.5f;
+      mCursorInfo.mMouseWorldPos.x = (mapBounds.Min.x + mapBounds.Max.x) * 0.5f;
+      mCursorInfo.mMouseWorldPos.y = (mapBounds.Min.y + mapBounds.Max.y) * 0.5f;
+      mCursorInfo.mMouseWorldPos.z = (mapBounds.Min.z + mapBounds.Max.z) * 0.5f;
     } else {
-      CursorWorldPos.x = 0.0f;
-      CursorWorldPos.y = 0.0f;
-      CursorWorldPos.z = 0.0f;
+      mCursorInfo.mMouseWorldPos.x = 0.0f;
+      mCursorInfo.mMouseWorldPos.y = 0.0f;
+      mCursorInfo.mMouseWorldPos.z = 0.0f;
     }
-    CursorScreenPos.x = 0.0f;
-    CursorScreenPos.y = 0.0f;
-    HighlightCommandId = -1;
+    mCursorInfo.mMouseScreenPos.x = 0.0f;
+    mCursorInfo.mMouseScreenPos.y = 0.0f;
+    mCursorInfo.mIsDragger = -1;
 
     // 0x008934F1: `mov byte ptr [ebp+4D5h], 1`. Shipping this false made
     // `SelectBuildPreviewColor` return the valid colour unconditionally, so a
@@ -294,8 +280,8 @@ namespace
     // Session task stage. The binary allocates it, swaps it into `mCurThread`
     // destroying whatever was there, and then publishes it on the session Lua
     // state (`LuaState::m_taskStage`, the root-state meaning of the slot that
-    // holds a thread's `CLuaTask`), where `cfunc_ForkThreadL` reads it back. Without this, every session script calling `ForkThread` dies
-    // with "Lua state has not been set up for multiple threads".
+    // holds a thread's `CLuaTask`), where `cfunc_ForkThreadL` reads it back. Without this, every session script calling
+    // `ForkThread` dies with "Lua state has not been set up for multiple threads".
     {
       auto* const sessionStage = new CTaskStage();
       CTaskStage* const previousStage = mCurThread;
@@ -369,10 +355,7 @@ namespace
     if (mWldMap != nullptr && mWldMap->mTerrainRes != nullptr) {
       if (const STIMap* const stiMap = GetSTIMap(); stiMap != nullptr) {
         if (const CHeightField* const heightField = stiMap->mHeightField.get(); heightField != nullptr) {
-          mVisionDb.Init(
-            static_cast<float>(heightField->Width() - 1),
-            static_cast<float>(heightField->Height() - 1)
-          );
+          mVisionDb.Init(static_cast<float>(heightField->Width() - 1), static_cast<float>(heightField->Height() - 1));
         }
       }
     }
@@ -393,8 +376,7 @@ namespace
     if (mWldMap != nullptr && mWldMap->mTerrainRes != nullptr) {
       if (const STIMap* const stiMap = GetSTIMap(); stiMap != nullptr) {
         if (const CHeightField* const heightField = stiMap->mHeightField.get(); heightField != nullptr) {
-          GetEntitySpatialDbStorage()
-            ->ResizeForMap(heightField->Width() - 1, heightField->Height() - 1);
+          GetEntitySpatialDbStorage()->ResizeForMap(heightField->Width() - 1, heightField->Height() - 1);
         }
       }
     }
@@ -452,10 +434,10 @@ namespace
       delete entity;
     }
 
-    mSimResources.release();
-    mBeatDebugCanvas.release();
-    mDebugCanvas.release();
-    mUnknownShared40C.release();
+    mSimResources.reset();
+    mBeatDebugCanvas.reset();
+    mDebugCanvas.reset();
+    mUnknownShared40C.reset();
     // 0x00893BE6: the renderer has no map from here on.
     sWldMap = nullptr;
     ClearBuildTemplates();
@@ -511,9 +493,11 @@ namespace
   }
 
   /**
-    * Alias of FUN_008B9580 (non-canonical helper lane).
+   * Alias of FUN_008B9580 (non-canonical helper lane).
    */
-  bool CWldSession::TryGetPlayableMapRect(VisibilityRect& outRect) const
+  bool CWldSession::TryGetPlayableMapRect(
+    gpg::Rect2i& outRect
+  ) const
   {
     if (!mWldMap) {
       return false;
@@ -556,17 +540,6 @@ namespace
   }
 
   /**
-   * Address: 0x00896570 (FUN_00896570, ?SetCursorInfo@CWldSession@Moho@@QAEXABUUICursorInfo@2@@Z)
-   *
-   * What it does:
-   * Copies one cursor-info payload into the session cursor-info lane.
-   */
-  void CWldSession::SetCursorInfo(const MouseInfo& cursorInfo)
-  {
-    CursorInfo() = cursorInfo;
-  }
-
-  /**
    * Address: 0x00895FF0 (FUN_00895FF0, ?GetSelection@CWldSession@Moho@@QBEABV?$WeakSet@VUserEntity@Moho@@@2@XZ)
    *
    * What it does:
@@ -600,25 +573,27 @@ namespace
   {
     return CursorInfo();
   }
-namespace
-{
+  namespace
+  {
 
-  /**
-   * Not a distinct binary function - every caller inlines the same
-   * `mCursorInfo.mUnitHover` weak-link decode (0x0086ECE8's own body plus
-   * three call sites already in this file). Promoted to a public accessor
-   * so callers outside this TU (`sub_8281E0`'s recovered form in the
-   * command-graph render pass) don't need their own copy.
-   *
-   * `MouseInfo::mUnitHover` is the intrusive `WeakPtr<UserEntity>` the binary
-   * stores there, so the decode is `MouseInfo::HoveredEntity()`.
-   */
-      // Engine test hook (`ui_TestHover`): an entity that stands in for the one under the cursor,
+    /**
+     * Not a distinct binary function - every caller inlines the same
+     * `mCursorInfo.mUnitHover` weak-link decode (0x0086ECE8's own body plus
+     * three call sites already in this file). Promoted to a public accessor
+     * so callers outside this TU (`sub_8281E0`'s recovered form in the
+     * command-graph render pass) don't need their own copy.
+     *
+     * `MouseInfo::mUnitHover` is the intrusive `WeakPtr<UserEntity>` the binary
+     * stores there, so the decode is `MouseInfo::HoveredEntity()`.
+     */
+    // Engine test hook (`ui_TestHover`): an entity that stands in for the one under the cursor,
     // so the hovered-unit paths can be exercised without moving the mouse.
     WeakPtr<UserEntity> sTestHoveredEntity;
     bool sTestHoverActive = false;
 
-    void UiTestHover(const fa::vector<fa::string>& args)
+    void UiTestHover(
+      const fa::vector<fa::string>& args
+    )
     {
       const std::string mode = args.size() >= 2U ? std::string(args[1].c_str()) : std::string();
       if (mode == "off") {
@@ -653,8 +628,7 @@ namespace
       "mouse is over) until 'ui_TestHover off'.",
       &UiTestHover
     );
-}
-
+  } // namespace
 
   UserEntity* CWldSession::GetHoveredUserEntity() const noexcept
   {
@@ -662,24 +636,6 @@ namespace
       return sTestHoveredEntity.GetObjectPtr();
     }
     return GetCursorInfo().HoveredEntity();
-  }
-
-  /**
-   * Address: 0x008965C0 (FUN_008965C0, ?BecomeObserver@CWldSession@Moho@@QAEXXZ)
-   *
-   * What it does:
-   * Validates observer focus request (`-1`) and applies it to the active sim
-   * driver when allowed.
-   */
-  void CWldSession::BecomeObserver()
-  {
-    if (!ValidateFocusArmyRequest(-1)) {
-      return;
-    }
-
-    if (ISTIDriver* const activeDriver = sSimDriver.get()) {
-      activeDriver->SetArmyIndex(-1);
-    }
   }
 
   /**
@@ -705,7 +661,9 @@ namespace
    * Validates one zero-based focus-army index (`-1` allowed) and forwards
    * accepted changes to the active sim driver.
    */
-  void CWldSession::RequestFocusArmy(const int index)
+  void CWldSession::RequestFocusArmy(
+    const int index
+  )
   {
     const int maxArmyIndex = static_cast<int>(userArmies.size()) - 1;
     if (index < -1 || index > maxArmyIndex) {
@@ -733,7 +691,9 @@ namespace
    * Returns whether one focus-army switch is allowed for the current command
    * source/session observation state.
    */
-  bool CWldSession::ValidateFocusArmyRequest(const int index)
+  bool CWldSession::ValidateFocusArmyRequest(
+    const int index
+  )
   {
     const unsigned int localCommandSource = static_cast<unsigned int>(ourCmdSource);
 
@@ -773,31 +733,7 @@ namespace
   }
 
   /**
-    * Alias of FUN_008B97C0 (non-canonical helper lane).
-   */
-  EntityCategoryLookupResolver* CWldSession::GetCategoryLookupResolver()
-  {
-    return const_cast<EntityCategoryLookupResolver*>(
-      static_cast<const CWldSession*>(this)->GetCategoryLookupResolver()
-    );
-  }
-
-  /**
-    * Alias of FUN_008B97C0 (non-canonical helper lane).
-   */
-  const EntityCategoryLookupResolver* CWldSession::GetCategoryLookupResolver() const
-  {
-    if (!mRules) {
-      return nullptr;
-    }
-
-    // RRuleGameRulesImpl exposes the category-lookup contract in the same primary
-    // vtable; this is a typed interface view, not a separate base subobject.
-    return reinterpret_cast<const EntityCategoryLookupResolver*>(mRules);
-  }
-
-  /**
-    * Alias of FUN_008B85E0 (non-canonical helper lane).
+   * Alias of FUN_008B85E0 (non-canonical helper lane).
    */
   SpatialDB<UserEntity>* CWldSession::GetEntitySpatialDbStorage()
   {
@@ -805,7 +741,7 @@ namespace
   }
 
   /**
-    * Alias of FUN_008B85E0 (non-canonical helper lane).
+   * Alias of FUN_008B85E0 (non-canonical helper lane).
    */
   const SpatialDB<UserEntity>* CWldSession::GetEntitySpatialDbStorage() const
   {
@@ -819,7 +755,9 @@ namespace
    * Starts transport order command mode and inserts one entity into the
    * world-session extra-selection weak-set.
    */
-  void CWldSession::AddToExtraSelectList(UserEntity* const entity)
+  void CWldSession::AddToExtraSelectList(
+    UserEntity* const entity
+  )
   {
     UICommandModeData commandModeData{};
     commandModeData.mMode = fa::string("order", 5u);
@@ -837,7 +775,9 @@ namespace
    * Removes one entity from the world-session extra-selection weak-set and
    * exits command mode when the set becomes empty.
    */
-  void CWldSession::RemoveFromExtraSelectList(UserEntity* const entity)
+  void CWldSession::RemoveFromExtraSelectList(
+    UserEntity* const entity
+  )
   {
     // 0x00896844 `call sub_8676E0` -- the erase's result is pushed nowhere and
     // never tested. The emptiness re-check that follows is unconditional:
@@ -888,7 +828,9 @@ namespace
    * Returns true when selection is empty or every live selected entity
    * resolves to the supplied user-unit pointer.
    */
-  bool CWldSession::UnitFirstInSelection(const UserUnit* const unit) const
+  bool CWldSession::UnitFirstInSelection(
+    const UserUnit* const unit
+  ) const
   {
     for (UserEntity* const selectedEntity : mSelection) {
       if (selectedEntity->IsUserUnit() != unit) {
@@ -897,17 +839,6 @@ namespace
     }
 
     return true;
-  }
-
-  /**
-   * Address: 0x00894120 (FUN_00894120, ?GetTerrainRes@CWldSession@Moho@@QBEPAVIWldTerrainRes@2@XZ)
-   *
-   * What it does:
-   * Returns the world-map terrain resource lane owned by this world session.
-   */
-  IWldTerrainRes* CWldSession::GetTerrainRes() const
-  {
-    return mWldMap->mTerrainRes;
   }
 
   /**
@@ -927,7 +858,9 @@ namespace
    * What it does:
    * Inserts one `(entityId, entity*)` mapping into the world-session entity map.
    */
-  void CWldSession::AddEntity(UserEntity* const entity)
+  void CWldSession::AddEntity(
+    UserEntity* const entity
+  )
   {
     if (entity == nullptr) {
       return;
@@ -942,7 +875,9 @@ namespace
    * What it does:
    * Removes one entity-id mapping from the world-session entity map.
    */
-  void CWldSession::RemoveEntity(UserEntity* const entity)
+  void CWldSession::RemoveEntity(
+    UserEntity* const entity
+  )
   {
     if (entity == nullptr) {
       return;
@@ -958,7 +893,9 @@ namespace
    * Removes one entity-id mapping from the session entity map, marks the
    * entity as pending deletion, and inserts it into the orphan weak-set lane.
    */
-  void CWldSession::OrphanEntity(UserEntity* const entity)
+  void CWldSession::OrphanEntity(
+    UserEntity* const entity
+  )
   {
     if (entity == nullptr) {
       return;
@@ -982,7 +919,9 @@ namespace
    * set at `this+0x438` -- the same insert `OrphanEntity` runs on the orphan
    * set.
    */
-  void CWldSession::AddToVizUpdate(UserEntity* const entity)
+  void CWldSession::AddToVizUpdate(
+    UserEntity* const entity
+  )
   {
     if (!entity) {
       return;
@@ -999,7 +938,9 @@ namespace
    * (0x00867780) and, when present, erases that node (0x0066A550) and prunes
    * forward from the successor (0x0066A330) -- `set.erase(set.find(entity))`.
    */
-  void CWldSession::RemoveFromVizUpdate(UserEntity* const entity)
+  void CWldSession::RemoveFromVizUpdate(
+    UserEntity* const entity
+  )
   {
     if (!entity) {
       return;
@@ -1092,7 +1033,8 @@ namespace
   }
 
   /**
-   * Address: 0x00896A40 (FUN_00896A40, ?GetActiveBuildTemplate@CWldSession@Moho@@QBE?AV?$fastvector_n@USBuildTemplateInfo@Moho@@$0BA@@gpg@@AAH0@Z)
+   * Address: 0x00896A40 (FUN_00896A40,
+   * ?GetActiveBuildTemplate@CWldSession@Moho@@QBE?AV?$fastvector_n@USBuildTemplateInfo@Moho@@$0BA@@gpg@@AAH0@Z)
    *
    * IDA signature:
    * gpg::fastvector_n16_SBuildTemplateInfo *__thiscall sub_896A40(
@@ -1166,8 +1108,7 @@ namespace
         templateInfo.mBlueprintId.assign(blueprint->mBlueprintId, 0u, 0xFFFFFFFFu);
 
         const SCoordsVec2 unitCoords{
-          selectedEntity->mVariableData.mCurTransform.pos_.x,
-          selectedEntity->mVariableData.mCurTransform.pos_.z
+          selectedEntity->mVariableData.mCurTransform.pos_.x, selectedEntity->mVariableData.mCurTransform.pos_.z
         };
         const gpg::Rect2f skirtRect = blueprint->GetSkirtRect(unitCoords);
         minX = std::min(minX, skirtRect.x0);
@@ -1241,54 +1182,16 @@ namespace
    * `shared_ptr::reset(Y*)` and `weak_ptr::operator=`, emitted for
    * `UICommandGraph` (cited in BoostWrappers.h).
    */
-  boost::shared_ptr<UICommandGraph> CWldSession::GetCommandGraph(const bool allowCreate)
+  std::shared_ptr<UICommandGraph> CWldSession::GetCommandGraph(
+    const bool allowCreate
+  )
   {
-    boost::shared_ptr<UICommandGraph> graph = mCommandGraph.lock();
+    std::shared_ptr<UICommandGraph> graph = mCommandGraph.lock();
     if (!graph && allowCreate) {
       graph.reset(new UICommandGraph(this));
       mCommandGraph = graph;
     }
     return graph;
-  }
-
-  /**
-   * Address: 0x00895DC0 (FUN_00895DC0, ?HandleFogEdge@CWldSession@Moho@@AAEXABV?$Rect2@H@gpg@@HH@Z)
-   *
-   * What it does:
-   * Clears edge-fog rows when focus army is invalid and marks every edge lane
-   * outside the visible rectangle as blocked (`0xFF`).
-   */
-  void CWldSession::HandleFogEdge(const gpg::Rect2i& visibleRect, const int width, const int height)
-  {
-    if (FocusArmy < 0 || userArmies[static_cast<std::size_t>(FocusArmy)] == nullptr) {
-      char* row = mEdgeFog.GetPtr(0u, 0u);
-      for (int y = 0; y < height; ++y) {
-        std::memset(row, 0, static_cast<std::size_t>(width));
-        row += width;
-      }
-    }
-
-    if (visibleRect.x0 > 0 || visibleRect.z0 > 0 || visibleRect.x1 < width || visibleRect.z1 < height) {
-      char* row = mEdgeFog.GetPtr(0u, 0u);
-      for (int y = 0; y < height; ++y, row += width) {
-        if (y < visibleRect.z0 || y >= visibleRect.z1) {
-          std::memset(row, 0xFF, static_cast<std::size_t>(width));
-          continue;
-        }
-
-        if (visibleRect.x0 <= 0) {
-          *row = static_cast<char>(0xFF);
-        } else {
-          std::memset(row, 0xFF, static_cast<std::size_t>(visibleRect.x0));
-        }
-
-        if (visibleRect.x1 >= (width - 1)) {
-          row[width - 1] = static_cast<char>(0xFF);
-        } else {
-          std::memset(row + visibleRect.x1, 0xFF, static_cast<std::size_t>(width - visibleRect.x1));
-        }
-      }
-    }
   }
 
   /**
@@ -1300,7 +1203,7 @@ namespace
    */
   void CWldSession::DirtyCommandGraph()
   {
-    if (const boost::shared_ptr<UICommandGraph> graph = mCommandGraph.lock()) {
+    if (const std::shared_ptr<UICommandGraph> graph = mCommandGraph.lock()) {
       graph->MarkDirty();
     }
   }
@@ -1350,16 +1253,13 @@ namespace
       LuaPlus::LuaFunction<> resetSelectionSets(selectionModule["ResetSelectionSets"]);
       resetSelectionSets.Call_Object(selectionSetsByName);
     } catch (const std::exception& exception) {
-      gpg::Warnf(
-        "Unable to reset selection sets: %s",
-        exception.what() != nullptr ? exception.what() : ""
-      );
+      gpg::Warnf("Unable to reset selection sets: %s", exception.what() != nullptr ? exception.what() : "");
     }
 
     mPendingSaveData.reset();
   }
-namespace
-{
+  namespace
+  {
     /**
      * Address: 0x008945C1..0x008945D8 (inside FUN_00894530)
      *
@@ -1367,7 +1267,10 @@ namespace
      * Resolves one army slot for the sound listener, treating a negative focus
      * army (observer, or not yet assigned) as "no listener".
      */
-    [[nodiscard]] UserArmy* ArmyAtIndexOrNull(const fa::vector<UserArmy*>& armies, const std::int32_t index)
+    [[nodiscard]] UserArmy* ArmyAtIndexOrNull(
+      const fa::vector<UserArmy*>& armies,
+      const std::int32_t index
+    )
     {
       if (index < 0 || static_cast<std::size_t>(index) >= armies.size()) {
         return nullptr;
@@ -1405,7 +1308,9 @@ namespace
     constexpr std::size_t kParallelSyncMinUpdates = 256u;
     constexpr std::size_t kParallelSyncGrain = 64u;
 
-    [[nodiscard]] bool UseParallelSync(const std::size_t count)
+    [[nodiscard]] bool UseParallelSync(
+      const std::size_t count
+    )
     {
       return wld_ParallelSync && count >= kParallelSyncMinUpdates && CUserWorkerPool::ConfiguredWorkerCount() != 0u;
     }
@@ -1417,7 +1322,9 @@ namespace
      */
     template <class Entry>
     [[nodiscard]] bool ResolveSyncTargets(
-      CWldSession& session, const fa::vector<Entry>& entries, std::vector<UserEntity*>& targets
+      CWldSession& session,
+      const fa::vector<Entry>& entries,
+      std::vector<UserEntity*>& targets
     )
     {
       targets.resize(entries.size());
@@ -1429,7 +1336,8 @@ namespace
 
       std::vector<UserEntity*> sorted(targets);
       std::sort(sorted.begin(), sorted.end());
-      return (sorted.empty() || sorted.front() != nullptr) && std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end();
+      return (sorted.empty() || sorted.front() != nullptr) &&
+        std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end();
     }
 
     /**
@@ -1468,13 +1376,15 @@ namespace
           for (std::size_t i = 0; i < segmentSize; ++i) {
             local[i] = isLocal(begin + i) ? 1u : 0u;
           }
-          CUserWorkerPool::Get().ParallelFor(segmentSize, kParallelSyncGrain, [&](const std::size_t from, const std::size_t to) {
+          CUserWorkerPool::Get().ParallelFor(
+            segmentSize, kParallelSyncGrain, [&](const std::size_t from, const std::size_t to) {
             for (std::size_t i = from; i < to; ++i) {
               if (local[i] != 0u) {
                 applyLocal(begin + i);
               }
             }
-          });
+          }
+          );
           for (std::size_t i = 0; i < segmentSize; ++i) {
             if (local[i] != 0u) {
               finish(begin + i);
@@ -1498,7 +1408,10 @@ namespace
     }
 
     /// Engine addition (`wld_ParallelSync`): `DoBeat`'s unit-update loop. False: run the serial loop.
-    [[nodiscard]] bool ApplyUnitUpdatesParallel(CWldSession& session, const fa::vector<SUnitVariableUpdateEntry>& updates)
+    [[nodiscard]] bool ApplyUnitUpdatesParallel(
+      CWldSession& session,
+      const fa::vector<SUnitVariableUpdateEntry>& updates
+    )
     {
       if (!UseParallelSync(updates.size())) {
         return false;
@@ -1508,25 +1421,29 @@ namespace
         return false;
       }
 
-      const auto unitAt = [](const std::size_t i) { return static_cast<UserUnit*>(sTargets[i]); };
-      ApplyPacketInSegments(
-        updates.size(),
-        [&](const std::size_t i) { return unitAt(i)->UnitDataUpdateRunsLua(updates[i].mVariableData); },
-        [](std::size_t) { return true; },
-        [&](const std::size_t i) {
-          // Not a barrier, so the unit does not go busy here and no deselect sits between these.
-          (void)unitAt(i)->ApplyUnitPayload(updates[i].mVariableData, updates[i].mReconFlags);
-          unitAt(i)->ApplyUnitPoses();
-        },
-        [&](const std::size_t i) { unitAt(i)->FinishUnitDataLinks(); },
-        [&](const std::size_t i) { unitAt(i)->UpdateUnitData(updates[i].mVariableData, updates[i].mReconFlags); }
-      );
+      const auto unitAt = [](const std::size_t i) {
+        return static_cast<UserUnit*>(sTargets[i]);
+      };
+      ApplyPacketInSegments(updates.size(), [&](const std::size_t i) {
+        return unitAt(i)->UnitDataUpdateRunsLua(updates[i].mVariableData);
+      }, [](std::size_t) {
+        return true;
+      }, [&](const std::size_t i) {
+        // Not a barrier, so the unit does not go busy here and no deselect sits between these.
+        (void)unitAt(i)->ApplyUnitPayload(updates[i].mVariableData, updates[i].mReconFlags);
+        unitAt(i)->ApplyUnitPoses();
+      }, [&](const std::size_t i) {
+        unitAt(i)->FinishUnitDataLinks();
+      }, [&](const std::size_t i) {
+        unitAt(i)->UpdateUnitData(updates[i].mVariableData, updates[i].mReconFlags);
+      });
       return true;
     }
 
     /// Engine addition (`wld_ParallelSync`): `DoBeat`'s entity-update loop. False: run the serial loop.
     [[nodiscard]] bool ApplyEntityUpdatesParallel(
-      CWldSession& session, const fa::vector<SEntityVariableUpdateEntry>& updates
+      CWldSession& session,
+      const fa::vector<SEntityVariableUpdateEntry>& updates
     )
     {
       if (!UseParallelSync(updates.size())) {
@@ -1539,21 +1456,21 @@ namespace
       }
       sSteps.resize(updates.size());
 
-      ApplyPacketInSegments(
-        updates.size(),
-        [&](const std::size_t i) { return sTargets[i]->EntityDataUpdateRunsLua(updates[i].mVariableData); },
-        [&](const std::size_t i) { return sTargets[i]->EntityDataUpdateIsLocal(updates[i].mVariableData); },
-        [&](const std::size_t i) {
-          sSteps[i] = sTargets[i]->BeginEntityDataUpdate(updates[i].mVariableData);
-          sTargets[i]->ApplyEntityDataUpdate(updates[i].mVariableData, sSteps[i]);
-        },
-        [&](const std::size_t i) { sTargets[i]->FinishEntityDataUpdate(updates[i].mVariableData, sSteps[i]); },
-        [&](const std::size_t i) { sTargets[i]->UpdateEntityData(updates[i].mVariableData); }
-      );
+      ApplyPacketInSegments(updates.size(), [&](const std::size_t i) {
+        return sTargets[i]->EntityDataUpdateRunsLua(updates[i].mVariableData);
+      }, [&](const std::size_t i) {
+        return sTargets[i]->EntityDataUpdateIsLocal(updates[i].mVariableData);
+      }, [&](const std::size_t i) {
+        sSteps[i] = sTargets[i]->BeginEntityDataUpdate(updates[i].mVariableData);
+        sTargets[i]->ApplyEntityDataUpdate(updates[i].mVariableData, sSteps[i]);
+      }, [&](const std::size_t i) {
+        sTargets[i]->FinishEntityDataUpdate(updates[i].mVariableData, sSteps[i]);
+      }, [&](const std::size_t i) {
+        sTargets[i]->UpdateEntityData(updates[i].mVariableData);
+      });
       return true;
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x007F6390 (FUN_007F6390, Moho::CWldSession::GetTickDebugCanvas)
@@ -1566,9 +1483,9 @@ namespace
    * Returns a retained copy of `mDebugCanvas` (+0x0414/+0x0418) - the tick
    * debug canvas `DoBeat` re-seats every beat from `beat.mTickDebugCanvas`.
    */
-  boost::SharedPtrRaw<CDebugCanvas> CWldSession::GetTickDebugCanvas() const
+  std::shared_ptr<CDebugCanvas> CWldSession::GetTickDebugCanvas() const
   {
-    return mDebugCanvas.clone_retained();
+    return mDebugCanvas;
   }
 
   /**
@@ -1581,9 +1498,9 @@ namespace
    * What it does:
    * Returns a retained copy of `mBeatDebugCanvas` (+0x041C/+0x0420).
    */
-  boost::SharedPtrRaw<CDebugCanvas> CWldSession::GetBeatDebugCanvas() const
+  std::shared_ptr<CDebugCanvas> CWldSession::GetBeatDebugCanvas() const
   {
-    return mBeatDebugCanvas.clone_retained();
+    return mBeatDebugCanvas;
   }
 
 #if FAF_SERVER_MODE
@@ -1593,7 +1510,10 @@ namespace
     void* sBeatObserverContext = nullptr;
   } // namespace
 
-  void CWldSession::SetBeatObserver(const BeatObserver observer, void* const context) noexcept
+  void CWldSession::SetBeatObserver(
+    const BeatObserver observer,
+    void* const context
+  ) noexcept
   {
     sBeatObserverContext = context;
     sBeatObserver = observer;
@@ -1636,8 +1556,8 @@ namespace
       delete userArmies[armyIndex];
       userArmies[armyIndex] = nullptr;
     }
-    mDebugCanvas.release();
-    mBeatDebugCanvas.release();
+    mDebugCanvas.reset();
+    mBeatDebugCanvas.reset();
     IsGameOver = 0u;
     mLastBeatWasTick = 0;
     mTimeSinceLastTick = 0.0f;
@@ -1661,7 +1581,9 @@ namespace
    * This is the sole consumer of the driver's sync queue - without it the queue
    * fills, the issue thread stops issuing, and the game clock never advances.
    */
-  void CWldSession::DoBeat(fa::auto_ptr<SSyncData> syncData)
+  void CWldSession::DoBeat(
+    fa::auto_ptr<SSyncData> syncData
+  )
   {
     const CTimeBarSection beatSection("Sync");
 
@@ -1711,11 +1633,11 @@ namespace
     (void)SCR_LuaDoString("OnSync()", mState);
 
     mSessionPauseStateA = static_cast<std::uint8_t>(beat.mPausedBy != -1);
-    mDebugCanvas.reset_from(beat.mTickDebugCanvas);
-    mBeatDebugCanvas.reset_from(beat.mBeatDebugCanvas);
+    mDebugCanvas = beat.mTickDebugCanvas;
+    mBeatDebugCanvas = beat.mBeatDebugCanvas;
     ren_FogOfWar = beat.mFogOfWar;
-    terrainRes->SyncTerrain(beat.mTerrainUpdate.px);
-    mSimResources.reset_from(beat.mSimResources);
+    terrainRes->SyncTerrain(beat.mTerrainUpdate.get());
+    mSimResources = beat.mSimResources;
 
     // `fa::vector<SExtraUnitData>::operator=` (0x00895214, FUN_007530C0,
     // `legacy/containers/Vector.h`). Previously mis-wired through
@@ -1742,7 +1664,7 @@ namespace
       IsGameOver = 1u;
       UI_NoteGameOver();
       if (CFG_GetArgOption("/exitongameover", 0u, nullptr)) {
-        wxTheApp->ExitMainLoop();
+        gShellApp->ExitMainLoop();
       }
     }
 
@@ -1784,7 +1706,11 @@ namespace
 
   // Part of DoBeat (0x00894530).
   // Sounds, particles, decals, camera shakes, waves and playable-area changes.
-  void CWldSession::ApplyBeatEffects(const SSyncData& beat, CameraImpl* const worldCamera, IWldTerrainRes* const terrainRes)
+  void CWldSession::ApplyBeatEffects(
+    const SSyncData& beat,
+    CameraImpl* const worldCamera,
+    IWldTerrainRes* const terrainRes
+  )
   {
     USER_GetSound()->UpdateSoundRequests(beat.mAudioRequests);
 
@@ -1792,6 +1718,11 @@ namespace
       sWorldParticles.AdvancementBeat();
     }
     if (beat.mParticleBuffer) {
+      // Engine addition (ren_DynamicLights): the beat's light sources, stamped with the beat's game tick (the clock the
+      // particle shader and DynamicLights::Render age by; the beat count runs on through pauses).
+      DynamicLights::Get().AddParticles(
+        *static_cast<const SParticleBuffer*>(beat.mParticleBuffer.get()), beat.mCurTick
+      );
       sWorldParticles.AddParticles(*static_cast<const SParticleBuffer*>(beat.mParticleBuffer.get()));
     }
 
@@ -1824,7 +1755,9 @@ namespace
   // Part of DoBeat (0x00894530).
   // A new army grid means new armies; each lands in its own index slot, and
   // the listener is re-seated afterwards because the focus army may now exist.
-  void CWldSession::ApplyBeatArmies(const SSyncData& beat)
+  void CWldSession::ApplyBeatArmies(
+    const SSyncData& beat
+  )
   {
     if (!beat.mNewGrids.empty()) {
       for (const SSTIArmyConstantData& armyConstantData : beat.mNewGrids) {
@@ -1846,7 +1779,9 @@ namespace
 
   // Part of DoBeat (0x00894530).
   // New entities, then new units.
-  void CWldSession::CreateBeatEntities(const SSyncData& beat)
+  void CWldSession::CreateBeatEntities(
+    const SSyncData& beat
+  )
   {
     for (const SCreateEntityParams& createParams : beat.mNewEntities) {
       AddEntity(new UserEntity(*this, createParams));
@@ -1859,7 +1794,9 @@ namespace
 
   // Part of DoBeat (0x00894530).
   // A helper for every command the sim published this beat.
-  void CWldSession::PublishBeatCommandDescriptors(const SSyncData& beat)
+  void CWldSession::PublishBeatCommandDescriptors(
+    const SSyncData& beat
+  )
   {
     for (const SSTICommandConstantData& commandConstantData : beat.mPublishedCommandDescriptors) {
       (void)FindOrCreateCommandIssueHelper(*mCommandManager, commandConstantData, 0u, 0);
@@ -1867,8 +1804,10 @@ namespace
 
     // Engine addition (issue #275): orders this client gave before it restarted
     // keep their ids, and `Sim::ValidateNewCommandId` refuses an id in use.
-    if (CClientManagerImpl* const clients = sSimDriver != nullptr ? sSimDriver->GetClientManager() : nullptr;
-        clients != nullptr && clients->mRejoinFeed != nullptr) {
+    if (
+      CClientManagerImpl* const clients = sSimDriver != nullptr ? sSimDriver->GetClientManager() : nullptr;
+      clients != nullptr && clients->mRejoinFeed != nullptr
+    ) {
       for (const SSTICommandConstantData& commandConstantData : beat.mPublishedCommandDescriptors) {
         const auto commandId = static_cast<std::uint32_t>(commandConstantData.cmd);
         const std::int32_t lowId = static_cast<std::int32_t>(commandId & 0x00FFFFFFu);
@@ -1881,7 +1820,9 @@ namespace
 
   // Part of DoBeat (0x00894530).
   // Unit and entity updates, erases, poses and deletes, in that order.
-  void CWldSession::UpdateBeatEntities(const SSyncData& beat)
+  void CWldSession::UpdateBeatEntities(
+    const SSyncData& beat
+  )
   {
     if (!ApplyUnitUpdatesParallel(*this, beat.mUnitUpdates)) {
       for (const SUnitVariableUpdateEntry& unitUpdate : beat.mUnitUpdates) {
@@ -1921,7 +1862,9 @@ namespace
 
   // Part of DoBeat (0x00894530).
   // Command variable data, then removed and released commands.
-  void CWldSession::ApplyBeatCommandPackets(const SSyncData& beat)
+  void CWldSession::ApplyBeatCommandPackets(
+    const SSyncData& beat
+  )
   {
     for (const SSyncPublishedCommandPacket& commandPacket : beat.mPublishedCommandPackets) {
       UserCommandIssueHelper* const helper = FindCommandIssueHelper(*mCommandManager, commandPacket.commandId);
@@ -1939,7 +1882,9 @@ namespace
   // Part of DoBeat (0x00894530).
   // Hand the sim's Lua payload to the UI: last beat's table becomes
   // `PreviousSync`, this beat's stream becomes `Sync`, then `OnSync()` runs.
-  void CWldSession::HandSyncToUi(const SSyncData& beat)
+  void CWldSession::HandSyncToUi(
+    const SSyncData& beat
+  )
   {
     const LuaPlus::LuaObject previousSync = SCR_Copy(mState->GetGlobal("Sync"), mState);
     mState->GetGlobals().SetObject("PreviousSync", previousSync);
@@ -1963,7 +1908,9 @@ namespace
 
   // Part of DoBeat (0x00894530).
   // Desyncs the sim found this beat: reported to FAF and shown, unless the orders were altered.
-  void CWldSession::ReportBeatDesyncs(const SSyncData& beat)
+  void CWldSession::ReportBeatDesyncs(
+    const SSyncData& beat
+  )
   {
     if (!beat.mDesyncs.empty()) {
       fa::vector<fa::string> desyncArmyNames;
@@ -1985,10 +1932,15 @@ namespace
             desync.beat,
             armyName.c_str()
           );
-          CDesyncRecorder::AddNote(gpg::STR_Printf(
-            "beat %d, %s: orders reached this client differently from what %s acknowledged sending", desync.beat,
-            armyName.c_str(), armyName.c_str()
-          ).c_str());
+          CDesyncRecorder::AddNote(
+            gpg::STR_Printf(
+              "beat %d, %s: orders reached this client differently from what %s acknowledged sending",
+              desync.beat,
+              armyName.c_str(),
+              armyName.c_str()
+            )
+              .c_str()
+          );
           CDesyncRecorder::NoteOrdersAltered(desync.army); // issue #218: faf.orders_altered
           continue;
         }
@@ -2020,14 +1972,16 @@ namespace
     if (sExitAtTick >= 0 && static_cast<int>(mGameTick) >= sExitAtTick) {
       sExitAtTick = -1;
       gpg::Logf("exitattick: quitting at game tick %d", static_cast<int>(mGameTick));
-      wxTheApp->ExitMainLoop();
+      gShellApp->ExitMainLoop();
     }
   }
 
   // Part of DoBeat (0x00894530).
   // Every registered unit gets its beat. The stat is what the profiler reads
   // as "how much work is one beat", so it is published even for an empty list.
-  void CWldSession::TickBeatUnits(const SSyncData& beat)
+  void CWldSession::TickBeatUnits(
+    const SSyncData& beat
+  )
   {
     // Heap-backed on purpose. `Collect` takes the vector by its
     // `gpg::fastvector<T>` base, and the base's grow path frees `start_`
@@ -2045,8 +1999,7 @@ namespace
 
     const auto tickerCount = static_cast<std::int32_t>(tickers.size());
     if (sEngineStat_UserSync_SessionTick_NumTickers == nullptr) {
-      sEngineStat_UserSync_SessionTick_NumTickers =
-        GetEngineStats()->GetItem("UserSync_SessionTick_NumTickers", true);
+      sEngineStat_UserSync_SessionTick_NumTickers = GetEngineStats()->GetItem("UserSync_SessionTick_NumTickers", true);
       (void)sEngineStat_UserSync_SessionTick_NumTickers->Release(0);
     }
     (void)sEngineStat_UserSync_SessionTick_NumTickers->SetInt(&tickerCount);
@@ -2087,7 +2040,9 @@ namespace
   /**
    * Address: 0x00895B40 (FUN_00895B40, ?SessionFrame@CWldSession@Moho@@QAEXM@Z)
    */
-  void CWldSession::SessionFrame(const float deltaSeconds)
+  void CWldSession::SessionFrame(
+    const float deltaSeconds
+  )
   {
     static_cast<RRuleGameRules*>(mRules)->UpdateLuaState(mState);
 
@@ -2132,24 +2087,24 @@ namespace
       }
       REPLAY_AfterFastForwardFrame(*this, beatsApplied);
     } else
-    for (; beatsApplied < 100 && !WLD_IsReplaySimSwapping(); ++beatsApplied) {
-      if (mReplayIsPaused) {
-        // A paused replay still applies beats until it lands on a tick.
-        if (mLastBeatWasTick != 0) {
+      for (; beatsApplied < 100 && !WLD_IsReplaySimSwapping(); ++beatsApplied) {
+        if (mReplayIsPaused) {
+          // A paused replay still applies beats until it lands on a tick.
+          if (mLastBeatWasTick != 0) {
+            break;
+          }
+        } else if (mGameTick >= targetTick && !wld_RunWithTheWind && !rejoinCatchingUp) {
           break;
         }
-      } else if (mGameTick >= targetTick && !wld_RunWithTheWind && !rejoinCatchingUp) {
-        break;
-      }
 
-      if (!simDriver->HasSyncData()) {
-        break;
-      }
+        if (!simDriver->HasSyncData()) {
+          break;
+        }
 
-      SSyncData* packet = nullptr;
-      simDriver->GetSyncData(packet);
-      DoBeat(fa::auto_ptr<SSyncData>(packet));
-    }
+        SSyncData* packet = nullptr;
+        simDriver->GetSyncData(packet);
+        DoBeat(fa::auto_ptr<SSyncData>(packet));
+      }
 
     // Microchip: measure only normal, demanded simulation beats, not replay/rejoin catch-up.
     if (auto* localSimDriver = dynamic_cast<CSimDriver*>(simDriver)) {
@@ -2181,7 +2136,7 @@ namespace
       mTimeSinceLastTick = std::max(0.0f, std::min(remainder, 1.0f));
     }
 
-    if (const boost::shared_ptr<UICommandGraph> commandGraph = GetCommandGraph(false)) {
+    if (const std::shared_ptr<UICommandGraph> commandGraph = GetCommandGraph(false)) {
       commandGraph->CreateMeshes();
     }
 
@@ -2193,7 +2148,9 @@ namespace
   /**
    * Address: 0x00896000 (FUN_00896000, ?GetSelectionUnits@CWldSession@Moho@@QBEXAAV?$WeakSet@VUserUnit@Moho@@@2@@Z)
    */
-  void CWldSession::GetSelectionUnits(fa::vector<UserUnit*>& outUnits) const
+  void CWldSession::GetSelectionUnits(
+    fa::vector<UserUnit*>& outUnits
+  ) const
   {
     outUnits.clear();
 
@@ -2214,7 +2171,9 @@ namespace
    * 0x00822270). The walk prunes the selection's dead entries as it goes, so
    * this `QBE` (const) member does change the tree.
    */
-  void CWldSession::GetSelectionUnits(WeakSet<UserUnit>& outUnits) const
+  void CWldSession::GetSelectionUnits(
+    WeakSet<UserUnit>& outUnits
+  ) const
   {
     for (UserEntity* const entity : mSelection) {
       if (UserUnit* const unit = entity->IsUserUnit(); unit != nullptr) {
@@ -2224,13 +2183,16 @@ namespace
   }
 
   /**
-   * Address: 0x00896090 (FUN_00896090, ?GetValidAttackingUnits@CWldSession@Moho@@QBEXAAV?$WeakSet@VUserUnit@Moho@@@2@@Z)
+   * Address: 0x00896090 (FUN_00896090,
+   * ?GetValidAttackingUnits@CWldSession@Moho@@QBEXAAV?$WeakSet@VUserUnit@Moho@@@2@@Z)
    *
    * What it does:
    * Walks selected units and keeps only those that can attack the currently
    * hovered entity.
    */
-  void CWldSession::GetValidAttackingUnits(fa::vector<UserUnit*>& outUnits) const
+  void CWldSession::GetValidAttackingUnits(
+    fa::vector<UserUnit*>& outUnits
+  ) const
   {
     outUnits.clear();
 
@@ -2245,7 +2207,6 @@ namespace
         AppendUnitUnique(outUnits, userUnit);
       }
     }
-
   }
 
   /**
@@ -2255,7 +2216,9 @@ namespace
    * Performs one ordered entity-id lookup in the world-session entity map and
    * returns the live `UserEntity*` when the key is present.
    */
-  UserEntity* CWldSession::LookupEntityId(const EntId entityId)
+  UserEntity* CWldSession::LookupEntityId(
+    const EntId entityId
+  )
   {
     // 0x00894282..0x0089429C: `find`, compare against `end()` (+0x48), return
     // the mapped value.
@@ -2271,7 +2234,9 @@ namespace
    * `{previous,current,added,removed}` selection-event payload, updates
    * max-selection bookkeeping, and refreshes sync-filter mask B when changed.
    */
-  void CWldSession::SetSelection(const WeakSet<UserEntity>& selection)
+  void CWldSession::SetSelection(
+    const WeakSet<UserEntity>& selection
+  )
   {
     bool selectionChanged = false;
 
@@ -2311,7 +2276,9 @@ namespace
     }
   }
 
-  void CWldSession::SetSelectionUnits(const fa::vector<UserUnit*>& units)
+  void CWldSession::SetSelectionUnits(
+    const fa::vector<UserUnit*>& units
+  )
   {
     WeakSet<UserEntity> nextSelection;
     for (UserUnit* const unit : units) {
@@ -2326,9 +2293,11 @@ namespace
   /**
    * Address: 0x00865830 (FUN_00865830, ?CanSelectUnit@CWldSession@Moho@@QBE_NPAVUserUnit@2@@Z)
    */
-  bool CWldSession::CanSelectUnit(UserUnit* const unit) const
+  bool CWldSession::CanSelectUnit(
+    UserUnit* const unit
+  ) const
   {
-    const UserEntity* const entity = reinterpret_cast<const UserEntity*>(unit);
+    const UserEntity* const entity = static_cast<const UserEntity*>(unit);
     const bool selectableByArmy = entity != nullptr && entity->IsSelectable() && entity->mArmy == GetFocusUserArmy();
     return selectableByArmy || (UI_SelectAnything && static_cast<const void*>(this) != nullptr && IsCheatsEnabled);
   }
@@ -2350,24 +2319,15 @@ namespace
   }
 
   /**
-   * Address: 0x00895FD0 (FUN_00895FD0, ?GetGameTime@CWldSession@Moho@@QBEMXZ)
-   *
-   * What it does:
-   * Returns current game time in seconds.
-   */
-  float CWldSession::GetGameTime() const
-  {
-    return (static_cast<float>(mGameTick) + mTimeSinceLastTick) * 0.1f;
-  }
-
-  /**
    * Address: 0x00896960 (FUN_00896960, ?SyncPlayableRect@CWldSession@Moho@@QAEXABV?$Rect2@H@gpg@@@Z)
    *
    * What it does:
    * Applies one playable rectangle to terrain and updates user-entity mesh
    * hidden flags to match whether each entity lies inside that rectangle.
    */
-  void CWldSession::SyncPlayableRect(const gpg::Rect2i& playableRect)
+  void CWldSession::SyncPlayableRect(
+    const gpg::Rect2i& playableRect
+  )
   {
     if (mWldMap != nullptr && mWldMap->mTerrainRes != nullptr) {
       (void)ApplyTerrainPlayableRect(mWldMap->mTerrainRes, playableRect);
@@ -2385,19 +2345,19 @@ namespace
 
       const int mapX = static_cast<int>(entity->mVariableData.mCurTransform.pos_.x);
       const int mapZ = static_cast<int>(entity->mVariableData.mCurTransform.pos_.z);
-      const bool insidePlayableRect = mapX >= playableRect.x0 && mapX < playableRect.x1 && mapZ >= playableRect.z0 &&
-        mapZ < playableRect.z1;
+      const bool insidePlayableRect =
+        mapX >= playableRect.x0 && mapX < playableRect.x1 && mapZ >= playableRect.z0 && mapZ < playableRect.z1;
       meshInstance->isHidden = insidePlayableRect ? 0u : 1u;
     }
   }
 
   /**
-    * Alias of FUN_00896F00 (non-canonical helper lane).
+   * Alias of FUN_00896F00 (non-canonical helper lane).
    * ?GetSaveData@CWldSession@Moho@@QBE?AV?$shared_ptr@USSessionSaveData@Moho@@@boost@@XZ)
    */
-  boost::shared_ptr<SSessionSaveData> CWldSession::GetSaveData() const
+  std::shared_ptr<SSessionSaveData> CWldSession::GetSaveData() const
   {
-    boost::shared_ptr<SSessionSaveData> saveData{new SSessionSaveData()};
+    std::shared_ptr<SSessionSaveData> saveData{new SSessionSaveData()};
     // Every unit's named selection sets, keyed by the unit's entity id. This
     // walked the entity map through a third private node layout, called
     // vtable +0x0C through an invented `ISessionSaveSourceProvider` -- that
@@ -2429,5 +2389,4 @@ namespace
   {
     return LuaPlus::LuaObject(mScenarioInfo);
   }
-}
-
+} // namespace moho

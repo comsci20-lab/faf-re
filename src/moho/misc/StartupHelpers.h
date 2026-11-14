@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -87,7 +87,7 @@ namespace moho
    * active viewport's range and vision renderers. This is what the sim
    * driver's bootstrap thread calls.
    */
-  [[nodiscard]] Sim* Sim_Create_exxt(const boost::SharedPtrRaw<LaunchInfoBase>& launchInfo);
+  [[nodiscard]] Sim* Sim_Create_exxt(const std::shared_ptr<LaunchInfoBase>& launchInfo);
 
   /**
    * Engine addition (dedicated-server plan WPL.4): what Sim_Create_exxt runs
@@ -125,9 +125,8 @@ namespace moho
    * Tries prefixed command-line options formed as:
    * `prefix + alias`.
    */
-  bool CFG_GetArgOptionAliases(
-    const CfgAliasSet& aliases, std::uint32_t requiredArgCount, fa::vector<fa::string>* outArgs
-  );
+  bool
+  CFG_GetArgOptionAliases(const CfgAliasSet& aliases, std::uint32_t requiredArgCount, fa::vector<fa::string>* outArgs);
 
   /**
    * Address: 0x008D00E0 (FUN_008D00E0)
@@ -246,10 +245,7 @@ namespace moho
     virtual float GetNumber(const fa::string& key, float fallback) = 0;
     virtual std::uint32_t GetHex(const fa::string& key, std::uint32_t fallback) = 0;
     virtual fa::string GetString(const fa::string& key, const fa::string& fallback) = 0;
-    virtual fa::list<fa::string> GetStringArr(
-      const fa::string& key,
-      const fa::list<fa::string>& fallback
-    ) = 0;
+    virtual fa::list<fa::string> GetStringArr(const fa::string& key, const fa::list<fa::string>& fallback) = 0;
     virtual void SetBoolean(const fa::string& key, bool value) = 0;
     virtual void SetInteger(const fa::string& key, std::int32_t value) = 0;
     virtual void SetNumber(const fa::string& key, float value) = 0;
@@ -331,16 +327,6 @@ namespace moho
   [[nodiscard]] std::int32_t OPTIONS_GetInt(gpg::StrArg key);
 
   /**
-   * Address: 0x008C69A0 (FUN_008C69A0)
-   * Mangled: ?OPTIONS_GetFloat@Moho@@YAMVStrArg@gpg@@@Z
-   *
-   * What it does:
-   * Invokes `/lua/user/prefs.lua:GetOption(key)` and returns the value as one
-   * floating-point lane.
-   */
-  [[nodiscard]] float OPTIONS_GetFloat(gpg::StrArg key);
-
-  /**
    * Address: 0x008C6AB0
    * Mangled:
    * ?OPTIONS_GetString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@VStrArg@gpg@@@Z
@@ -375,22 +361,8 @@ namespace moho
    * Invokes `/lua/options/optionslogic.lua:SetCustomData` for one option key
    * using `(customData, defaultValue)` Lua object lanes.
    */
-  void OPTIONS_SetCustomData(
-    gpg::StrArg key,
-    const LuaPlus::LuaObject& customData,
-    const LuaPlus::LuaObject& defaultValue
-  );
-
-  /**
-   * Address: 0x008C6EC0 (FUN_008C6EC0)
-   * Mangled: ?OPTIONS_CreateInitialProfileIfNeeded@Moho@@YAXVStrArg@gpg@@@Z
-   *
-   * What it does:
-   * Executes `/lua/user/prefs.lua` profile bootstrap:
-   * - `ProfilesExist()`
-   * - `CreateProfile(profileName)` when profiles are missing.
-   */
-  void OPTIONS_CreateInitialProfileIfNeeded(gpg::StrArg profileName);
+  void
+  OPTIONS_SetCustomData(gpg::StrArg key, const LuaPlus::LuaObject& customData, const LuaPlus::LuaObject& defaultValue);
 
   /**
    * Address: 0x008C7040 (FUN_008C7040)
@@ -644,23 +616,6 @@ namespace moho
    */
   void USER_SetCurrentProfile(const fa::string& profileName);
 
-  /**
-   * Address: 0x008CAE10 (FUN_008CAE10, USER_GetGameId)
-   * Mangled: ?USER_GetGameId@Moho@@YAABU_GUID@@XZ
-   *
-   * What it does:
-   * Returns the process-global 128-bit game-id lane.
-   */
-  [[nodiscard]] _GUID& USER_GetGameId();
-
-  /**
-   * Address: 0x008C6730 (FUN_008C6730, USER_LuaFrame)
-   *
-   * What it does:
-   * Runs one user-task stage frame through the process-global user stage lane.
-   */
-  void USER_LuaFrame();
-
   [[nodiscard]] const fa::string& APP_GetCompanyName();
   [[nodiscard]] const fa::string& APP_GetProductName();
   [[nodiscard]] const fa::string& APP_GetPreferencePrefix();
@@ -680,14 +635,6 @@ namespace moho
   void APP_SetAqtimeInstrumentationMode(std::uint8_t mode);
 
   /**
-   * Address context: reads/writes against the same global lane as 0x009071C0.
-   *
-   * What it does:
-   * Returns the current AQtime instrumentation mode byte.
-   */
-  [[nodiscard]] std::uint8_t APP_GetAqtimeInstrumentationMode();
-
-  /**
    * Address: 0x0041B560 (FUN_0041B560)
    * Mangled:
    * ?CFG_GetArgOption@Moho@@YA_NVStrArg@gpg@@IPAV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z
@@ -697,32 +644,6 @@ namespace moho
    * its following positional arguments.
    */
   bool CFG_GetArgOption(gpg::StrArg option, std::uint32_t requiredArgCount, fa::vector<fa::string>* outArgs);
-
-  /**
-   * Address: 0x00500A90 (FUN_00500A90, Moho::P4_Info)
-   * Mangled: ?P4_Info@Moho@@YAXXZ
-   *
-   * What it does:
-   * Legacy Perforce info hook lane retained as an explicit no-op.
-   */
-  void P4_Info();
-
-  /**
-   * Address: 0x00500AA0 (FUN_00500AA0, Moho::P4_Edit)
-   * Mangled: ?P4_Edit@Moho@@YAXPBD@Z
-   *
-   * What it does:
-   * Legacy Perforce edit hook lane retained as an explicit no-op.
-   */
-  void P4_Edit(const char* filePath);
-
-  /**
-   * Address: 0x00500AC0 (FUN_00500AC0, Moho::P4_DoPrompt)
-   *
-   * What it does:
-   * Returns whether Perforce prompt UI should be shown (`/p4yes` disables it).
-   */
-  [[nodiscard]] bool P4_DoPrompt();
 
   /**
    * Address: 0x0041B690 (FUN_0041B690)
@@ -830,33 +751,6 @@ namespace moho
    * in the unsafe init set.
    */
   [[nodiscard]] CScrLuaInitForm* func_SHGetFolderPath_LuaFuncDef();
-
-  /**
-   * Address: 0x00BC63D0 (FUN_00BC63D0, register_coreInitFormSet)
-   *
-   * What it does:
-   * Links the process-global core Lua init-form set at the head of
-   * `CScrLuaInitFormSet::sSets` and returns the previous head.
-   */
-  [[nodiscard]] CScrLuaInitFormSet* register_coreInitFormSet();
-
-  /**
-   * Address: 0x00BC63F0 (FUN_00BC63F0, register_userInitFormSet)
-   *
-   * What it does:
-   * Links the process-global user Lua init-form set at the head of
-   * `CScrLuaInitFormSet::sSets` and returns the previous head.
-   */
-  [[nodiscard]] CScrLuaInitFormSet* register_userInitFormSet();
-
-  /**
-   * Address: 0x00BC66E0 (FUN_00BC66E0, register_unsafeInitFormSet)
-   *
-   * What it does:
-   * Links the process-global unsafe Lua init-form set at the head of
-   * `CScrLuaInitFormSet::sSets` and returns the previous head.
-   */
-  [[nodiscard]] CScrLuaInitFormSet* register_unsafeInitFormSet();
 
   /**
    * Address: 0x00BC6700 (FUN_00BC6700, register_SHGetFolderPath_LuaFuncDef)
@@ -1125,24 +1019,6 @@ namespace moho
   [[nodiscard]] CScrLuaInitForm* func_DebugFacilitiesEnabled_LuaFuncDef();
 
   /**
-   * Address: 0x00BE8BF0 (FUN_00BE8BF0, register_SavePreferences_LuaFuncDef)
-   *
-   * What it does:
-   * Startup thunk that forwards registration to
-   * `func_SavePreferences_LuaFuncDef`.
-   */
-  [[nodiscard]] CScrLuaInitForm* register_SavePreferences_LuaFuncDef();
-
-  /**
-   * Address: 0x00BE8CE0 (FUN_00BE8CE0, j_func_DebugFacilitiesEnabled_LuaFuncDef)
-   *
-   * What it does:
-   * Startup thunk that forwards registration to
-   * `func_DebugFacilitiesEnabled_LuaFuncDef`.
-   */
-  [[nodiscard]] CScrLuaInitForm* j_func_DebugFacilitiesEnabled_LuaFuncDef();
-
-  /**
    * Address: 0x00410760 (FUN_00410760)
    * Mangled:
    * ?FILE_SuggestedExt@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@VStrArg@gpg@@0@Z
@@ -1195,19 +1071,6 @@ namespace moho
    * validation failures as the original startup helper.
    */
   [[nodiscard]] fa::string FILE_MakeAbsolute(gpg::StrArg dir, gpg::StrArg filename);
-
-  /**
-   * Address: 0x00457D40 (FUN_00457D40, sub_457D40)
-   *
-   * std::string const &,std::string const &,std::string *
-   *
-   * What it does:
-   * Resolves one path token against one base path and stores the resolved text
-   * in `outPath`.
-   */
-  fa::string* PATH_ResolveAgainstBase(
-    const fa::string& path, const fa::string& basePath, fa::string* outPath
-  );
 
   /**
    * Address: 0x0040FAF0 (FUN_0040FAF0)
@@ -1463,15 +1326,6 @@ namespace moho
   [[nodiscard]] std::filesystem::path DISK_GetLaunchDir();
 
   /**
-   * Address: 0x0045A770 (FUN_0045A770)
-   * Mangled: ?DISK_CreateFolder@Moho@@YA_NVStrArg@gpg@@@Z
-   *
-   * What it does:
-   * Attempts to create one folder and stores wait-handle error text on failure.
-   */
-  [[nodiscard]] bool DISK_CreateFolder(gpg::StrArg sourcePath);
-
-  /**
    * Address: 0x0045A7A0 (FUN_0045A7A0)
    * Mangled: ?DISK_Recycle@Moho@@YAXVStrArg@gpg@@@Z
    *
@@ -1492,7 +1346,20 @@ namespace moho
   bool DISK_SetupDataAndSearchPaths(fa::string dataPathScriptName, const std::filesystem::path& launchDir);
 
   /**
-   * Address: 0x00459DA0 (FUN_00459DA0, ?DISK_GetAllowedProtocols@Moho@@YA?AV?$vector@V?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@V?$allocator@V?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@@2@@std@@XZ)
+   * Engine addition, not in the binary (the map editor's downloads): mounts `directory` at `mountpoint`
+   * (`/maps/<folder>`) while the game runs. The file system is built again from the startup mount table
+   * plus every folder mounted this way, and installed in place of the current one, which is kept (not
+   * destroyed) because loader threads may still be reading through it. The new folder ranks after
+   * everything mounted before it. False when no file system was set up yet.
+   */
+  bool DISK_MountDirectoryNow(const std::filesystem::path& directory, const char* mountpoint);
+
+  /** DISK_MountDirectoryNow for several folders (folder, mount point) with one rebuild of the file system. */
+  bool DISK_MountDirectoriesNow(const std::vector<std::pair<std::filesystem::path, std::string>>& folders);
+
+  /**
+   * Address: 0x00459DA0 (FUN_00459DA0,
+   * ?DISK_GetAllowedProtocols@Moho@@YA?AV?$vector@V?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@V?$allocator@V?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@@2@@std@@XZ)
    *
    * What it does:
    * Returns a copy of startup-configured URL protocols allowed by the disk layer.

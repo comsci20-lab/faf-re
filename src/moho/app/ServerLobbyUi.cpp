@@ -4,8 +4,11 @@
 
 #include <cstdlib>
 #include <exception>
+#include <initializer_list>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "gpg/core/containers/String.h"
@@ -24,6 +27,7 @@
 #include "moho/misc/LaunchInfoBase.h"
 #include "moho/net/CLobby.h"
 #include "moho/net/CMessage.h"
+#include "moho/net/CGpgNetInterface.h"
 #include "moho/net/CMessageStream.h"
 #include "moho/net/ELobbyMsg.h"
 #include "moho/net/LaunchInfoBuilder.h"
@@ -41,11 +45,77 @@ namespace
   using faf::remote::net::ELobbySignal;
   using faf::remote::net::SLobbySignal;
 
-  /** The participant's virtual connection, as the lobby Lua passes addresses: "a.b.c.d:port" (netlink/EngineLinks.h). */
-  [[nodiscard]] std::string AddressText(const std::int32_t uid)
+  /** The participant's virtual connection, as the lobby Lua passes addresses: "a.b.c.d:port" (netlink/EngineLinks.h).
+   */
+  [[nodiscard]] std::string AddressText(
+    const std::int32_t uid
+  )
   {
     const faf::netlink::EngineAddress address = faf::netlink::EngineAddressFor(uid);
-    return std::string(moho::NET_GetDottedOctetFromUInt32(address.addrHost).c_str()) + ":" + std::to_string(address.portHost);
+    return std::string(moho::NET_GetDottedOctetFromUInt32(address.addrHost).c_str()) + ":" +
+      std::to_string(address.portHost);
+  }
+
+  struct SLauncherMessage
+  {
+    std::string command;
+    std::vector<std::string> args;
+  };
+
+  // Plan WP12.2: what waits for the launcher's GPGNet link. Started with /gpgnet and /connectserver, the game joins
+  // the server first and attaches to GPGNet after; the server may launch before that link is up (seen: the launch
+  // came first and the launcher never heard `Launching`).
+  std::vector<SLauncherMessage> sForLauncher;
+  constexpr std::size_t kMaxForLauncher = 64;
+
+  /** Sends what waits, in order, while the launcher's link takes it. */
+  void FlushLauncher()
+  {
+    if (sForLauncher.empty()) {
+      return;
+    }
+    const std::shared_ptr<moho::CGpgNetInterface> gpgnet = moho::GPGNET_GetPtr();
+    if (!gpgnet) {
+      sForLauncher.clear(); // the launcher has gone
+      return;
+    }
+    std::size_t sent = 0;
+    for (; sent < sForLauncher.size(); ++sent) {
+      fa::vector<moho::SNetCommandArg> list;
+      for (const std::string& arg : sForLauncher[sent].args) {
+        list.push_back(moho::SNetCommandArg(fa::string(arg.c_str())));
+      }
+      try {
+        gpgnet->WriteCommand(sForLauncher[sent].command.c_str(), list);
+      } catch (const std::exception&) {
+        break; // not connected yet; the next frame tries again
+      }
+    }
+    sForLauncher.erase(sForLauncher.begin(), sForLauncher.begin() + static_cast<std::ptrdiff_t>(sent));
+  }
+
+  /**
+   * Plan WP12.2: one message to the launcher when the game has one (`/gpgnet`): the states a lockstep game reports
+   * (`GameState`), and `ServerSession`. Kept, in order, until the launcher's link is up. Nothing without a launcher.
+   */
+  void TellLauncher(
+    const char* const command,
+    const std::initializer_list<const char*> args
+  )
+  {
+    if (!moho::GPGNET_GetPtr()) {
+      return;
+    }
+    if (sForLauncher.size() >= kMaxForLauncher) {
+      gpg::Warnf("SERVER LOBBY: the launcher's link isn't up; %s dropped", command);
+      return;
+    }
+    SLauncherMessage message{command, {}};
+    for (const char* const arg : args) {
+      message.args.emplace_back(arg);
+    }
+    sForLauncher.push_back(std::move(message));
+    FlushLauncher();
   }
 
   class CServerLobbyTask final : public moho::CPullTask<CServerLobbyTask>
@@ -66,10 +136,12 @@ namespace
     std::int32_t mHostUid = 0;
     bool mLostSaid = false;
     bool mLaunched = false;
+    bool mLobbyToldLauncher = false; // plan WP12.2: `GameState Lobby` once, as CGpgNetInterface::CreateLobby says it
   };
 
   void CServerLobbyTask::PullTask()
   {
+    FlushLauncher();
     SLobbySignal signal;
     while (faf::remote::TakeServerLobbySignal(signal)) {
       try {
@@ -85,7 +157,10 @@ namespace
         if (!message.empty() && message[0] == static_cast<std::uint8_t>(faf::remote::net::ESeatMessage::LaunchInfo)) {
           Launch(message);
         } else {
-          gpg::Warnf("SERVER LOBBY: a game message (%d) before the launch; dropped", message.empty() ? -1 : static_cast<int>(message[0]));
+          gpg::Warnf(
+            "SERVER LOBBY: a game message (%d) before the launch; dropped",
+            message.empty() ? -1 : static_cast<int>(message[0])
+          );
         }
       }
     }
@@ -99,7 +174,9 @@ namespace
     }
   }
 
-  LuaPlus::LuaObject CServerLobbyTask::LobbyMethod(const char* const name) const
+  LuaPlus::LuaObject CServerLobbyTask::LobbyMethod(
+    const char* const name
+  ) const
   {
     if (mLobby == nullptr) {
       throw std::runtime_error("No lobby.");
@@ -107,7 +184,9 @@ namespace
     return moho::SCR_GetLuaTableFieldOrThrow(*mLobby, name, "No lobby.", "Lobby method \"%s\" is unavailable.");
   }
 
-  void CServerLobbyTask::CreateLobby(const SLobbySignal& signal)
+  void CServerLobbyTask::CreateLobby(
+    const SLobbySignal& signal
+  )
   {
     if (mLobby != nullptr) {
       // Plan WPR.50: a role while this game has a lobby: the logical host changed (the old one left or went quiet),
@@ -143,12 +222,22 @@ namespace
     const std::string uidText = std::to_string(faf::remote::ServerSessionUid());
     // No NAT-traversal object: `InternalCreateLobby` takes the session's relay connector (CLobby.cpp).
     mLobby = new LuaPlus::LuaObject(createLobbyFn.Call_UDP(
-      (signal.flags & faf::remote::net::kLobbySignalAutoLobby) != 0, 0, fa::string(signal.name.c_str()), uidText.c_str(), nullptr, 1
+      (signal.flags & faf::remote::net::kLobbySignalAutoLobby) != 0,
+      0,
+      fa::string(signal.name.c_str()),
+      uidText.c_str(),
+      nullptr,
+      1
     ));
     gpg::Logf("SERVER LOBBY: lobby made for \"%s\" (uid %s).", signal.name.c_str(), uidText.c_str());
+    if (!std::exchange(mLobbyToldLauncher, true)) {
+      TellLauncher("GameState", {"Lobby"});
+    }
   }
 
-  void CServerLobbyTask::Launch(const std::vector<std::uint8_t>& message)
+  void CServerLobbyTask::Launch(
+    const std::vector<std::uint8_t>& message
+  )
   {
     mLaunched = true;
     LuaPlus::LuaState* const state = moho::USER_GetLuaState();
@@ -198,7 +287,9 @@ namespace
     launch.source = build.localSourceId;
     faf::remote::client::SetServerLaunch(launch);
     gpg::Logf(
-      "SERVER LOBBY: launched by the server: map %s, client %d, source %u", build.mapName.c_str(), static_cast<int>(build.localClientIndex),
+      "SERVER LOBBY: launched by the server: map %s, client %d, source %u",
+      build.mapName.c_str(),
+      static_cast<int>(build.localClientIndex),
       static_cast<unsigned>(build.localSourceId)
     );
 
@@ -208,15 +299,22 @@ namespace
     sessionInfo->mIsMultiplayer = true;
     sessionInfo->mSourceId = build.localSourceId;
     sessionInfo->mMapName = build.mapName;
-    sessionInfo->mLaunchInfo = boost::static_pointer_cast<moho::LaunchInfoBase>(build.launchInfo);
+    sessionInfo->mLaunchInfo = std::static_pointer_cast<moho::LaunchInfoBase>(build.launchInfo);
     sessionInfo->mClientManager = nullptr; // the network driver makes its own (remote/client/NetworkSimDriver.h)
+    if (mLobby == nullptr) {
+      // Plan WP12.2: a match with no lobby: the launcher hears the launch as from a lobby (lobby.lua's GameLaunched
+      // says it in the other case).
+      TellLauncher("GameState", {"Launching"});
+    }
     moho::LOBBY_ServerSessionLaunched(); // the lobby's screen closes as a launched lobby's does
     delete mLobby;
     mLobby = nullptr;
     moho::WLD_BeginSession(sessionInfo);
   }
 
-  void CServerLobbyTask::Apply(const SLobbySignal& signal)
+  void CServerLobbyTask::Apply(
+    const SLobbySignal& signal
+  )
   {
     switch (signal.kind) {
     case ELobbySignal::Host: {
@@ -250,8 +348,9 @@ namespace
     }
     case ELobbySignal::LaunchRefused:
     case ELobbySignal::Launching: {
-      const std::string text = signal.kind == ELobbySignal::Launching ? std::string("The game server is starting the match.")
-                                                                      : "The game server won't start this: " + signal.text + ".";
+      const std::string text = signal.kind == ELobbySignal::Launching
+        ? std::string("The game server is starting the match.")
+        : "The game server won't start this: " + signal.text + ".";
       gpg::Logf("SERVER LOBBY: %s", text.c_str());
       // Plan WP2.14: after a refused launch the host's lobby must be put back first (FAF's TryLaunch flattened its game
       // info); our lobby hook's `ServerLaunchRefused` does that and says why. Without the hook: FAF's lobby.lua
@@ -306,6 +405,85 @@ bool moho::SERVERLOBBY_Start()
   (void)new CServerLobbyTask(); // runs every frame for the rest of the session, as CGpgNetInterface's task
   gpg::Logf("SERVER LOBBY: waiting for the server's lobby signals.");
   return true;
+}
+
+namespace
+{
+  /** `/gpgnet` started the game: its waiting front end is up already (CScApp.cpp), only the task is new. */
+  bool StartServerLobbyTask()
+  {
+    (void)new CServerLobbyTask();
+    gpg::Logf("SERVER LOBBY: waiting for the server's lobby signals.");
+    return true;
+  }
+
+  void JoinServer(
+    moho::CGpgNetInterface& gpgnet,
+    const fa::vector<moho::SNetCommandArg>& args
+  )
+  {
+    using moho::SNetCommandArg;
+    if (
+      args.size() != 3 || args[0].mType != SNetCommandArg::NETARG_String ||
+      args[1].mType != SNetCommandArg::NETARG_String || args[2].mType != SNetCommandArg::NETARG_Num
+    ) {
+      TellLauncher(faf::remote::kServerSessionCommand, {"refused", "JoinServer takes address, token and uid"});
+      throw std::runtime_error("Wrong arguments to JoinServer, expected address (string), token (string), uid (int)");
+    }
+    if (faf::remote::ServerSessionStarted()) {
+      gpg::Logf("GPGNET: JoinServer ignored: this game is on a game server already.");
+      TellLauncher(faf::remote::kServerSessionCommand, {"refused", "this game is on a game server already"});
+      return;
+    }
+    if (gpgnet.HasLobby()) {
+      // The lobby `CreateLobby` made owns its port and screen; a launcher sends JoinServer in CreateLobby's place.
+      gpg::Logf("GPGNET: JoinServer refused: CreateLobby has made a lobby already.");
+      TellLauncher(faf::remote::kServerSessionCommand, {"refused", "CreateLobby has made a lobby already"});
+      return;
+    }
+    faf::remote::SServerConnectRequest request;
+    std::string error;
+    if (!faf::remote::MakeServerConnectRequest(
+          args[0].mStr.view(), args[1].mStr.view(), args[2].mNum, request, error
+        )) {
+      gpg::Logf("GPGNET: JoinServer refused: %s", error.c_str());
+      TellLauncher(faf::remote::kServerSessionCommand, {"refused", error.c_str()});
+      moho::WIN_OkBox("Ack!", error.c_str());
+      return;
+    }
+    // The token stays out of the log, as on the command-line path.
+    gpg::Logf(
+      "GPGNET: the launcher puts this game on the game server at %s as player %d.",
+      request.endpoint.c_str(),
+      request.uid
+    );
+    if (
+      faf::remote::StartServerSession(request, &StartServerLobbyTask, error) !=
+      faf::remote::EServerSessionStart::Started
+    ) {
+      TellLauncher(faf::remote::kServerSessionCommand, {"failed", error.c_str()});
+      return;
+    }
+    TellLauncher(faf::remote::kServerSessionCommand, {"connected", request.endpoint.c_str()});
+  }
+} // namespace
+
+bool moho::SERVERLOBBY_HandleGpgNetCommand(
+  CGpgNetInterface& gpgnet,
+  const fa::string& name,
+  const fa::vector<SNetCommandArg>& args
+)
+{
+  const std::string_view command = name.view();
+  if (command == faf::remote::kJoinServerCommand) {
+    JoinServer(gpgnet, args);
+    return true;
+  }
+  if (faf::remote::ServerSessionStarted() && faf::remote::IsPeerLinkCommand(command)) {
+    gpg::Logf("GPGNET: %s ignored: this game plays on a game server.", name.c_str());
+    return true;
+  }
+  return false;
 }
 
 #endif

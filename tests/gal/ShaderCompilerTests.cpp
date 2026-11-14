@@ -45,12 +45,16 @@ namespace
     return "DXC is not available: " + ShaderCompiler::Instance().LoadError();
   }
 
-  bool IsDxil(const std::vector<std::uint8_t>& code)
+  bool IsDxil(
+    const std::vector<std::uint8_t>& code
+  )
   {
     return code.size() > 4U && std::memcmp(code.data(), "DXBC", 4U) == 0;
   }
 
-  bool IsSpirv(const std::vector<std::uint8_t>& code)
+  bool IsSpirv(
+    const std::vector<std::uint8_t>& code
+  )
   {
     std::uint32_t magic = 0U;
     if (code.size() < 20U) {
@@ -66,7 +70,9 @@ namespace
     ModernEffect modern;
   };
 
-  Generated Generate(const std::string& source)
+  Generated Generate(
+    const std::string& source
+  )
   {
     Generated result;
     result.description = ParseEffect(source);
@@ -74,7 +80,11 @@ namespace
     return result;
   }
 
-  const ShaderInput* FindInput(const std::vector<ShaderInput>& inputs, const std::string& semantic, const std::uint32_t index)
+  const ShaderInput* FindInput(
+    const std::vector<ShaderInput>& inputs,
+    const std::string& semantic,
+    const std::uint32_t index
+  )
   {
     for (const ShaderInput& input : inputs) {
       if (input.semantic == semantic && input.index == index) {
@@ -85,7 +95,10 @@ namespace
   }
 } // namespace
 
-TEST(GalShaderCompiler, GeneratedEffectCompilesToDxilAndSpirv)
+TEST(
+  GalShaderCompiler,
+  GeneratedEffectCompilesToDxilAndSpirv
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
@@ -109,7 +122,10 @@ TEST(GalShaderCompiler, GeneratedEffectCompilesToDxilAndSpirv)
 // Engine addition (ren_ShadowCascades): the cascade lookups compile for both targets next to ordinary
 // samplers. HLSL converts between structs whose members match one for one, so a shadow sampler type built
 // from faf_sampler's members made every tex2D call ambiguous (all of mesh.fx and terrain.fx failed).
-TEST(GalShaderCompiler, ShadowCascadeLookupsCompileBesideOrdinarySamplers)
+TEST(
+  GalShaderCompiler,
+  ShadowCascadeLookupsCompileBesideOrdinarySamplers
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
@@ -166,7 +182,10 @@ technique10 Lit
 // Engine addition (ren_RayTracedShadows): with a device that traces rays, the shadow lookups take the whole
 // shadow coordinate (mesh.fx's five-tap form included) and the effect compiles with inline ray queries for both
 // targets (shader model 6.5, SPIR-V for Vulkan 1.2).
-TEST(GalShaderCompiler, RayTracedShadowLookupsCompileForBothTargets)
+TEST(
+  GalShaderCompiler,
+  RayTracedShadowLookupsCompileForBothTargets
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
@@ -249,9 +268,84 @@ technique10 Lit
   }
 }
 
+// Engine addition (ren_RayWaterReflections): water2.fx's sky lookup becomes a traced reflection mixed over the
+// sky, whatever its input parameter is called, and the effect compiles for both targets.
+TEST(
+  GalShaderCompiler,
+  RayTracedWaterReflectionsCompileForBothTargets
+)
+{
+  if (Compiler() == nullptr) {
+    GTEST_SKIP() << Unavailable();
+  }
+  const ShaderCompiler& compiler = *Compiler();
+  gRayQueryShaders = true;
+  const std::string source = std::string(RayShadowDeclaration()) + R"fx(
+float3 ViewPosition;
+float4x4 WorldToView;
+float4x4 Projection;
+float4 ViewportScaleOffset;
+texture SkyMap;
+samplerCUBE SkySampler = sampler_state { Texture = (SkyMap); };
+texture RefractionTexture;
+sampler RefractionSampler = sampler_state { Texture = (RefractionTexture); };
+struct WaterOut
+{
+    float4 mPos : POSITION;
+    float4 mScreenPos : TEXCOORD0;
+    float3 mViewVec : TEXCOORD1;
+};
+WaterOut WaterVS( float3 position : POSITION )
+{
+    WaterOut o;
+    float4x4 wvp = mul( WorldToView, Projection );
+    o.mPos = mul( float4( position, 1 ), wvp );
+    o.mScreenPos = o.mPos;
+    o.mViewVec = ViewPosition - position;
+    return o;
+}
+float4 WaterPS( WaterOut water ) : COLOR0
+{
+    float3 viewVector = normalize( water.mViewVec );
+    float3 R = reflect( -viewVector, float3( 0, 1, 0 ) );
+    float4 refracted = tex2D( RefractionSampler, water.mScreenPos.xy / water.mScreenPos.w );
+    float4 skyReflection = texCUBE( SkySampler, R );
+    return lerp( refracted, skyReflection, 0.3 );
+}
+technique10 Water
+{
+    pass P0
+    {
+        SetVertexShader( CompileShader( vs_4_0, WaterVS() ) );
+        SetPixelShader( CompileShader( ps_4_0, WaterPS() ) );
+    }
+}
+)fx";
+  const Generated generated = Generate(source);
+  gRayQueryShaders = false;
+  const std::string& hlsl = generated.modern.hlsl;
+  EXPECT_NE(hlsl.find("RayQuery<"), std::string::npos) << hlsl;
+  EXPECT_NE(hlsl.find("faf_ray_water(ViewPosition - water.mViewVec, R"), std::string::npos) << hlsl;
+  EXPECT_NE(hlsl.find("faf_water_hit.z)"), std::string::npos) << hlsl;
+  ASSERT_EQ(generated.modern.entries.size(), 2U);
+  for (const ShaderEntry& entry : generated.modern.entries) {
+    const CompiledShader dxil = compiler.Compile(hlsl, entry, ShaderTarget::Dxil);
+    EXPECT_TRUE(dxil.succeeded) << entry.name << ":\n" << dxil.messages;
+    const CompiledShader spirv = compiler.Compile(hlsl, entry, ShaderTarget::Spirv);
+    EXPECT_TRUE(spirv.succeeded) << entry.name << ":\n" << spirv.messages;
+  }
+
+  // Without ray queries the sky lookup stays as it is.
+  const Generated plain = Generate(source);
+  EXPECT_EQ(plain.modern.hlsl.find("faf_ray_water"), std::string::npos);
+}
+
 // Engine addition (tessellation): the generated hull and domain entry points compile for both targets with the
 // vertex and pixel shaders of the same pass.
-TEST(GalShaderCompiler, TessellatedEffectCompilesToDxilAndSpirv)
+TEST(
+  GalShaderCompiler,
+  TessellatedEffectCompilesToDxilAndSpirv
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
@@ -269,7 +363,10 @@ TEST(GalShaderCompiler, TessellatedEffectCompilesToDxilAndSpirv)
   }
 }
 
-TEST(GalShaderCompiler, VertexInputsAreReflectedFromBothTargets)
+TEST(
+  GalShaderCompiler,
+  VertexInputsAreReflectedFromBothTargets
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
@@ -321,7 +418,10 @@ TEST(GalShaderCompiler, VertexInputsAreReflectedFromBothTargets)
   EXPECT_EQ(ReflectSpirvInterface(stripped).inputs.size(), 2U);
 }
 
-TEST(GalShaderCompiler, ErrorsComeBackAsMessages)
+TEST(
+  GalShaderCompiler,
+  ErrorsComeBackAsMessages
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
@@ -330,7 +430,8 @@ TEST(GalShaderCompiler, ErrorsComeBackAsMessages)
   ShaderEntry entry;
   entry.stage = ShaderStage::Pixel;
   entry.name = "Broken";
-  const CompiledShader broken = compiler.Compile("float4 Broken() : SV_Target0 { return undefinedThing; }", entry, ShaderTarget::Dxil);
+  const CompiledShader broken =
+    compiler.Compile("float4 Broken() : SV_Target0 { return undefinedThing; }", entry, ShaderTarget::Dxil);
   EXPECT_FALSE(broken.succeeded);
   EXPECT_TRUE(broken.code.empty());
   EXPECT_NE(broken.messages.find("undefinedThing"), std::string::npos) << broken.messages;
@@ -339,14 +440,18 @@ TEST(GalShaderCompiler, ErrorsComeBackAsMessages)
   EXPECT_FALSE(compiler.Compile("float4 Other() : SV_Target0 { return 1; }", entry, ShaderTarget::Spirv).succeeded);
 }
 
-TEST(GalShaderCompiler, RawProgramsCompileWithTheirOwnProfile)
+TEST(
+  GalShaderCompiler,
+  RawProgramsCompileWithTheirOwnProfile
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
   }
   const ShaderCompiler& compiler = *Compiler();
-  const char* const compute = "RWStructuredBuffer<uint> Output : register(u0);\n"
-                              "[numthreads(64, 1, 1)] void Main(uint3 id : SV_DispatchThreadID) { Output[id.x] = id.x * 2; }\n";
+  const char* const compute =
+    "RWStructuredBuffer<uint> Output : register(u0);\n"
+    "[numthreads(64, 1, 1)] void Main(uint3 id : SV_DispatchThreadID) { Output[id.x] = id.x * 2; }\n";
   const CompiledShader dxil = compiler.CompileRaw(compute, "Main", L"cs_6_0", {});
   EXPECT_TRUE(dxil.succeeded) << dxil.messages;
   EXPECT_TRUE(IsDxil(dxil.code));
@@ -356,7 +461,10 @@ TEST(GalShaderCompiler, RawProgramsCompileWithTheirOwnProfile)
   EXPECT_FALSE(compiler.CompileRaw(compute, "Main", L"cs_9_9", {}).succeeded);
 }
 
-TEST(GalShaderCompiler, OverrideLayerOutputCompilesEndToEnd)
+TEST(
+  GalShaderCompiler,
+  OverrideLayerOutputCompilesEndToEnd
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();
@@ -393,8 +501,10 @@ technique10 Ramp
     }
 }
 )fx";
-  const char* const original = "technique Ramp { pass P0 { AlphaTestEnable = true; AlphaFunc = Greater; AlphaRef = 16; } }";
-  const gpg::gal::d3d11::TranslatedEffectSource translated = gpg::gal::d3d11::TranslateEffectSource(preprocessed, true, original);
+  const char* const original =
+    "technique Ramp { pass P0 { AlphaTestEnable = true; AlphaFunc = Greater; AlphaRef = 16; } }";
+  const gpg::gal::d3d11::TranslatedEffectSource translated =
+    gpg::gal::d3d11::TranslateEffectSource(preprocessed, true, original);
   const std::shared_ptr<EffectProgram> program =
     std::make_shared<EffectProgram>("tests/ramp.fx", translated.source, ShaderTarget::Dxil, original);
   ASSERT_EQ(program->Description().techniques.size(), 1U);
@@ -414,7 +524,10 @@ technique10 Ramp
   }
 }
 
-TEST(GalShaderCompiler, EffectProgramsCompileOnUseAndKeepACache)
+TEST(
+  GalShaderCompiler,
+  EffectProgramsCompileOnUseAndKeepACache
+)
 {
   if (Compiler() == nullptr) {
     GTEST_SKIP() << Unavailable();

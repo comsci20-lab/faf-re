@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/Rect2.h"
 #include "legacy/containers/Vector.h"
 #include "moho/sim/CBackgroundTaskControl.h"
@@ -30,8 +30,10 @@ namespace moho
   };
 
   /**
-   * Address: 0x00478610 (FUN_00478610 -- `CHeightFieldI16Grid::CHeightFieldI16Grid()`; zero callers, unreachable; formerly `ZeroHeightWordGridVariant1` in moho/sim/STIMap.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x004786C0 (FUN_004786C0 -- `CHeightFieldI16Grid::CHeightFieldI16Grid()` (second copy); zero callers, unreachable; formerly `ZeroHeightWordGridVariant2` in moho/sim/STIMap.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x00478610 (FUN_00478610 -- `CHeightFieldI16Grid::CHeightFieldI16Grid()`; zero callers, unreachable;
+   * formerly `ZeroHeightWordGridVariant1` in moho/sim/STIMap.cpp (RULE ONE), removed 2026-09-10.) Address: 0x004786C0
+   * (FUN_004786C0 -- `CHeightFieldI16Grid::CHeightFieldI16Grid()` (second copy); zero callers, unreachable; formerly
+   * `ZeroHeightWordGridVariant2` in moho/sim/STIMap.cpp (RULE ONE), removed 2026-09-10.)
    */
   struct CHeightFieldI16Grid
   {
@@ -46,8 +48,11 @@ namespace moho
    * and that trio is what made `mGrids.resize(n, CHeightFieldTier{})` emit the
    * whole `fa::vector<CHeightFieldTier>` family the recovery used to carry
    * as free functions (all cited on the template members now).
-   * Address: 0x004785D0 (FUN_004785D0 -- `CHeightFieldTier::CHeightFieldTier()` -- both owned grids null, both extents zero; zero callers, unreachable; formerly `ZeroHeightFieldTier` in moho/sim/STIMap.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00479580 (FUN_00479580 -- `CHeightFieldTier::~CHeightFieldTier()` -- `delete[]` both owned grids; callers 0x00479380, 0x004796D0; formerly `DestroyHeightFieldTierEntry` in moho/sim/STIMap.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x004785D0 (FUN_004785D0 -- `CHeightFieldTier::CHeightFieldTier()` -- both owned grids null, both extents
+   * zero; zero callers, unreachable; formerly `ZeroHeightFieldTier` in moho/sim/STIMap.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x00479580 (FUN_00479580 -- `CHeightFieldTier::~CHeightFieldTier()` -- `delete[]` both owned
+   * grids; callers 0x00479380, 0x004796D0; formerly `DestroyHeightFieldTierEntry` in moho/sim/STIMap.cpp (RULE ONE),
+   * removed 2026-09-10.)
    */
   struct CHeightFieldTier
   {
@@ -140,8 +145,14 @@ namespace moho
      * fields are private here, so these are the named accessors that read
      * them. No layout impact.
      */
-    [[nodiscard]] std::int32_t Width() const noexcept { return width; }
-    [[nodiscard]] std::int32_t Height() const noexcept { return height; }
+    [[nodiscard]] std::int32_t Width() const noexcept
+    {
+      return width;
+    }
+    [[nodiscard]] std::int32_t Height() const noexcept
+    {
+      return height;
+    }
 
     /**
      * Address: 0x004784F0 (+ chunk 0x00478420 from ctor cleanup island)
@@ -153,7 +164,7 @@ namespace moho
      * second time, fused with a trailing `operator delete(this)`, as
      * `boost::detail::sp_counted_impl_p<Moho::CHeightField>::dispose`'s
      * callee at 0x00579250 (`FUN_00579250`). That control block is the real
-     * vendored one, constructed by `CreateBoostPtrCHeightField` (STIMap.cpp,
+     * vendored one, constructed by `func_CreateBoostPtrCHeightField` (0x005790E0,
      * `out = boost::shared_ptr<moho::CHeightField>(field)`) -- its
      * `dispose()` reaches this destructor via `delete countedImpl->px`.
      */
@@ -318,22 +329,7 @@ namespace moho
      * Copies raw 16-bit source heights into the requested rectangle and refreshes
      * impacted tier bounds.
      */
-    void SetElevationRectRaw(
-      const gpg::Rect2i& rect,
-      const std::uint16_t* source,
-      std::int32_t sourceRowStride
-    );
-
-    /**
-     * Address: 0x00478010 (FUN_00478010, Moho::CHeightField::CopyHeightsRectFrom)
-     *
-     * Moho::CHeightField const *, gpg::Rect2<int> const &
-     *
-     * What it does:
-     * Copies one rectangle of raw heights from another field using the source
-     * row stride.
-     */
-    void CopyHeightsRectFrom(const CHeightField* source, const gpg::Rect2i& rect);
+    void SetElevationRectRaw(const gpg::Rect2i& rect, const std::uint16_t* source, std::int32_t sourceRowStride);
 
     /**
      * Address: 0x00475DA0 (FUN_00475DA0)
@@ -530,9 +526,9 @@ namespace moho
     ) const;
 
   public:
-    std::uint16_t* data;                    // +0x00
-    std::int32_t width;                     // +0x04
-    std::int32_t height;                    // +0x08
+    std::uint16_t* data;                 // +0x00
+    std::int32_t width;                  // +0x04
+    std::int32_t height;                 // +0x08
     fa::vector<CHeightFieldTier> mGrids; // +0x0C
   };
 
@@ -550,7 +546,7 @@ namespace moho
    * out-of-line copy of `heightField->GetElevation(x, z)` that the binary emits
    * once and calls from several places rather than inlining the dereference.
    */
-  [[nodiscard]] float GetHeightFieldElevation(const boost::shared_ptr<CHeightField>& heightField, float x, float z);
+  [[nodiscard]] float GetHeightFieldElevation(const std::shared_ptr<CHeightField>& heightField, float x, float z);
 
   /**
    * The 256 terrain-type Lua objects, held inline behind the usual
@@ -658,7 +654,8 @@ namespace moho
      * unsigned int z, unsigned int x
      *
      * IDA signature:
-     * bool __usercall Moho::STIMap::IsBlockingTerrain@<al>(Moho::STIMap *this@<ecx>, unsigned int x@<edi>, unsigned int y@<esi>);
+     * bool __usercall Moho::STIMap::IsBlockingTerrain@<al>(Moho::STIMap *this@<ecx>, unsigned int x@<edi>, unsigned int
+     * y@<esi>);
      *
      * What it does:
      * Returns whether terrain cell `(x,z)` is blocked by map terrain-type flags.
@@ -672,7 +669,8 @@ namespace moho
      * Moho::SOCellPos const &, Moho::SFootprint const &
      *
      * IDA signature:
-     * Moho::EOccupancyCaps callcnv_F3 Moho::STIMap::OccupancyCapsOfFootprintAt@<al>(Moho::SOCellPos *pos@<eax>, Moho::STIMap *map@<ecx>, const Moho::SFootprint *fp);
+     * Moho::EOccupancyCaps callcnv_F3 Moho::STIMap::OccupancyCapsOfFootprintAt@<al>(Moho::SOCellPos *pos@<eax>,
+     * Moho::STIMap *map@<ecx>, const Moho::SFootprint *fp);
      *
      * What it does:
      * Computes terrain/water/slope occupancy caps for one footprint origin.
@@ -834,7 +832,7 @@ namespace moho
      * Copies this map's shared height-field ownership lane into
      * `outHeightField`.
      */
-    void GetHeightField(boost::shared_ptr<CHeightField>& outHeightField) const;
+    void GetHeightField(std::shared_ptr<CHeightField>& outHeightField) const;
 
     [[nodiscard]] CHeightField* GetHeightField() const noexcept;
     /**
@@ -855,21 +853,30 @@ namespace moho
      * `kWaterBodyNoWater`. Without bodies it is exactly what every reader of
      * the single level computed, `mWaterEnabled ? mWaterElevation : -10000`.
      */
-    [[nodiscard]] float GetWaterElevationAt(float x, float z) const noexcept
+    [[nodiscard]] float GetWaterElevationAt(
+      float x,
+      float z
+    ) const noexcept
     {
       const float sea = mWaterEnabled != 0u ? mWaterElevation : kWaterBodyNoWater;
       return mWaterBodies ? mWaterBodies->LevelAt(x, z, sea) : sea;
     }
 
     /// The same at height-field vertex `(x, z)`, for the occupancy checks.
-    [[nodiscard]] float GetWaterElevationAtVertex(std::int32_t x, std::int32_t z) const noexcept
+    [[nodiscard]] float GetWaterElevationAtVertex(
+      std::int32_t x,
+      std::int32_t z
+    ) const noexcept
     {
       const float sea = mWaterEnabled != 0u ? mWaterElevation : kWaterBodyNoWater;
       return mWaterBodies ? mWaterBodies->LevelOfVertex(x, z, sea) : sea;
     }
 
     /// Engine addition: whether the map has water bodies in this session.
-    [[nodiscard]] bool HasWaterBodies() const noexcept { return mWaterBodies != nullptr; }
+    [[nodiscard]] bool HasWaterBodies() const noexcept
+    {
+      return mWaterBodies != nullptr;
+    }
 
     /**
      * Engine addition: fills the water bodies `scenarioInfo.WaterBodies`
@@ -914,7 +921,7 @@ namespace moho
     STIMap* SetWaterElevationAbyss(float elevation) noexcept;
 
   public:
-    boost::shared_ptr<CHeightField> mHeightField; // +0x0000
+    std::shared_ptr<CHeightField> mHeightField;   // +0x0000
     gpg::Rect2i mPlayableRect;                    // +0x0008
     TerrainTypes mTerrainTypes;                   // +0x0018
     TerrainTypeGrid mTerrainType;                 // +0x1428
@@ -948,7 +955,7 @@ namespace moho
      * (`CWaterBodies`, .plans/water-levels/PLAN.md), null unless the session
      * has them on and the map describes some. Same size on x86.
      */
-    std::unique_ptr<CWaterBodies> mWaterBodies;   // +0x1544
+    std::unique_ptr<CWaterBodies> mWaterBodies; // +0x1544
   };
 
   static_assert(offsetof(STIMap, mTerrainType) == 0x1428, "STIMap::mTerrainType offset must be 0x1428");
@@ -959,7 +966,8 @@ namespace moho
   static_assert(sizeof(STIMap) == 0x1548, "STIMap size must be 0x1548");
 
   /**
-   * Address: 0x00564AB0 (FUN_00564AB0, ?OCCUPY_MobileCheck@Moho@@YA?AW4ELayer@1@ABUSFootprint@1@ABUSOCellPos@1@PBVSTIMap@1@@Z)
+   * Address: 0x00564AB0 (FUN_00564AB0,
+   * ?OCCUPY_MobileCheck@Moho@@YA?AW4ELayer@1@ABUSFootprint@1@ABUSOCellPos@1@PBVSTIMap@1@@Z)
    *
    * Moho::SFootprint const &, Moho::STIMap const &, Moho::SOCellPos const &
    *
@@ -979,12 +987,8 @@ namespace moho
    * Applies single-cell occupancy filtering against terrain/water occupation bitmaps.
    */
   [[nodiscard]]
-  EOccupancyCaps OCCUPY_Filter(
-    const SFootprint& footprint,
-    const COGrid& grid,
-    const SOCellPos& pos,
-    EOccupancyCaps occupancyCaps
-  );
+  EOccupancyCaps
+  OCCUPY_Filter(const SFootprint& footprint, const COGrid& grid, const SOCellPos& pos, EOccupancyCaps occupancyCaps);
 
   /**
    * Address: 0x007209E0 (FUN_007209E0)
@@ -1097,10 +1101,6 @@ namespace moho
    * placement into `dest`.
    */
   [[nodiscard]]
-  bool func_LocationIsFree(
-    const RUnitBlueprint& blueprint,
-    COGrid& grid,
-    const SCoordsVec2& pos,
-    SOccupationResult& dest
-  );
+  bool
+  func_LocationIsFree(const RUnitBlueprint& blueprint, COGrid& grid, const SCoordsVec2& pos, SOccupationResult& dest);
 } // namespace moho

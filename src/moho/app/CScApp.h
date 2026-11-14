@@ -7,7 +7,7 @@
 #include "gpg/core/time/Timer.h"
 #include "gpg/gal/DeviceContext.hpp"
 #include "moho/app/IWinApp.h"
-#include "moho/app/WxRuntimeTypes.h"
+#include "moho/app/AppRuntimeTypes.h"
 
 namespace moho
 {
@@ -24,6 +24,14 @@ namespace moho
    * adapter, `/windowed`, `/fullscreen`). False in the game.
    */
   extern bool gAppWindowed;
+
+  /**
+   * Engine addition (the map editor's particle preview): when set, a frame without a session gives the renderer a clock
+   * of its own, 10 ticks a second from the first such frame, never going back, so particles the editor hands to the
+   * world particle renderer age and expire (without a session the game's clock is tick 0 every frame). False in the
+   * game.
+   */
+  extern bool gAppIdleClock;
 
   /**
    * Engine addition (the map editor): called by `CScApp::CreateAppFrame` just before the device is created,
@@ -105,7 +113,7 @@ public:
   bool Init() override;
 
   /**
-     * Address: 0x008D1470 (FUN_008D1470)
+   * Address: 0x008D1470 (FUN_008D1470)
    * Mangled: ?Main@CScApp@@UAEXXZ
    *
    * What it does:
@@ -141,12 +149,8 @@ public:
    * Creates primary/secondary frame windows, viewport bindings, and D3D
    * bootstrap handoff for the startup render path.
    */
-  bool CreateAppFrame(
-    const fa::string& title,
-    bool maximized,
-    const wxPoint& position,
-    gpg::gal::DeviceContext& context
-  );
+  bool
+  CreateAppFrame(const fa::string& title, bool maximized, const ShellPoint& position, gpg::gal::DeviceContext& context);
 
   /**
    * Address: 0x008CE1D0 (FUN_008CE1D0, CScApp::HasFrame)

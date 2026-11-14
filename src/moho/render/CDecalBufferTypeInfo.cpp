@@ -3,7 +3,8 @@
 #include <new>
 #include <typeinfo>
 
-#include "moho/render/CDecalBuffer.h"
+#include "moho/render/CDecalBuffer.h"
+
 #include "gpg/core/reflection/StaticInitPhase.h"
 
 namespace
@@ -22,7 +23,9 @@ namespace
   /**
    * Address: 0x0077C130 (FUN_0077C130)
    */
-  gpg::RRef CtrRef_CDecalBuffer(void* const objectStorage)
+  gpg::RRef CtrRef_CDecalBuffer(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CDecalBuffer*>(objectStorage);
     if (object != nullptr) {
@@ -38,7 +41,9 @@ namespace
   /**
    * Address: 0x0077C110 (FUN_0077C110)
    */
-  void Delete_CDecalBuffer(void* const objectStorage)
+  void Delete_CDecalBuffer(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CDecalBuffer*>(objectStorage);
     if (object != nullptr) {
@@ -50,7 +55,9 @@ namespace
   /**
    * Address: 0x0077C1A0 (FUN_0077C1A0)
    */
-  void Dtr_CDecalBuffer(void* const objectStorage)
+  void Dtr_CDecalBuffer(
+    void* const objectStorage
+  )
   {
     gpg::DestructInStorage<moho::CDecalBuffer>(objectStorage);
   }
@@ -73,19 +80,6 @@ namespace
     return typeInfo;
   }
 
-  /**
-   * Address: 0x0077A740 (FUN_0077A740)
-   *
-   * What it does:
-   * Secondary callback-slot binder for `CDecalBuffer` reflected type
-   * lifecycle lanes.
-   */
-  [[maybe_unused]] moho::CDecalBufferTypeInfo* BindDecalBufferTypeCallbackSlotsSecondary(
-    moho::CDecalBufferTypeInfo* const typeInfo
-  )
-  {
-    return BindDecalBufferTypeCallbackSlotsPrimary(typeInfo);
-  }
 } // namespace
 
 namespace moho
@@ -133,4 +127,7 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_CDecalBufferTypeInfo_5f3209, moho::preregister_CDecalBufferTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_CDecalBufferTypeInfo_5f3209,
+  moho::preregister_CDecalBufferTypeInfo
+)

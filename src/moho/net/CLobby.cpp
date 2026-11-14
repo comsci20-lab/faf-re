@@ -16,10 +16,6 @@
 #include <typeinfo>
 #include <vector>
 
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/range/iterator_range.hpp>
-
 #include "CClientManagerImpl.h"
 #include "CDiscoveryService.h"
 #include "CMessageStream.h"
@@ -90,7 +86,8 @@ namespace moho
    * Unwraps Lua boxed userdata payload and returns the typed
    * `boost::weak_ptr<INetNATTraversalProvider>` slot.
    */
-  [[nodiscard]] boost::weak_ptr<INetNATTraversalProvider>* func_GetCObj_NatTraversalProvider(LuaPlus::LuaObject valueObject);
+  [[nodiscard]] std::weak_ptr<INetNATTraversalProvider>*
+  func_GetCObj_NatTraversalProvider(LuaPlus::LuaObject valueObject);
   int cfunc_InternalCreateLobbyL(LuaPlus::LuaState* state);
   int cfunc_CLobbyHostGameL(LuaPlus::LuaState* state);
   int cfunc_CLobbyJoinGameL(LuaPlus::LuaState* state);
@@ -113,9 +110,9 @@ namespace moho
 namespace
 {
   constexpr const char* kInternalCreateDiscoveryServiceHelp = "InternalCreateDiscoveryService(class)";
-  constexpr const char* kInternalCreateLobbyHelp =
-    "InternalCreateLobby(class, string protocol, int localPort, int maxConnections, string playerName, string playerUID, "
-    "Boxed<weak_ptr<INetNATTraversalProvider> > natTraversalProvider)";
+  constexpr const char* kInternalCreateLobbyHelp = "InternalCreateLobby(class, string protocol, int localPort, int "
+                                                   "maxConnections, string playerName, string playerUID, "
+                                                   "Boxed<weak_ptr<INetNATTraversalProvider> > natTraversalProvider)";
   constexpr const char* kCLobbyDestroyHelp = "CLobby.Destroy(self)";
   constexpr const char* kCLobbyMakeValidGameNameHelp = "string CLobby.MakeValidGameName(self,origName)";
   constexpr const char* kCLobbyMakeValidPlayerNameHelp = "string CLobby.MakeValidPlayerName(self,uid,origName)";
@@ -319,9 +316,14 @@ namespace
    * here regardless, since `IsPeerNameInIgnoreList` only ever compares
    * ignore-list tokens against real peer names and an empty token from
    * compressed-away adjacent separators can never match one.
-   * Address: 0x007CDF90 (FUN_007CDF90 -- `boost::iterator_range<It>::iterator_range(It, It)` for the split pipeline's 2-dword ranges (`*out = {*begin, *end}`); zero callers, unreachable; formerly `CopyDwordPairFromIndependentWordSources` in moho/containers/LegacyContainerFillLanes.cpp (RULE ONE), file removed 2026-09-10.)
+   * Address: 0x007CDF90 (FUN_007CDF90 -- `boost::iterator_range<It>::iterator_range(It, It)` for the split pipeline's
+   * 2-dword ranges (`*out = {*begin, *end}`); zero callers, unreachable; formerly
+   * `CopyDwordPairFromIndependentWordSources` in moho/containers/LegacyContainerFillLanes.cpp (RULE ONE), file removed
+   * 2026-09-10.)
    */
-  [[nodiscard]] fa::vector<fa::string> BuildLobbyIgnoreNameList(const fa::set<char>& separatorsParam)
+  [[nodiscard]] fa::vector<fa::string> BuildLobbyIgnoreNameList(
+    const fa::set<char>& separatorsParam
+  )
   {
     fa::vector<fa::string> ignoreNames{};
     if (moho::lob_IgnoreNames.empty()) {
@@ -330,38 +332,21 @@ namespace
 
     const fa::set<char> localSeparators(separatorsParam);
 
-    // `is_any_of`'s templated constructor resolves its argument's begin/end
-    // through unqualified `begin(Range)`/`end(Range)` calls, which pick up
-    // both `boost::begin`/`boost::end` (ordinary lookup, this call sits
-    // inside `boost::algorithm::detail`) and `std::begin`/`std::end` (ADL --
-    // `fa::set<char>`'s second template argument defaults to
-    // `std::less<char>`, which drags `std` into the type's associated
-    // namespaces). The two are ambiguous under C++20's generic
-    // `std::begin`/`std::end`, a incompatibility this 2006-era boost header
-    // could not have anticipated. Decaying to a raw `const char*` pair
-    // sidesteps it entirely (fundamental/pointer types have no associated
-    // namespace for ADL) -- the same fix already applied to the input range
-    // above, and the same technique a throwaway MSVC probe against the
-    // vendored headers confirmed while investigating this recovery.
-    // Behaviourally inert: `is_any_ofF`'s constructor immediately copies the
-    // characters into its own `std::set<char>` regardless of what range they
-    // arrived through.
-    std::vector<char> separatorChars(localSeparators.begin(), localSeparators.end());
-    const boost::iterator_range<const char*> separatorRange(
-      separatorChars.data(),
-      separatorChars.data() + separatorChars.size()
-    );
-
+    // What the binary's `boost::algorithm::split(ignoreNames, range, is_any_of(separators), token_compress_off)`
+    // produces: every run between two separators is a token, empty runs included, so N separators give N + 1 tokens.
+    // Checked against boost 1.34.1's split on 12 inputs (empty, leading, trailing and repeated separators).
     const char* const first = moho::lob_IgnoreNames.data();
     const char* const last = first + moho::lob_IgnoreNames.size();
-    boost::iterator_range<const char*> inputRange(first, last);
-
-    boost::algorithm::split(
-      ignoreNames,
-      inputRange,
-      boost::algorithm::is_any_of(separatorRange),
-      boost::algorithm::token_compress_off
-    );
+    const char* tokenStart = first;
+    for (const char* it = first;; ++it) {
+      if (it == last || localSeparators.find(*it) != localSeparators.end()) {
+        ignoreNames.push_back(fa::string(tokenStart, static_cast<std::size_t>(it - tokenStart)));
+        if (it == last) {
+          break;
+        }
+        tokenStart = it + 1;
+      }
+    }
 
     return ignoreNames;
   }
@@ -394,7 +379,10 @@ namespace
    * refills every few seconds; lines past it are only counted, and the count
    * is reported when the next window opens.
    */
-  void LogDroppedLobbyMessage(const char* fmt, ...)
+  void LogDroppedLobbyMessage(
+    const char* fmt,
+    ...
+  )
   {
     using Clock = std::chrono::steady_clock;
     constexpr int kLinesPerWindow = 8;
@@ -911,10 +899,10 @@ void CLobby::OnWelcome(
     const gpg::BinaryReader br{&s};
 
     fa::string hostDisplayName; // v20
-    int32_t hostUid = 0;           // v17 (read as 4 bytes)
-    int32_t assignedUid = 0;       // v16 (read as 4 bytes)
+    int32_t hostUid = 0;        // v17 (read as 4 bytes)
+    int32_t assignedUid = 0;    // v16 (read as 4 bytes)
     fa::string renameSelfTo;    // v19
-    int32_t sessionOrSeq = 0;      // v18 -> hostedTime
+    int32_t sessionOrSeq = 0;   // v18 -> hostedTime
 
     br.ReadString(&hostDisplayName);
     br.ReadExact(hostUid);
@@ -1172,8 +1160,9 @@ void CLobby::OnConnectionFailed(
   // not reserved on the wire, though: a peer past that point can send one,
   // and acting on it swapped in a fresh connection under a peer still marked
   // established, whose own ConnMade then hit the unreachable assert.
-  if (peer == nullptr
-      || (peer->state != ENetworkPlayerState::kConnecting && peer->state != ENetworkPlayerState::kPending)) {
+  if (
+    peer == nullptr || (peer->state != ENetworkPlayerState::kConnecting && peer->state != ENetworkPlayerState::kPending)
+  ) {
     LogDroppedLobbyMessage("LOBBY: ignoring unexpected connection-failed event on conn=%p.", connection);
     return;
   }
@@ -1214,7 +1203,9 @@ void CLobby::OnConnectionMade(
   // shipped body asserted on it (0x007C5DB4), so one crafted message from any
   // connected peer ended the process.
   if (peer->state != ENetworkPlayerState::kConnecting && peer->state != ENetworkPlayerState::kPending) {
-    LogDroppedLobbyMessage("LOBBY: ignoring connection-made event from %s, status=%s.", who.c_str(), peerStateStr.c_str());
+    LogDroppedLobbyMessage(
+      "LOBBY: ignoring connection-made event from %s, status=%s.", who.c_str(), peerStateStr.c_str()
+    );
     return;
   }
 
@@ -1243,7 +1234,9 @@ void CLobby::OnConnectionMade(
  * What it does:
  * Handles connection-loss state transitions and reconnect/eject behavior.
  */
-void CLobby::Reconnect(INetConnection* connection)
+void CLobby::Reconnect(
+  INetConnection* connection
+)
 {
   if (connection == peerConnection) {
     // If this is not a host.
@@ -1449,7 +1442,9 @@ fa::string CLobby::MakeValidPlayerName(
  * Unwraps raw Lua callback context and forwards to
  * `cfunc_InternalCreateDiscoveryServiceL`.
  */
-int moho::cfunc_InternalCreateDiscoveryService(lua_State* const luaContext)
+int moho::cfunc_InternalCreateDiscoveryService(
+  lua_State* const luaContext
+)
 {
   return cfunc_InternalCreateDiscoveryServiceL(luaContext ? luaContext->stateUserData : nullptr);
 }
@@ -1461,7 +1456,9 @@ int moho::cfunc_InternalCreateDiscoveryService(lua_State* const luaContext)
  * Validates one class argument, constructs one `CDiscoveryService`, and pushes
  * its script object back to Lua.
  */
-int moho::cfunc_InternalCreateDiscoveryServiceL(LuaPlus::LuaState* const state)
+int moho::cfunc_InternalCreateDiscoveryServiceL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kInternalCreateDiscoveryServiceHelp);
 
@@ -1496,7 +1493,9 @@ moho::CScrLuaInitForm* moho::func_InternalCreateDiscoveryService_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_InternalCreateLobbyL`.
  */
-int moho::cfunc_InternalCreateLobby(lua_State* const luaContext)
+int moho::cfunc_InternalCreateLobby(
+  lua_State* const luaContext
+)
 {
   return cfunc_InternalCreateLobbyL(luaContext ? luaContext->stateUserData : nullptr);
 }
@@ -1508,7 +1507,7 @@ int moho::cfunc_InternalCreateLobby(lua_State* const luaContext)
  * Unwraps Lua boxed userdata payload and returns the typed
  * `boost::weak_ptr<INetNATTraversalProvider>` slot.
  */
-boost::weak_ptr<moho::INetNATTraversalProvider>* moho::func_GetCObj_NatTraversalProvider(
+std::weak_ptr<moho::INetNATTraversalProvider>* moho::func_GetCObj_NatTraversalProvider(
   LuaPlus::LuaObject valueObject
 )
 {
@@ -1518,7 +1517,7 @@ boost::weak_ptr<moho::INetNATTraversalProvider>* moho::func_GetCObj_NatTraversal
 
   const gpg::RRef userDataRef = moho::SCR_UserDataRef(valueObject);
   const gpg::RRef upcastRef = gpg::REF_UpcastPtr(userDataRef, gpg::ResolveWeakPtrINetNATTraversalProviderType());
-  auto* const providerSlot = static_cast<boost::weak_ptr<INetNATTraversalProvider>*>(upcastRef.mObj);
+  auto* const providerSlot = static_cast<std::weak_ptr<INetNATTraversalProvider>*>(upcastRef.mObj);
   if (providerSlot == nullptr) {
     throw std::bad_cast{};
   }
@@ -1532,7 +1531,9 @@ boost::weak_ptr<moho::INetNATTraversalProvider>* moho::func_GetCObj_NatTraversal
  * Validates and decodes one `InternalCreateLobby(...)` Lua call, resolves
  * connector/NAT lanes, constructs `CLobby`, and pushes the lobby Lua object.
  */
-int moho::cfunc_InternalCreateLobbyL(LuaPlus::LuaState* const state)
+int moho::cfunc_InternalCreateLobbyL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 7, kInternalCreateLobbyHelp);
 
@@ -1573,13 +1574,13 @@ int moho::cfunc_InternalCreateLobbyL(LuaPlus::LuaState* const state)
     uid = std::atoi(uidText ? uidText : "");
   }
 
-  boost::weak_ptr<INetNATTraversalProvider> natTraversalProvider{};
+  std::weak_ptr<INetNATTraversalProvider> natTraversalProvider{};
   if (lua_type(state->m_state, 7) != LUA_TNIL) {
     const LuaPlus::LuaObject natTraversalProviderObject(LuaPlus::LuaStackObject(state, 7));
     natTraversalProvider = *func_GetCObj_NatTraversalProvider(natTraversalProviderObject);
   }
 
-  boost::weak_ptr<INetNATTraversalProvider> liveNatTraversalProvider{};
+  std::weak_ptr<INetNATTraversalProvider> liveNatTraversalProvider{};
   if (!natTraversalProvider.expired()) {
     liveNatTraversalProvider = natTraversalProvider;
   }
@@ -2843,7 +2844,12 @@ int moho::cfunc_ValidateIPAddress(
 moho::CScrLuaInitForm* moho::func_ValidateIPAddress_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "ValidateIPAddress", &moho::cfunc_ValidateIPAddress, nullptr, "<global>", kValidateIPAddressHelp
+    moho::SCR_UserLuaInitSet(),
+    "ValidateIPAddress",
+    &moho::cfunc_ValidateIPAddress,
+    nullptr,
+    "<global>",
+    kValidateIPAddressHelp
   );
   return &binder;
 }
@@ -3163,12 +3169,7 @@ void CLobby::JoinGame(
   const u_long remoteAddress = peerConnection->GetAddr();
   const u_short remotePort = peerConnection->GetPort();
   SPeer* peer = new SPeer(
-    fa::string(remPlayerName),
-    remPlayerUid,
-    remoteAddress,
-    remotePort,
-    peerConnection,
-    ENetworkPlayerState::kConnecting
+    fa::string(remPlayerName), remPlayerUid, remoteAddress, remotePort, peerConnection, ENetworkPlayerState::kConnecting
   );
   peer->ListLinkBefore(&peers);
   gpg::Logf("LOBBY: Connecting to host %s", peer->ToString().c_str());
@@ -3243,25 +3244,42 @@ namespace
   class CLobbyLaunchParticipants final : public moho::ILaunchParticipants
   {
   public:
-    explicit CLobbyLaunchParticipants(moho::CLobby& lobby)
+    explicit CLobbyLaunchParticipants(
+      moho::CLobby& lobby
+    )
       : mLobby(lobby)
     {}
 
-    [[nodiscard]] std::int32_t LocalUid() const override { return mLobby.localUid; }
+    [[nodiscard]] std::int32_t LocalUid() const override
+    {
+      return mLobby.localUid;
+    }
 
-    void BeginAssignments() override { mAssigning = true; }
+    void BeginAssignments() override
+    {
+      mAssigning = true;
+    }
 
     /** Whether a throw came from the part that hands out client indices and sources. */
-    [[nodiscard]] bool Assigning() const noexcept { return mAssigning; }
+    [[nodiscard]] bool Assigning() const noexcept
+    {
+      return mAssigning;
+    }
 
-    void AssignClientIndex(std::int32_t& clientIndex, const std::int32_t ownerId, const char* const name, std::int32_t& localIndex)
-      override
+    void AssignClientIndex(
+      std::int32_t& clientIndex,
+      const std::int32_t ownerId,
+      const char* const name,
+      std::int32_t& localIndex
+    ) override
     {
       mLobby.AssignClientIndex(clientIndex, ownerId, name, localIndex);
     }
 
     std::uint32_t AssignCommandSource(
-      const std::int32_t timeouts, const std::int32_t ownerId, fa::vector<moho::SSTICommandSource>& commandSources,
+      const std::int32_t timeouts,
+      const std::int32_t ownerId,
+      fa::vector<moho::SSTICommandSource>& commandSources,
       std::uint32_t& localSource
     ) override
     {
@@ -3301,7 +3319,9 @@ void CLobby::LaunchGame(
       const auto* const bytes = reinterpret_cast<const std::uint8_t*>(request.mBuff.start_);
       const std::size_t size = request.mBuff.Size();
       constexpr std::size_t kHeaderBytes = 3u; // type, 16-bit size
-      (void)faf::remote::SendServerLaunchRequest(std::span<const std::uint8_t>(bytes + kHeaderBytes, size - kHeaderBytes));
+      (void)faf::remote::SendServerLaunchRequest(
+        std::span<const std::uint8_t>(bytes + kHeaderBytes, size - kHeaderBytes)
+      );
       gpg::Logf("LOBBY: launch sent to the server (%u bytes).", static_cast<unsigned>(size - kHeaderBytes));
     } else {
       gpg::Logf("LOBBY: the host launched; the server starts the match.");
@@ -3348,15 +3368,16 @@ void CLobby::LaunchGame(
   sessionInfo->mIsReplay = false;
   sessionInfo->mIsMultiplayer = isMultiplayer;
   sessionInfo->mSourceId = build.localSourceId;
-  const boost::shared_ptr<LaunchInfoNew>& launchInfo = build.launchInfo;
+  const std::shared_ptr<LaunchInfoNew>& launchInfo = build.launchInfo;
   const int32_t clientIndex = build.clientCount;
   const int32_t localClientIndex = build.localClientIndex;
 
   const SLaunchSpeed launchSpeed = ReadLaunchSpeed(gameOptions);
 
   connector->SelectEvent(nullptr);
-  sessionInfo->mClientManager =
-    CLIENT_CreateClientManager(static_cast<std::size_t>(clientIndex), connector, launchSpeed.speed, launchSpeed.adjustable);
+  sessionInfo->mClientManager = CLIENT_CreateClientManager(
+    static_cast<std::size_t>(clientIndex), connector, launchSpeed.speed, launchSpeed.adjustable
+  );
   connector = nullptr;
 
   sessionInfo->mClientManager->CreateLocalClient(
@@ -3398,7 +3419,7 @@ void CLobby::LaunchGame(
   }
 
   sessionInfo->mMapName = build.mapName;
-  sessionInfo->mLaunchInfo = boost::static_pointer_cast<LaunchInfoBase>(launchInfo);
+  sessionInfo->mLaunchInfo = std::static_pointer_cast<LaunchInfoBase>(launchInfo);
 
   RunScript("GameLaunched");
   WLD_BeginSession(sessionInfo);
@@ -3511,7 +3532,11 @@ namespace
   moho::CScrLuaInitForm* register_moho_lobby_methods()
   {
     static moho::CScrLuaClassBinder binder(
-      moho::SCR_UserLuaInitSet(), "moho.lobby_methods", &moho::CScrLuaMetatableFactory<moho::CLobby>::Instance(), "CLobby", ""
+      moho::SCR_UserLuaInitSet(),
+      "moho.lobby_methods",
+      &moho::CScrLuaMetatableFactory<moho::CLobby>::Instance(),
+      "CLobby",
+      ""
     );
     return &binder;
   }

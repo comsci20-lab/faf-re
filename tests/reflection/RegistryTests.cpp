@@ -25,7 +25,7 @@
 #include "moho/entity/Prop.h"
 #include "moho/unit/core/Unit.h"
 
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
 #include "moho/ui/UiStateTypes.h"
 #endif
 
@@ -103,14 +103,20 @@ namespace
   public:
     using AddMembersFn = void (*)(gpg::RType&);
 
-    TestTypeInfo(const char* const name, const AddMembersFn addMembers)
+    TestTypeInfo(
+      const char* const name,
+      const AddMembersFn addMembers
+    )
       : mName(name)
       , mAddMembers(addMembers)
     {
       gpg::PreRegisterRType(typeid(T), this);
     }
 
-    [[nodiscard]] const char* GetName() const override { return mName; }
+    [[nodiscard]] const char* GetName() const override
+    {
+      return mName;
+    }
 
     void Init() override
     {
@@ -126,7 +132,9 @@ namespace
   };
 
   template <class Derived, class Base>
-  void AddTestBase(gpg::RType& type)
+  void AddTestBase(
+    gpg::RType& type
+  )
   {
     gpg::RType* const base = gpg::RTypeOf<Base>();
     type.AddBase(gpg::RField{base->GetName(), base, gpg::BaseSubobjectOffset<Derived, Base>()});
@@ -173,14 +181,22 @@ namespace
     type.AddField<int>("mid", offsetof(ReflSorted, mid));
   });
 
-  TestTypeInfo<ReflCounted> gCountedType("faf_reflection_tests::ReflCounted", [](gpg::RType&) { ++gCountedInits; });
+  TestTypeInfo<ReflCounted> gCountedType("faf_reflection_tests::ReflCounted", [](gpg::RType&) {
+    ++gCountedInits;
+  });
 
   class FlagsTypeInfo final : public gpg::REnumType
   {
   public:
-    FlagsTypeInfo() { gpg::PreRegisterRType(typeid(ReflFlags), this); }
+    FlagsTypeInfo()
+    {
+      gpg::PreRegisterRType(typeid(ReflFlags), this);
+    }
 
-    [[nodiscard]] const char* GetName() const override { return "faf_reflection_tests::ReflFlags"; }
+    [[nodiscard]] const char* GetName() const override
+    {
+      return "faf_reflection_tests::ReflFlags";
+    }
 
     void Init() override
     {
@@ -200,10 +216,15 @@ namespace
   class LooseType final : public gpg::RType
   {
   public:
-    [[nodiscard]] const char* GetName() const override { return "faf_reflection_tests::Loose"; }
+    [[nodiscard]] const char* GetName() const override
+    {
+      return "faf_reflection_tests::Loose";
+    }
   };
 
-  std::vector<std::string> FieldNames(const gpg::RType* const type)
+  std::vector<std::string> FieldNames(
+    const gpg::RType* const type
+  )
   {
     std::vector<std::string> names;
     for (const gpg::RField& field : type->fields_) {
@@ -217,7 +238,9 @@ namespace
   // ---------------------------------------------------------------------------------------------
 
   template <class T>
-  void ExpectPrimitive(const char* const name)
+  void ExpectPrimitive(
+    const char* const name
+  )
   {
     gpg::RType* const type = gpg::RTypeOf<T>();
     ASSERT_NE(type, nullptr) << name;
@@ -232,7 +255,10 @@ namespace
     EXPECT_EQ(type->IsPointer(), nullptr) << name;
   }
 
-  TEST(ReflectionRegistry, PrimitiveTypesHaveTheBinarysNames)
+  TEST(
+    ReflectionRegistry,
+    PrimitiveTypesHaveTheBinarysNames
+  )
   {
     // The names the type infos return (RIntegerTypes.cpp charTypeInfo 0x008DFAD0 ..., floatTypeInfo 0x008E0410,
     // boolTypeInfo, stringTypeInfo): a saved archive names its types by these strings.
@@ -247,10 +273,54 @@ namespace
     ExpectPrimitive<long>("long");
     ExpectPrimitive<unsigned long>("unsigned long");
     ExpectPrimitive<float>("float");
-    ExpectPrimitive<fa::string>("std::string");
+    ExpectPrimitive<fa::string>("string"); // retail's name, 0x008E0500
   }
 
-  TEST(ReflectionRegistry, UnknownAndNullNamesFindNothing)
+  TEST(
+    ReflectionRegistry,
+    OldBoostPointerNamesBecomeTheCurrentOnes
+  )
+  {
+    const auto current = [](const char* const name) {
+      return std::string(gpg::REF_CurrentTypeName(name).c_str());
+    };
+    EXPECT_EQ(current("boost::shared_ptr<Moho::CIntelGrid>"), "shared_ptr<Moho::CIntelGrid>");
+    EXPECT_EQ(current("boost::weak_ptr<Moho::INetNATTraversalProvider>"), "weak_ptr<Moho::INetNATTraversalProvider>");
+    // Containers wrap their element's name, so the old names also sit inside other names.
+    EXPECT_EQ(current("list<boost::shared_ptr<Moho::STrigger>>"), "list<shared_ptr<Moho::STrigger>>");
+    EXPECT_EQ(
+      current("vector<boost::shared_ptr<boost::weak_ptr<Moho::Entity>>>"), "vector<shared_ptr<weak_ptr<Moho::Entity>>>"
+    );
+    // Anything else comes back as it was.
+    EXPECT_EQ(current("shared_ptr<Moho::CIntelGrid>"), "shared_ptr<Moho::CIntelGrid>");
+    EXPECT_EQ(current("Moho::Entity"), "Moho::Entity");
+    EXPECT_EQ(current("boost::thread"), "boost::thread");
+    EXPECT_EQ(current(""), "");
+    EXPECT_EQ(current(nullptr), "");
+    // Earlier builds named retail's `string` `std::string`; a whole word only.
+    EXPECT_EQ(current("std::string"), "string");
+    EXPECT_EQ(current("vector<std::string>"), "vector<string>");
+    EXPECT_EQ(current("std::stringstream"), "std::stringstream");
+    EXPECT_EQ(current("Moho::std::string_view"), "Moho::std::string_view");
+    EXPECT_EQ(gpg::REF_FindTypeNamed("std::string"), gpg::RTypeOf<fa::string>());
+    // The other names earlier builds wrote for types retail names otherwise; whole words only.
+    EXPECT_EQ(current("TStr"), "TString");
+    EXPECT_EQ(current("map<TStr,int>"), "map<TString,int>");
+    EXPECT_EQ(current("TString"), "TString");
+    EXPECT_EQ(current("TStrings"), "TStrings");
+    EXPECT_EQ(current("gpg::MemBuffer<const char>"), "gpg::MemBuffer<char const>");
+    EXPECT_EQ(current("moho::CUnitPodAssist"), "CUnitPodAssist");
+    EXPECT_EQ(current("moho::CUnitWaitForFerryTask"), "CUnitWaitForFerryTask");
+    EXPECT_EQ(current("moho::CUnitPodAssistX"), "moho::CUnitPodAssistX");
+    EXPECT_EQ(current("Moho::CUnitPodAssist"), "Moho::CUnitPodAssist");
+    // An old name whose current form isn't registered finds nothing.
+    EXPECT_EQ(gpg::REF_FindTypeNamed("boost::shared_ptr<faf_reflection_tests::NoSuchType>"), nullptr);
+  }
+
+  TEST(
+    ReflectionRegistry,
+    UnknownAndNullNamesFindNothing
+  )
   {
     EXPECT_EQ(gpg::REF_FindTypeNamed(nullptr), nullptr);
     EXPECT_EQ(gpg::REF_FindTypeNamed(""), nullptr);
@@ -260,18 +330,25 @@ namespace
     EXPECT_EQ(gpg::REF_FindFirstTypeNamed({"faf_reflection_tests::NoSuchType"}), nullptr);
   }
 
-  TEST(ReflectionRegistry, LookingUpAnUnregisteredTypeThrows)
+  TEST(
+    ReflectionRegistry,
+    LookingUpAnUnregisteredTypeThrows
+  )
   {
     try {
       (void)gpg::LookupRType(typeid(ReflNeverRegistered));
       FAIL() << "no throw";
     } catch (const std::runtime_error& error) {
-      EXPECT_NE(std::string(error.what()).find("Attempting to lookup the RType for"), std::string::npos) << error.what();
+      EXPECT_NE(std::string(error.what()).find("Attempting to lookup the RType for"), std::string::npos)
+        << error.what();
       EXPECT_NE(std::string(error.what()).find("before it is registered."), std::string::npos) << error.what();
     }
   }
 
-  TEST(ReflectionRegistry, ALookedUpTypeIsInitialisedAndIndexedOnce)
+  TEST(
+    ReflectionRegistry,
+    ALookedUpTypeIsInitialisedAndIndexedOnce
+  )
   {
     // Preregistration alone neither initialises the type nor makes it findable by name (unless another test
     // already registered every type).
@@ -299,7 +376,10 @@ namespace
     EXPECT_EQ(seen, 1);
   }
 
-  TEST(ReflectionRegistry, RegisterAllTypesFinishesEveryPreregisteredType)
+  TEST(
+    ReflectionRegistry,
+    RegisterAllTypesFinishesEveryPreregisteredType
+  )
   {
     EXPECT_NO_THROW(gpg::REF_RegisterAllTypes());
 
@@ -315,7 +395,10 @@ namespace
     EXPECT_GE(gpg::GetRTypeVec().size(), gpg::REF_GetTypeCount());
   }
 
-  TEST(ReflectionRegistry, EveryRegisteredNameFindsItsOwnType)
+  TEST(
+    ReflectionRegistry,
+    EveryRegisteredNameFindsItsOwnType
+  )
   {
     // An archive names a type by string and the reader finds it with REF_FindTypeNamed (ReadArchive's type
     // handle), so two types under one name would load one as the other.
@@ -334,7 +417,10 @@ namespace
     EXPECT_TRUE(clashes.empty()) << clashes.size() << " names shared by more than one type:\n" << list;
   }
 
-  TEST(ReflectionRegistry, RTypeIsItselfAReflectedObject)
+  TEST(
+    ReflectionRegistry,
+    RTypeIsItselfAReflectedObject
+  )
   {
     gpg::RType* const typeClass = gpg::RType::StaticGetClass();
     ASSERT_NE(typeClass, nullptr);
@@ -351,7 +437,10 @@ namespace
     EXPECT_EQ(self.mType, typeClass);
   }
 
-  TEST(ReflectionRegistry, NewRefWithoutAConstructorThrowsBadRefCast)
+  TEST(
+    ReflectionRegistry,
+    NewRefWithoutAConstructorThrowsBadRefCast
+  )
   {
     gpg::RType* const floatType = gpg::RTypeOf<float>();
     ASSERT_EQ(floatType->newRefFunc_, nullptr);
@@ -363,7 +452,10 @@ namespace
     }
   }
 
-  TEST(ReflectionRegistry, BaseLexicalIsTheNameAndAddress)
+  TEST(
+    ReflectionRegistry,
+    BaseLexicalIsTheNameAndAddress
+  )
   {
     // RType::GetLexical 0x008DB100 formats "%s at 0x%p"; SetLexical 0x008D86E0 refuses.
     ReflSorted object;
@@ -375,7 +467,10 @@ namespace
     EXPECT_FALSE(ref.SetLexical("anything"));
   }
 
-  TEST(ReflectionRegistry, Rect2TypesNameTheirEdgesXAndY)
+  TEST(
+    ReflectionRegistry,
+    Rect2TypesNameTheirEdgesXAndY
+  )
   {
     // Rect2iTypeInfo::Init 0x00906270, Rect2fTypeInfo::Init 0x009062D0: fields x0/y0/x1/y1 over x0/z0/x1/z1.
     for (gpg::RType* const type : {gpg::RTypeOf<gpg::Rect2i>(), gpg::RTypeOf<gpg::Rect2f>()}) {
@@ -400,7 +495,10 @@ namespace
   // Fields, bases and casts
   // ---------------------------------------------------------------------------------------------
 
-  TEST(ReflectionTypeLayout, FieldsAreSortedByNameAndFoundByName)
+  TEST(
+    ReflectionTypeLayout,
+    FieldsAreSortedByNameAndFoundByName
+  )
   {
     gpg::RType* const type = gpg::RTypeOf<ReflSorted>();
     EXPECT_EQ(FieldNames(type), (std::vector<std::string>{"alpha", "mid", "zeta"}));
@@ -418,7 +516,10 @@ namespace
     EXPECT_EQ(gpg::RTypeOf<ReflPad>()->GetFieldNamed("pad"), nullptr); // no fields at all
   }
 
-  TEST(ReflectionTypeLayout, RRefWalksFieldsAtTheirAddresses)
+  TEST(
+    ReflectionTypeLayout,
+    RRefWalksFieldsAtTheirAddresses
+  )
   {
     ReflSorted object{1, 2, 3};
     const gpg::RRef ref{&object, gpg::RTypeOf<ReflSorted>()};
@@ -436,7 +537,10 @@ namespace
     EXPECT_EQ(ref.GetCount(), 0u);
   }
 
-  TEST(ReflectionTypeLayout, BasesFlattenTheirFieldsAtTheBaseOffset)
+  TEST(
+    ReflectionTypeLayout,
+    BasesFlattenTheirFieldsAtTheBaseOffset
+  )
   {
     gpg::RType* const type = gpg::RTypeOf<ReflDerived>();
     ASSERT_EQ(type->bases_.size(), 2u);
@@ -467,7 +571,10 @@ namespace
     EXPECT_EQ(ref.GetBase(1).mType, gpg::RTypeOf<ReflOther>());
   }
 
-  TEST(ReflectionTypeLayout, IsDerivedFromAddsTheOffsetsAlongThePath)
+  TEST(
+    ReflectionTypeLayout,
+    IsDerivedFromAddsTheOffsetsAlongThePath
+  )
   {
     gpg::RType* const grand = gpg::RTypeOf<ReflGrand>();
     gpg::RType* const derived = gpg::RTypeOf<ReflDerived>();
@@ -494,7 +601,10 @@ namespace
     EXPECT_FALSE(grand->IsDerivedFrom(gpg::RTypeOf<int>(), &offset));
   }
 
-  TEST(ReflectionTypeLayout, AnAmbiguousBaseThrowsOnlyWhenTheOffsetIsAsked)
+  TEST(
+    ReflectionTypeLayout,
+    AnAmbiguousBaseThrowsOnlyWhenTheOffsetIsAsked
+  )
   {
     // 0x008DC089: a second matching base path throws; 0x008DC090: without an offset the first match returns.
     gpg::RType* const diamond = gpg::RTypeOf<ReflDiamond>();
@@ -512,7 +622,10 @@ namespace
     EXPECT_EQ(offset, (gpg::BaseSubobjectOffset<ReflDiamond, ReflRight>()));
   }
 
-  TEST(ReflectionTypeLayout, UpcastFindsTheBaseSubobject)
+  TEST(
+    ReflectionTypeLayout,
+    UpcastFindsTheBaseSubobject
+  )
   {
     ReflGrand object;
     const gpg::RRef ref{&object, gpg::RTypeOf<ReflGrand>()};
@@ -537,7 +650,10 @@ namespace
     EXPECT_EQ(untyped.mType, nullptr);
   }
 
-  TEST(ReflectionTypeLayout, EngineUnitAndPropSitOnEntityAtTheirLayoutOffsets)
+  TEST(
+    ReflectionTypeLayout,
+    EngineUnitAndPropSitOnEntityAtTheirLayoutOffsets
+  )
   {
     // The registrations of real engine classes (UnitTypeInfo::AddBase_Entity 0x006B0F50, PropTypeInfo
     // 0x006FAD70) against the compiler's layout of the same classes.
@@ -562,7 +678,10 @@ namespace
     EXPECT_GE(unit->size_, static_cast<int>(sizeof(moho::Entity)));
   }
 
-  TEST(ReflectionTypeLayout, VersionIsSetOnceAndAConflictAsserts)
+  TEST(
+    ReflectionTypeLayout,
+    VersionIsSetOnceAndAConflictAsserts
+  )
   {
     LooseType type;
     EXPECT_EQ(type.version_, 0);
@@ -573,7 +692,10 @@ namespace
     EXPECT_NONFATAL_FAILURE(type.Version(3), "version_ == 0 || version_ == version");
   }
 
-  TEST(ReflectionTypeLayout, AddingToAFinishedTypeAsserts)
+  TEST(
+    ReflectionTypeLayout,
+    AddingToAFinishedTypeAsserts
+  )
   {
     LooseType type;
     type.initFinished_ = true;
@@ -582,7 +704,10 @@ namespace
     EXPECT_NONFATAL_FAILURE(type.Finish(), "!initFinished_");
   }
 
-  TEST(ReflectionTypeLayout, AxisAlignedBoxFieldsAreSixFloats)
+  TEST(
+    ReflectionTypeLayout,
+    AxisAlignedBoxFieldsAreSixFloats
+  )
   {
     // RType::AddBlueprintAxisAlignedBox3f 0x004EA0E0: min xyz at 0/4/8, max xyz at 0x0C/0x10/0x14.
     LooseType type;
@@ -596,7 +721,10 @@ namespace
     }
   }
 
-  TEST(ReflectionTypeLayout, AddBaseIfPresentSkipsAMissingBase)
+  TEST(
+    ReflectionTypeLayout,
+    AddBaseIfPresentSkipsAMissingBase
+  )
   {
     LooseType type;
     gpg::AddBaseIfPresent(&type, nullptr, 8);
@@ -609,7 +737,10 @@ namespace
     EXPECT_EQ(type.fields_[1].mOffset, 8 + static_cast<int>(offsetof(ReflBase, b)));
   }
 
-  TEST(ReflectionTypeLayout, FieldRecordsStartEmpty)
+  TEST(
+    ReflectionTypeLayout,
+    FieldRecordsStartEmpty
+  )
   {
     const gpg::RField empty;
     EXPECT_EQ(empty.mName, nullptr);
@@ -636,7 +767,10 @@ namespace
   // Enum types
   // ---------------------------------------------------------------------------------------------
 
-  TEST(ReflectionEnum, OptionsKeepTheirOrderWithThePrefixStripped)
+  TEST(
+    ReflectionEnum,
+    OptionsKeepTheirOrderWithThePrefixStripped
+  )
   {
     const gpg::REnumType* const type = gpg::RTypeOf<ReflFlags>()->IsEnumType();
     ASSERT_NE(type, nullptr);
@@ -659,7 +793,10 @@ namespace
     EXPECT_EQ(value, 4);
   }
 
-  TEST(ReflectionEnum, LexicalFormIsTheOptionNameOrTheNumber)
+  TEST(
+    ReflectionEnum,
+    LexicalFormIsTheOptionNameOrTheNumber
+  )
   {
     ReflFlags flags = TF_Beta;
     const gpg::RRef ref{&flags, gpg::RTypeOf<ReflFlags>()};
@@ -670,7 +807,10 @@ namespace
     EXPECT_EQ(ref.GetLexical().view(), "-3"sv);
   }
 
-  TEST(ReflectionEnum, SetLexicalTakesNamesNumbersAndOrs)
+  TEST(
+    ReflectionEnum,
+    SetLexicalTakesNamesNumbersAndOrs
+  )
   {
     ReflFlags flags = TF_Alpha;
     const gpg::RRef ref{&flags, gpg::RTypeOf<ReflFlags>()};
@@ -697,8 +837,11 @@ namespace
     EXPECT_FALSE(gpg::RTypeOf<ReflFlags>()->SetLexical(gpg::RRef{nullptr, gpg::RTypeOf<ReflFlags>()}, "Beta"));
   }
 
-#if defined(_WIN32)
-  TEST(ReflectionEnum, CurrentUiStateRefNamesTheEngineEnum)
+#if FAFRE_PLATFORM_WINDOWS
+  TEST(
+    ReflectionEnum,
+    CurrentUiStateRefNamesTheEngineEnum
+  )
   {
     // RRef::CurrentUIState 0x0084AB10 over moho::sUIState; EUIStateTypeInfo::AddEnums 0x0083CC60 ("UIS_" prefix).
     const moho::EUIState saved = moho::sUIState;

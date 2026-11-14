@@ -4,14 +4,6 @@
 
 namespace
 {
-  /**
-   * Address: 0x004AFF20 (FUN_004AFF20, nullsub_745)
-   *
-   * What it does:
-   * No-op helper thunk retained for callsite parity.
-   */
-  [[maybe_unused]] void NoOpHelperThunk() noexcept {}
-
 } // namespace
 
 /**
@@ -22,10 +14,12 @@ namespace
  * What it does:
  * Copy-constructs one script activation entry from another activation lane.
  */
-moho::ScrActivation::ScrActivation(const ScrActivation& other)
-  : file(),
-    name(),
-    line(0)
+moho::ScrActivation::ScrActivation(
+  const ScrActivation& other
+)
+  : file()
+  , name()
+  , line(0)
 {
   file.assign(other.file, 0U, fa::string::npos);
   name.assign(other.name, 0U, fa::string::npos);
@@ -46,9 +40,9 @@ moho::ScrActivation::ScrActivation(
   const fa::string& activationName,
   const int lineNumber
 )
-  : file(),
-    name(),
-    line(0)
+  : file()
+  , name()
+  , line(0)
 {
   file.assign(filePath, 0U, fa::string::npos);
   name.assign(activationName, 0U, fa::string::npos);

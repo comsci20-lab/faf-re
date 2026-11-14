@@ -20,15 +20,19 @@ set(FAF_REMOTE_SOURCES
   remote/ViewFrames.cpp
   remote/ViewLanes.cpp
   remote/SyncRouting.cpp
+  remote/ViewAudit.cpp
   remote/ViewIdMap.cpp
   remote/ViewJobs.cpp
   remote/InboundIds.cpp
   remote/ServerClient.cpp
   remote/FrameWindow.cpp
   remote/ArmyRecords.cpp
+  remote/CommandRecords.cpp
   remote/wire/ArmyLane.cpp
   remote/wire/LuaSyncLane.cpp
   remote/wire/BitStream.cpp
+  remote/wire/CommandLane.cpp
+  remote/wire/EffectLane.cpp
   remote/wire/EntityFrame.cpp
   remote/wire/IntelGridDelta.cpp
   remote/wire/NameTable.cpp
@@ -43,6 +47,13 @@ set(FAF_REMOTE_SOURCES
 
 set(FAF_REMOTE_CLIENT_SOURCES
   remote/client/BeatClock.cpp
+  remote/client/BeatSynthesis.cpp
+  remote/client/CommandLaneApplier.cpp
+  remote/client/DisplayModel.cpp
+  remote/client/InterpBuffer.cpp
+  remote/client/EffectBlueprint.cpp
+  remote/client/EffectHosting.cpp
+  remote/client/EffectLaneApplier.cpp
   remote/client/GridSnapshots.cpp
   remote/client/LoopbackCommands.cpp
   remote/client/LoopbackLink.cpp

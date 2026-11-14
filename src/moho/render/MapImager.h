@@ -93,7 +93,7 @@ namespace moho
     void UpdateMeshStances();
 
   public:
-    fa::vector<MeshInstance*> mMeshInstances;          // +0x04
+    fa::vector<MeshInstance*> mMeshInstances; // +0x04
   };
 
 #if defined(MOHO_ABI_MSVC8_COMPAT)
@@ -109,14 +109,6 @@ namespace moho
    * the active simulation-driver sync-filter option flag when present.
    */
   void REN_ShowSkeletons();
-
-  /**
-   * Address: 0x007FA720 (FUN_007FA720, Moho::REN_RenderShadowDebugOverlay)
-   *
-   * What it does:
-   * No-op shadow debug overlay callback lane retained for binary parity.
-   */
-  void REN_RenderShadowDebugOverlay();
 
   /**
    * Address: 0x007F6560 (FUN_007F6560, Moho::REN_MapBorderAdd)
@@ -135,15 +127,6 @@ namespace moho
    * decoration meshes when a viewport is present.
    */
   void REN_MapBorderClear(const fa::vector<fa::string>& args);
-
-  /**
-   * Address: 0x007FA1E0 (FUN_007FA1E0, sub_7FA1E0)
-   *
-   * What it does:
-   * Adds one border mesh blueprint to the active viewport map-imager lane
-   * when a render viewport exists.
-   */
-  void REN_AddBorderToActiveViewport(const fa::string& meshBlueprintPath);
 
   /**
    * Address: 0x00848260 (FUN_00848260, cfunc_MapBorderAdd)
