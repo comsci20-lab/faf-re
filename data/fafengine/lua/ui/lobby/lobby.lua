@@ -354,8 +354,8 @@ function CreateUI(maxPlayers)
         local panel = buttonAnchor:GetParent()
         local offset = panel.Top() - panel:GetParent().Top()
         -- Reserve a row above the observer box while keeping the existing buttons in place.
-        panel.Top:Set(function() return panel:GetParent().Top() + offset + Layout.ScaleNumber(40) end)
-        optionsAnchor.Top:Set(function() return panel.Top() - Layout.ScaleNumber(134) end)
+        panel.Top:Set(function() return panel:GetParent().Top() + offset + LayoutHelpers.ScaleNumber(40) end)
+        optionsAnchor.Top:Set(function() return panel.Top() - LayoutHelpers.ScaleNumber(134) end)
     end
     if connection then ConnectionTest.Show(parent, buttonAnchor) end
     if singlePlayer then return end
