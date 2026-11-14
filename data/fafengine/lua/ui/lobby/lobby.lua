@@ -2,8 +2,61 @@
 -- scales control geometry and font point sizes, preserving native-resolution
 -- text rendering instead of stretching a rendered menu. Keep FAF's supported
 -- scales: some in-game artwork is selected by these exact values.
+local rebuildingLobbyForScale = false
 do
     local OriginalShowLobbyOptionsDialog = ShowLobbyOptionsDialog
+
+    local function ApplyLobbyScale(scale)
+        local chatHistory = GUI.chatDisplay.ChatHistory
+        local draft = GUI.chatEdit:GetText()
+        local chatTop = GUI.chatPanel.top
+        local atBottom = GUI.chatPanel:IsScrolledToBottom()
+        local slots = {}
+        for index, slot in ipairs(GUI.slots) do
+            slots[index] = {
+                factions = slot.AvailableFactions,
+                icons = slot.faction._array,
+                hidden = slot:IsHidden(),
+            }
+        end
+
+        -- Keep the lobby root, network callbacks and keepalive thread. Recreate
+        -- the controls whose fonts and dimensions are fixed at construction.
+        rebuildingLobbyForScale = true
+        KillThread(GUI.pingThread)
+        GUI.uiCreated = false
+        GUI:ClearChildren()
+        GUI.background = nil
+        GUI.briefing = nil
+        GUI.lobbyOptionsDialog = nil
+        LrgMap = false
+        GUI.optionControls = {}
+        GUI.slots = {}
+        EscapeHandler.PopEscapeHandler()
+        LayoutHelpers.SetPixelScaleFactor(scale)
+        CreateUI(LobbyComm.maxPlayerSlots)
+        rebuildingLobbyForScale = false
+        -- Keep map-specific faction indices and visibility so UpdateGame does
+        -- not treat the new controls as a change to the map or player slots.
+        for index, state in ipairs(slots) do
+            local slot = GUI.slots[index]
+            if state.icons then slot.faction:ChangeBitmapArray(state.icons) end
+            slot.AvailableFactions = state.factions
+            slot:SetHidden(state.hidden)
+        end
+        UpdateGame()
+
+        GUI.chatDisplay.ChatHistory = chatHistory
+        GUI.chatDisplay:ReflowLines()
+        if atBottom then
+            GUI.chatPanel:ScrollToBottom()
+        else
+            GUI.chatPanel:ScrollSetTop(nil, chatTop)
+        end
+        GUI.chatEdit:SetText(draft)
+        ShowLobbyOptionsDialog()
+    end
+
     function ShowLobbyOptionsDialog()
         OriginalShowLobbyOptionsDialog()
         local dialog = GUI.lobbyOptionsDialog
@@ -23,7 +76,7 @@ do
         -- border, centering and bottom-anchored Close button remain correct.
         Layout.SetHeight(content, 370)
         dialog.Height:Set(content.Height())
-        local current = Preferences.GetOption('ui_scale') or 1
+        local current = Layout.GetPixelScaleFactor()
         local selected = 1
         for index = 1, count do
             if math.abs(scales[index] - current) < math.abs(scales[selected] - current) then
@@ -40,13 +93,27 @@ do
             UIUtil.SkinnableFile('/slider02/slider-back_bmp.dds'))
         Layout.AtLeftTopIn(slider, content, 20, 275)
         slider:SetValue(selected)
-        slider.OnValueChanged = function(self, value)
+        local function GetScale(value)
             local index = math.max(1, math.min(count, math.floor(value + 0.5)))
-            local scale = scales[index]
-            Preferences.SetOption('ui_scale', scale)
+            return scales[index]
+        end
+        slider.OnValueChanged = function(self, value)
+            local scale = GetScale(value)
             label:SetText(string.format('Lobby / menu scale: %d%%', math.floor(scale * 100 + 0.5)))
         end
-        local hint = UIUtil.CreateText(content, 'All UI; takes effect after restarting the game.', 12, 'Arial', true)
+        slider.OnValueSet = function(self, value)
+            local scale = GetScale(value)
+            -- Wait for the native dragger to finish before destroying its slider.
+            ForkThread(function()
+                WaitFrames(1)
+                if GUI and GUI.lobbyOptionsDialog == dialog and not IsDestroyed(dialog) and not dialog:IsHidden()
+                    and scale ~= Layout.GetPixelScaleFactor() then
+                    ApplyLobbyScale(scale)
+                    Preferences.SetOption('ui_scale', scale)
+                end
+            end)
+        end
+        local hint = UIUtil.CreateText(content, 'Release the slider to apply the new scale.', 12, 'Arial', true)
         Layout.AtLeftTopIn(hint, content, 20, 305)
         Tooltip.AddControlTooltipManual(label, 'Lobby / menu scale',
             'Scales menus, dialogs, text and the in-game UI. Only sizes that fit this lobby window are offered. '
@@ -348,7 +415,8 @@ local function ShowColourPreferences()
 end
 
 function CreateUI(maxPlayers)
-    colourAttempt = nil
+    buttonAnchor, optionsAnchor = nil, nil
+    if not rebuildingLobbyForScale then colourAttempt = nil end
     originalCreateUI(maxPlayers)
     if buttonAnchor and optionsAnchor then
         local panel = buttonAnchor:GetParent()
@@ -360,6 +428,7 @@ function CreateUI(maxPlayers)
     if connection then ConnectionTest.Show(parent, buttonAnchor) end
     if singlePlayer then return end
     ShowColourPreferences()
+    if rebuildingLobbyForScale then return end
     ApplyPreferredColour()
 
     -- The lobby can load before selected UI mods are active as script hooks.

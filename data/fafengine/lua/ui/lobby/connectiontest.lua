@@ -116,8 +116,9 @@ local function Start()
 end
 
 function Show(parent, anchor)
-    if button then button:Destroy() end
-    if checksumButton then checksumButton:Destroy() end
+    if button and not IsDestroyed(button) then button:Destroy() end
+    if checksumButton and not IsDestroyed(checksumButton) then checksumButton:Destroy() end
+    if popup and IsDestroyed(popup) then popup, body = nil, nil end
     local checksums = GetPreference('microchip_extra_checksums', true) ~= false
     local function ApplyChecksums()
         ConExecute('net_CheckOrderStreams ' .. (checksums and '1' or '0'))

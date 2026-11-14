@@ -62,10 +62,11 @@ class Node:
             function SetPreference(key, value) preferences[key] = value end
             function ConExecute(command) table.insert(commands, command) end
             function LOG() end
+            function IsDestroyed(control) return control.destroyed end
             function control()
                 local c = {}
                 for _, name in ipairs({'Width', 'Height', 'Depth'}) do c[name] = {Set=function() end} end
-                c.Destroy = function() end
+                c.Destroy = function(self) self.destroyed = true end
                 c.SetFont = function() end
                 c.SetText = function(self, text) displayText = text end
                 return c
@@ -150,6 +151,7 @@ class ConnectionTests(unittest.TestCase):
                 function TryLaunch() end
                 function ReallyCreateLobby() created = true end
                 function CreateUI() end
+                Prefs = {GetFromCurrentProfile=function() end}
                 function import(path)
                     return {CreateLobbyComm=function() end, CreateButtonStd=function() end,
                         CreateScreenGroup=function() end, Reset=function() end}
