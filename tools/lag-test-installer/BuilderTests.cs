@@ -88,6 +88,13 @@ internal static class BuilderTests
             var settings = Setup.ReadSettings(prefs); var game = Setup.GameSettings(settings);
             Assert((int)settings["keep"] == 123 && (string)game["executionDirectory"] == engine, "Client preferences");
             Assert(((string)game["executableDecorator"]).Contains("ren_GpuSelectBrackets=0"), "Selection fix missing");
+            Assert(Setup.UsesX64(prefs, engine), "x64 mode not detected");
+            Setup.UseClassic(data, prefs);
+            game = Setup.GameSettings(Setup.ReadSettings(prefs));
+            Assert(!Setup.UsesX64(prefs, engine) && !game.ContainsKey("executionDirectory") && (string)game["executableDecorator"] == "\"%s\"", "Classic mode not restored");
+            Assert((int)Setup.ReadSettings(prefs)["keep"] == 123, "Classic mode lost other settings");
+            Setup.Connect(engine, prefs);
+            Assert(Setup.UsesX64(prefs, engine), "Swap back to x64 failed");
             string oldPrefs = File.ReadAllText(prefs);
             string enginePath = Path.Combine(engine, "main_x64.exe");
             File.WriteAllText(enginePath, "rollback sentinel");

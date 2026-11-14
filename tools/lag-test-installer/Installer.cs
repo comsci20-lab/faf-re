@@ -250,6 +250,25 @@ internal static class Setup
         game["executableDecorator"] = "\"" + Path.Combine(target, "main_x64.exe") + "\" /con lua_AllowPrecompiledChunks=1;ren_GpuSelectBrackets=0";
         return WriteFiles(target, new Dictionary<string, byte[]> { { Path.GetFullPath(prefs), Encoding.UTF8.GetBytes(Json.Serialize(settings)) } });
     }
+    // True when the FAF client currently launches games with this faf-re engine.
+    internal static bool UsesX64(string prefs, string target)
+    {
+        try
+        {
+            object directory; var game = GameSettings(ReadSettings(prefs));
+            return target != null && game.TryGetValue("executionDirectory", out directory) && directory is string
+                && string.Equals(Path.GetFullPath((string)directory).TrimEnd('\\'), Path.GetFullPath(target).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+    // Restores FAF's own launch defaults so the client runs the classic ForgedAlliance.exe again.
+    internal static string UseClassic(string backupRoot, string prefs)
+    {
+        var settings = ReadSettings(prefs); var game = GameSettings(settings);
+        game.Remove("executionDirectory");
+        game["executableDecorator"] = "\"%s\"";
+        return WriteFiles(backupRoot, new Dictionary<string, byte[]> { { Path.GetFullPath(prefs), Encoding.UTF8.GetBytes(Json.Serialize(settings)) } });
+    }
     internal static string Quote(string value)
     {
         var result = new StringBuilder("\""); int slashes = 0;
@@ -347,7 +366,8 @@ internal sealed class BuilderForm : Form
     readonly FafButton install = new FafButton { Left = 20, Top = 238, Width = 200, Height = 38, Text = "Install faf-re" };
     readonly FafButton lag = new FafButton { Left = 237, Top = 238, Width = 200, Height = 38, Text = "Install Lag Test" };
     readonly FafButton connect = new FafButton { Left = 454, Top = 238, Width = 216, Height = 38, Text = "Connect with FAF client" };
-    readonly FafButton refresh = new FafButton { Left = 565, Top = 69, Width = 105, Text = "Refresh" };
+    readonly Label modeInfo = new Label();
+    readonly FafButton refresh =new FafButton { Left = 565, Top = 69, Width = 105, Text = "Refresh" };
     readonly FafButton browseEngine = new FafButton { Left = 565, Top = 109, Width = 105, Text = "Browse..." };
     readonly FafButton browseData = new FafButton { Left = 565, Top = 149, Width = 105, Text = "Browse..." };
     readonly CheckBox parallel = new CheckBox { Text = "Enable parallel simulation", AutoSize = true };
@@ -364,7 +384,7 @@ internal sealed class BuilderForm : Form
         BackColor = Color.FromArgb(8, 14, 20); ForeColor = Color.FromArgb(218, 231, 238);
         DoubleBuffered = true;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen;
-        Controls.AddRange(new Control[] { versions, engines, data, closed, installedInfo, install, lag, connect, refresh, browseEngine, browseData, log, parallel, workers, applyThreading, allCores });
+        Controls.AddRange(new Control[] { versions, engines, data, closed, installedInfo, modeInfo, install, lag, connect, refresh, browseEngine, browseData, log, parallel, workers, applyThreading, allCores });
         ApplyTheme();
         data.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "FAForever");
         Detect();
@@ -377,7 +397,7 @@ internal sealed class BuilderForm : Form
         browseData.Click += delegate { using (var picker = new FolderBrowserDialog()) { if (picker.ShowDialog(this) == DialogResult.OK) data.Text = picker.SelectedPath; } };
         install.Click += async delegate { await Act("Build"); };
         lag.Click += async delegate { await Act("Lag"); };
-        connect.Click += async delegate { await Act("Connect"); };
+        connect.Click += async delegate { await Act(Setup.UsesX64(Setup.Prefs, Engine) ? "Classic" : "Connect"); };
         Shown += async delegate { await LoadVersions(); };
         FormClosing += (s, e) => { if (busy) { e.Cancel = true; MessageBox.Show(this, "Please wait for the current operation to finish."); } };
     }
@@ -410,12 +430,12 @@ internal sealed class BuilderForm : Form
         closed.SetBounds(44, 447, 810, 26); closed.ForeColor = muted; closed.BackColor = Color.FromArgb(17, 28, 38);
         Caption("02  /  BUILD ENGINE", 44, 519, 240, 10, cyan, FontStyle.Bold);
         Caption("03  /  PREPARE LOBBY", 334, 519, 240, 10, cyan, FontStyle.Bold);
-        Caption("04  /  CONNECT TO FAF", 624, 519, 240, 10, cyan, FontStyle.Bold);
+        Caption("04  /  FAF MODE", 624, 519, 240, 10, cyan, FontStyle.Bold);
         install.SetBounds(44, 554, 232, 44); install.Primary = true;
         lag.SetBounds(334, 554, 232, 44); connect.SetBounds(624, 554, 232, 44);
         Caption("Download, build and install faf-re.", 44, 611, 236, 9, muted);
         Caption("Detect, install or update Lag Test.", 334, 611, 236, 9, muted);
-        Caption("Set FAF to use your engine.", 624, 611, 236, 9, muted);
+        modeInfo.SetBounds(624, 611, 236, 26); modeInfo.ForeColor = cyan; modeInfo.BackColor = Color.Transparent; modeInfo.Font = new Font("Segoe UI", 9f);
         Caption("ACTIVITY LOG", 30, 674, 300, 10, cyan, FontStyle.Bold);
         log.SetBounds(30, 706, 840, 124); log.Font = new Font("Consolas", 9f);
         log.BackColor = Color.FromArgb(6, 12, 17); log.ForeColor = Color.FromArgb(169, 198, 212); log.BorderStyle = BorderStyle.FixedSingle;
@@ -492,7 +512,11 @@ internal sealed class BuilderForm : Form
     {
         install.Text = Engine == null ? "Install faf-re" : "Update / install version";
         install.Enabled = !busy && versions.SelectedItem != null;
-        lag.Enabled = connect.Enabled = applyThreading.Enabled = !busy && Engine != null;
+        lag.Enabled = applyThreading.Enabled = !busy && Engine != null;
+        bool x64 = Setup.UsesX64(Setup.Prefs, Engine);
+        connect.Text = x64 ? "Switch to classic FAF" : "Switch to x64 faf-re";
+        connect.Enabled = !busy && (Engine != null || x64);
+        modeInfo.Text = x64 ? "FAF currently launches: x64 faf-re" : "FAF currently launches: classic";
         try { lag.Text = Setup.LagTestCurrent(Engine) ? "Already installed" : Setup.LagTestInstalled(Engine) ? "Update Lag Test" : "Install Lag Test"; }
         catch { lag.Text = "Update Lag Test"; }
         allCores.Enabled = parallel.Enabled = !busy; workers.Enabled = !busy && parallel.Checked;
@@ -509,6 +533,9 @@ internal sealed class BuilderForm : Form
     {
         if (action == "Lag" && Setup.LagTestCurrent(Engine)) { MessageBox.Show(this, "Lag Test is already installed and up to date.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         if (!closed.Checked) { MessageBox.Show(this, "Close the FAF client and game, then tick the confirmation box."); return; }
+        // The client keeps its settings in memory and saves them on exit, which would undo a mode change.
+        if ((action == "Connect" || action == "Classic") && Process.GetProcessesByName("faf-client").Length > 0)
+        { MessageBox.Show(this, "The FAF client is still running (check the system tray). Quit it fully, then try again.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         string target = Engine, root = data.Text;
         bool useAllCores = allCores.Checked; bool enableWorkers = parallel.Checked; int workerCount = (int)workers.Value;
         var version = versions.SelectedItem as VersionChoice;
@@ -520,6 +547,7 @@ internal sealed class BuilderForm : Form
             string backup = await Task.Run(() => {
                 if (action == "Threading") return Setup.SetThreading(target, enableWorkers, workerCount, useAllCores);
                 if (action == "Connect") return Setup.Connect(target, Setup.Prefs);
+                if (action == "Classic") return Setup.UseClassic(target ?? root, Setup.Prefs);
                 if (action == "Lag") { Setup.RunWorker("Runtime", null, Progress); return Setup.InstallHooks(target); }
                 Progress("Downloading/building " + version.Label + ". FAF launch settings will remain unchanged.");
                 string output = Setup.RunWorker("Build", version.Revision, Progress);
@@ -527,7 +555,7 @@ internal sealed class BuilderForm : Form
             });
             Progress("Completed. Backup: " + backup);
             Detect(action == "Build" ? (target ?? Path.Combine(root, "bin_x64")) : target);
-            MessageBox.Show(this, action == "Threading" ? "CPU settings saved. Close and relaunch the game to apply all changes." : action == "Connect" ? "FAF client connected to faf-re. Open FAF to play." : "All installed, ready to go.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, action == "Threading" ? "CPU settings saved. Close and relaunch the game to apply all changes." : action == "Connect" ? "FAF now launches x64 faf-re. Open FAF to play." : action == "Classic" ? "FAF now launches classic Forged Alliance. Open FAF to play." : "All installed, ready to go.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception error) { Progress("ERROR: " + error.Message); MessageBox.Show(this, error.Message, "Operation failed", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally { busy = false; UpdateButtons(); }
