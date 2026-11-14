@@ -424,6 +424,10 @@ function CreateUI(maxPlayers)
         -- Reserve a row above the observer box while keeping the existing buttons in place.
         panel.Top:Set(function() return panel:GetParent().Top() + offset + LayoutHelpers.ScaleNumber(40) end)
         optionsAnchor.Top:Set(function() return panel.Top() - LayoutHelpers.ScaleNumber(134) end)
+        -- The lowered observer panel would overlap Launch Game; keep the button below it.
+        local launch = GUI.launchGameButton
+        if launch then
+            launch.Top:Set(function() return panel.Bottom() + LayoutHelpers.ScaleNumber(4) end)        end
     end
     if connection then ConnectionTest.Show(parent, buttonAnchor) end
     if singlePlayer then return end
