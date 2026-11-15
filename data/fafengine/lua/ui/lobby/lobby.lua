@@ -504,3 +504,136 @@ function CreateUI(maxPlayers)
 end
 
 end
+
+-- Not in retail: typing "/" in lobby chat lists the chat commands; click one to fill it in.
+-- "/lag report" prints every human's lag score (waitscores.lua) to your own chat;
+-- "/lag report all" sends it to the lobby.
+local function LagReportLines()
+    local lines, rows = {}, {}
+    for slot, player in pairs(gameInfo and gameInfo.PlayerOptions or {}) do
+        if player and player.Human and player.PlayerName then
+            local ok, score = pcall(WaitScores.Get, player.PlayerName)
+            score = ok and score or nil
+            table.insert(rows, {name = player.PlayerName, score = score})
+        end
+    end
+    table.sort(rows, function(a, b)
+        local av, bv = a.score and a.score.average or -1, b.score and b.score.average or -1
+        if av ~= bv then return av > bv end
+        return a.name < b.name
+    end)
+    for _, row in ipairs(rows) do
+        if row.score then
+            table.insert(lines, string.format('%s: %.1fs (worst in %d of %d games)',
+                row.name, row.score.average, row.score.worstGames, row.score.games))
+        else
+            table.insert(lines, row.name .. ': no lag recorded')
+        end
+    end
+    return lines
+end
+
+commands.lag = function(params)
+    local words = {}
+    for word in string.gfind(string.lower(params or ''), '%S+') do table.insert(words, word) end
+    if words[1] ~= 'report' then
+        AddChatText('Usage: /lag report  (add "all" to send it to the lobby)')
+        return
+    end
+    local lines = LagReportLines()
+    if table.getn(lines) == 0 then lines = {'No players in the lobby.'} end
+    if words[2] == 'all' then
+        PublicChat('Lag report (avg wait in games where the player was worst):')
+        for _, line in ipairs(lines) do PublicChat(line) end
+    else
+        AddChatText('Lag report (avg wait in games where the player was worst):')
+        for _, line in ipairs(lines) do AddChatText(line) end
+    end
+end
+
+local chatCommandList = {
+    {text = '/lag report', help = 'show each player\'s lag score'},
+    {text = '/lag report all', help = 'send the lag report to the lobby'},
+    {text = '/whisper ', help = '<name> <message>  private message (also /w, /pm)'},
+}
+
+local function CreateCommandMenu()
+    local edit = GUI and GUI.chatEdit
+    if not edit then return end
+    local Group = import('/lua/maui/group.lua').Group
+    local Bitmap = import('/lua/maui/bitmap.lua').Bitmap
+    local menu = Group(edit:GetParent())
+    menu:Hide()
+    menu.Depth:Set(function() return edit.Depth() + 50 end)
+    LayoutHelpers.Above(menu, edit, 4)
+    LayoutHelpers.AtLeftIn(menu, edit)
+    menu.Width:Set(LayoutHelpers.ScaleNumber(420))
+    local rowHeight = LayoutHelpers.ScaleNumber(20)
+    menu.Height:Set(rowHeight * table.getn(chatCommandList) + LayoutHelpers.ScaleNumber(6))
+    local bg = Bitmap(menu)
+    bg:SetSolidColor('E0101418')
+    LayoutHelpers.FillParent(bg, menu)
+    menu.rows = {}
+    for i, entry in ipairs(chatCommandList) do
+        local command = entry
+        local row = Bitmap(menu)
+        row:SetSolidColor('00000000')
+        row.Left:Set(menu.Left)
+        row.Right:Set(menu.Right)
+        row.Height:Set(rowHeight)
+        row.Top:Set(function() return menu.Top() + LayoutHelpers.ScaleNumber(3) + rowHeight * (row.index - 1) end)
+        row.index = i
+        local label = UIUtil.CreateText(row, command.text .. '   ' .. command.help, 13, 'Arial')
+        label:DisableHitTest()
+        LayoutHelpers.AtLeftIn(label, row, 6)
+        LayoutHelpers.AtVerticalCenterIn(label, row)
+        row.command = command
+        row.HandleEvent = function(self, event)
+            if event.Type == 'MouseEnter' then self:SetSolidColor('60406080')
+            elseif event.Type == 'MouseExit' then self:SetSolidColor('00000000')
+            elseif event.Type == 'ButtonPress' then
+                edit:SetText(self.command.text)
+                edit:AcquireFocus()
+                return true
+            end
+        end
+        menu.rows[i] = row
+    end
+    local function Refresh(text)
+        text = text or ''
+        if string.sub(text, 1, 1) ~= '/' then menu:Hide(); return end
+        local typed = string.lower(text)
+        local shown = 0
+        for _, row in ipairs(menu.rows) do
+            if string.sub(string.lower(row.command.text), 1, string.len(typed)) == typed and typed ~= row.command.text then
+                shown = shown + 1
+                row.index = shown
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+        if shown == 0 then menu:Hide(); return end
+        menu.Height:Set(rowHeight * shown + LayoutHelpers.ScaleNumber(6))
+        menu:Show()
+    end
+    local originalChanged = edit.OnTextChanged
+    edit.OnTextChanged = function(self, newText, oldText)
+        Refresh(newText)
+        if originalChanged then return originalChanged(self, newText, oldText) end
+    end
+    local originalEnter = edit.OnEnterPressed
+    edit.OnEnterPressed = function(self, text)
+        menu:Hide()
+        return originalEnter(self, text)
+    end
+    GUI.microchipCommandMenu = menu
+end
+
+local originalCommandMenuCreateUI = CreateUI
+function CreateUI(maxPlayers)
+    local result = originalCommandMenuCreateUI(maxPlayers)
+    local ok, err = pcall(CreateCommandMenu)
+    if not ok then LOG('Microchip chat command menu: ' .. tostring(err)) end
+    return result
+end
