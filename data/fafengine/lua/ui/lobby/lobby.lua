@@ -554,7 +554,7 @@ end
 local chatCommandList = {
     {text = '/lag report', help = 'show each player\'s lag score'},
     {text = '/lag report all', help = 'send the lag report to the lobby'},
-    {text = '/whisper ', help = '<name> <message>  private message (also /w, /pm)'},
+    {text = '/whisper ', help = 'name message - private message (also /w, /pm)'},
 }
 
 local function CreateCommandMenu()
@@ -567,7 +567,7 @@ local function CreateCommandMenu()
     menu.Depth:Set(function() return edit.Depth() + 50 end)
     LayoutHelpers.Above(menu, edit, 4)
     LayoutHelpers.AtLeftIn(menu, edit)
-    menu.Width:Set(LayoutHelpers.ScaleNumber(420))
+    menu.Width:Set(LayoutHelpers.ScaleNumber(440))
     local rowHeight = LayoutHelpers.ScaleNumber(20)
     menu.Height:Set(rowHeight * table.getn(chatCommandList) + LayoutHelpers.ScaleNumber(6))
     local bg = Bitmap(menu)
@@ -583,10 +583,15 @@ local function CreateCommandMenu()
         row.Height:Set(rowHeight)
         row.Top:Set(function() return menu.Top() + LayoutHelpers.ScaleNumber(3) + rowHeight * (row.index - 1) end)
         row.index = i
-        local label = UIUtil.CreateText(row, command.text .. '   ' .. command.help, 13, 'Arial')
+        local label = UIUtil.CreateText(row, command.text, 13, 'Arial')
         label:DisableHitTest()
         LayoutHelpers.AtLeftIn(label, row, 6)
         LayoutHelpers.AtVerticalCenterIn(label, row)
+        local help = UIUtil.CreateText(row, command.help, 13, 'Arial')
+        help:SetColor('FF9AA3AA')
+        help:DisableHitTest()
+        LayoutHelpers.AtLeftIn(help, row, 130)
+        LayoutHelpers.AtVerticalCenterIn(help, row)
         row.command = command
         row.HandleEvent = function(self, event)
             if event.Type == 'MouseEnter' then self:SetSolidColor('60406080')
@@ -603,19 +608,22 @@ local function CreateCommandMenu()
         text = text or ''
         if string.sub(text, 1, 1) ~= '/' then menu:Hide(); return end
         local typed = string.lower(text)
-        local shown = 0
+        local matches = {}
         for _, row in ipairs(menu.rows) do
-            if string.sub(string.lower(row.command.text), 1, string.len(typed)) == typed and typed ~= row.command.text then
-                shown = shown + 1
-                row.index = shown
-                row:Show()
-            else
-                row:Hide()
+            local command = string.lower(row.command.text)
+            if string.sub(command, 1, string.len(typed)) == typed and typed ~= command then
+                table.insert(matches, row)
             end
         end
-        if shown == 0 then menu:Hide(); return end
-        menu.Height:Set(rowHeight * shown + LayoutHelpers.ScaleNumber(6))
+        if table.getn(matches) == 0 then menu:Hide(); return end
+        menu.Height:Set(rowHeight * table.getn(matches) + LayoutHelpers.ScaleNumber(6))
+        -- Show() re-shows every child, so hide the non-matching rows afterwards.
         menu:Show()
+        for _, row in ipairs(menu.rows) do row:Hide() end
+        for i, row in ipairs(matches) do
+            row.index = i
+            row:Show()
+        end
     end
     local originalChanged = edit.OnTextChanged
     edit.OnTextChanged = function(self, newText, oldText)
