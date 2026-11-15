@@ -59,6 +59,7 @@ class WaitScoreTests(unittest.TestCase):
         ])
         scores = self.parse(csv)
         self.assertAlmostEqual(scores["name:Cat"].percent, 360 * 100 / (5400 + 1800))  # 5.0 %
+        self.assertAlmostEqual(scores["name:Cat"].per10, 360 * 600 / (5400 + 1800))    # 30 s per 10 min
         self.assertAlmostEqual(scores["name:Dan"].percent, 36 * 100 / (2160 + 1800))   # 0.9 %: short game, little weight
 
     def test_games_under_five_minutes_are_skipped(self):
