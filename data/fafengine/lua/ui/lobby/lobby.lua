@@ -371,7 +371,7 @@ SetSlotInfo = function(...)
 end
 
 -- Not in retail: a "Lag" column at the right of the Nickname column with each human's
--- seconds per 10 min of game time spent waiting on them when they were the worst (waitscores.lua).
+-- share of game time spent waiting on them in games where they were the worst (waitscores.lua).
 local WaitScores = import('/fafengine/lua/ui/lobby/waitscores.lua')
 local function LagCell(slot)
     if not slot or not slot.name then return nil end
@@ -410,7 +410,7 @@ SetSlotInfo = function(slotNum, playerInfo)
         local text = ''
         if playerInfo and playerInfo.Human then
             local ok, score = pcall(WaitScores.Get, playerInfo.PlayerName, playerInfo.OwnerID)
-            text = ok and score and string.format('%.1fs', score.per10) or ''
+            text = ok and score and string.format('%.1f%%', score.percent) or ''
         end
         cell:SetText(text)
     end
@@ -537,8 +537,8 @@ local function LagReportLines()
     end)
     for _, row in ipairs(rows) do
         if row.score then
-            table.insert(lines, string.format('%s: %.1fs per 10 min, over %d min played (worst in %d of %d games)',
-                row.name, row.score.per10, math.floor(row.score.seconds / 60 + 0.5), row.score.worstGames, row.score.games))
+            table.insert(lines, string.format('%s: %.1f%% of %d min played (worst in %d of %d games)',
+                row.name, row.score.percent, math.floor(row.score.seconds / 60 + 0.5), row.score.worstGames, row.score.games))
         else
             table.insert(lines, row.name .. ': no lag recorded')
         end
@@ -556,10 +556,10 @@ commands.lag = function(params)
     local lines = LagReportLines()
     if table.getn(lines) == 0 then lines = {'No players in the lobby.'} end
     if words[2] == 'all' then
-        PublicChat('Lag report (seconds of wait caused per 10 min of game, when worst):')
+        PublicChat('Lag report (wait caused when worst, as a share of game time):')
         for _, line in ipairs(lines) do PublicChat(line) end
     else
-        AddChatText('Lag report (seconds of wait caused per 10 min of game, when worst):')
+        AddChatText('Lag report (wait caused when worst, as a share of game time):')
         for _, line in ipairs(lines) do AddChatText(line) end
     end
 end

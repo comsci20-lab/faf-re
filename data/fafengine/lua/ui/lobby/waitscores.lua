@@ -91,7 +91,6 @@ function Parse(text)
     end
     for _, entry in pairs(scores) do
         entry.percent = Percent(entry.total, entry.seconds)
-        entry.per10 = entry.percent * 6 -- seconds of wait per 10 minutes of game time
     end
     return scores
 end
@@ -112,7 +111,7 @@ function Get(name, id)
     local total = byId.total + byName.total
     return {total = total, seconds = seconds, games = byId.games + byName.games,
             worstGames = byId.worstGames + byName.worstGames,
-            percent = Percent(total, seconds), per10 = Percent(total, seconds) * 6}
+            percent = Percent(total, seconds)}
 end
 
 function Reset() cache = nil end
