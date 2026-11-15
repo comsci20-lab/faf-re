@@ -1306,17 +1306,22 @@ void CClientManagerImpl::RefreshNetworkWaitDiagnostics()
   auto& store = WaitDiagnostics(); std::scoped_lock guard(store.mutex);
   auto found = store.sessions.find(this); if (found == store.sessions.end()) return;
   auto& state = found->second;
-  const bool active = state.active && mWeAreReady && mEveryoneIsReady && mDispatchedBeat > 0 && mClients.size() <= 64;
+  // The first 100 beats (10 s at speed +0) are the load-in; nobody is blamed for them.
+  const bool active = state.active && mWeAreReady && mEveryoneIsReady && mDispatchedBeat > 100 && mClients.size() <= 64;
   std::uint64_t missing = 0;
   // Only the demanded beat, never speculative lead or normal schedule time.
   if (active && state.waiting && state.target > mAvailableBeat && state.target > mDispatchedBeat
       && mLocalClient && mLocalClient->mQueuedBeat >= static_cast<unsigned>(state.target)) {
+    std::uint64_t peers = 0;
     for (std::size_t i = 0; i < mClients.size(); ++i) {
       auto* peer = mClients[i];
-      if (peer && peer != mLocalClient && !peer->mEjected && !peer->mEjectPending
-          && (peer->mQueuedBeat < static_cast<unsigned>(state.target) || !peer->IsReadyForBeat(state.target)))
+      if (!peer || peer == mLocalClient || peer->mEjected || peer->mEjectPending) continue;
+      peers |= std::uint64_t{1} << i;
+      if (peer->mQueuedBeat < static_cast<unsigned>(state.target) || !peer->IsReadyForBeat(state.target))
         missing |= std::uint64_t{1} << i;
     }
+    // Waiting on every peer at once (two or more) is this client's own hold-up: nobody is blamed.
+    if (missing == peers && (peers & (peers - 1)) != 0) missing = 0;
   }
   const double now = WaitClock();
   state.history.Observe(now, active, missing);
@@ -1357,8 +1362,7 @@ std::vector<NetworkWaitMetrics> CClientManagerImpl::GetNetworkWaitMetrics()
       result[i] = found->second.history.Read(now, i);
       result[i].gameSeconds = game.activeSeconds;
       if (i < 64 && game.activeSeconds > 0) result[i].gameWaitPercent = game.peerSeconds[i] * 100.0 / game.activeSeconds;
-      if (i < 64 && result[i].gameWaitEpisodes > 0)
-        result[i].gameAverageWaitMs = game.peerSeconds[i] * 1000.0 / result[i].gameWaitEpisodes;
+      // gameAverageWaitMs stays the tracker's: the average length of a stall.
     }
   }
   return result;

@@ -1655,62 +1655,155 @@ namespace
     EXPECT_TRUE(tried > 0 && refused == tried);
   }
 
-  void TestNetworkWaitDemand()
-  {
-    auto* f = new ClientFixture;
-    auto* manager = f->manager;
-    manager->mWeAreReady = manager->mEveryoneIsReady = true;
-    manager->mDispatchedBeat = manager->mAvailableBeat = 1;
-    manager->mLocalClient->mQueuedBeat = 10;
-    f->remote->mQueuedBeat = 1;
-    manager->RecordNetworkWaitDemand(true, false, 2); // missing early data is not a stall
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    EXPECT_TRUE(manager->GetNetworkWaitMetrics()[1].waitingMs == 0);
-    manager->RecordNetworkWaitDemand(true, true, 2);
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    EXPECT_TRUE(manager->GetNetworkWaitMetrics()[1].waitingMs > 0);
-    EXPECT_TRUE(manager->GetNetworkWaitMetrics()[0].waitingMs == 0);
-    manager->mAvailableBeat = 2; // delivery ends the stall without a UI poll
-    manager->RefreshNetworkWaitDiagnostics();
-    const double completed = manager->GetNetworkWaitMetrics()[1].waitingMs;
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    EXPECT_TRUE(manager->GetNetworkWaitMetrics()[1].waitingMs == completed);
-    manager->RecordNetworkWaitDemand(false, false, 2);
-    const double active = manager->GetNetworkWaitMetrics()[1].observedSeconds;
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    EXPECT_TRUE(manager->GetNetworkWaitMetrics()[1].observedSeconds == active);
-  }
-
+  // Wait timing for the Connectivity screen (NetworkWaitTracker): a window of the last
+  // 30 s and whole-game totals, from wall-clock samples the test gives it.
   void TestNetworkWaitWindow()
   {
     moho::NetworkWaitTracker tracker;
     tracker.Observe(0, true, 0);
-    EXPECT_TRUE(tracker.Read(1, 1).waitingMs == 0);
-    tracker.Observe(1, true, 2);
-    tracker.Observe(1.2, true, 6); // overlapping wait; peer 1 stays blocked
+    EXPECT_EQ(tracker.Read(1, 1).waitingMs, 0.0);
+    tracker.Observe(1, true, 0b10);
+    tracker.Observe(1.2, true, 0b110); // peer 2 joins the stall; peer 1 is still waited on
     tracker.Observe(1.5, true, 0);
-    auto a = tracker.Read(2, 1), b = tracker.Read(2, 2);
-    EXPECT_TRUE(std::abs(a.waitingMs - 500) < 0.001);
-    EXPECT_TRUE(std::abs(a.longestMs - 500) < 0.001);
-    EXPECT_TRUE(std::abs(b.waitingMs - 300) < 0.001);
-    EXPECT_TRUE(a.gameWaitEpisodes == 1 && b.gameWaitEpisodes == 1);
-    tracker.Observe(1.5, true, 2); // zero-length episode must not count
+    const moho::NetworkWaitMetrics peer1 = tracker.Read(2, 1);
+    const moho::NetworkWaitMetrics peer2 = tracker.Read(2, 2);
+    EXPECT_NEAR(peer1.waitingMs, 500.0, 0.001);
+    EXPECT_NEAR(peer1.longestMs, 500.0, 0.001);
+    EXPECT_NEAR(peer2.waitingMs, 300.0, 0.001);
+    EXPECT_EQ(peer1.gameWaitEpisodes, 1u); // one stall each, however the other came and went
+    EXPECT_EQ(peer2.gameWaitEpisodes, 1u);
+
+    tracker.Observe(1.5, true, 0b10); // a zero-length stall is not a stall
     tracker.Observe(1.5, true, 0);
-    tracker.Observe(2, false, 0); // pause excluded from denominator
+    tracker.Observe(2, false, 0); // paused time counts for nobody
     tracker.Observe(12, true, 0);
-    EXPECT_TRUE(std::abs(tracker.Read(13, 1).observedSeconds - 3) < 0.001);
-    EXPECT_TRUE(tracker.Read(43, 1).waitingMs == 0);
-    tracker.Observe(43, true, 2);
-    EXPECT_TRUE(std::abs(tracker.Read(74, 1).longestMs - 30000) < 0.001);
-    tracker.Observe(74, true, 2);
-    EXPECT_TRUE(tracker.Read(74, 1).gameWaitEpisodes == 2); // survives rolling history expiry
-    tracker.Observe(74, false, 0);
-    tracker.Observe(80, true, 2);
+    EXPECT_NEAR(tracker.Read(13, 1).observedSeconds, 3.0, 0.001);
+    EXPECT_EQ(tracker.Read(43, 1).waitingMs, 0.0); // older than the 30 s window
+
+    tracker.Observe(43, true, 0b10);
+    EXPECT_NEAR(tracker.Read(74, 1).longestMs, 30000.0, 0.001);
+    tracker.Observe(74, true, 0b10);
+    EXPECT_EQ(tracker.Read(74, 1).gameWaitEpisodes, 1u); // still going: counted when it ends
+    tracker.Observe(74, false, 0);                       // a pause ends it
+    EXPECT_EQ(tracker.Read(74, 1).gameWaitEpisodes, 2u); // kept after the window drops it
+    tracker.Observe(80, true, 0b10);
     tracker.Observe(81, true, 0);
-    EXPECT_TRUE(tracker.Read(81, 1).gameWaitEpisodes == 3);
-    tracker.Observe(1, true, 0); // new clock/session cannot inherit stale waits
-    EXPECT_TRUE(tracker.Read(2, 1).waitingMs == 0);
-    EXPECT_TRUE(tracker.Read(2, 1).gameWaitEpisodes == 0);
+    EXPECT_EQ(tracker.Read(81, 1).gameWaitEpisodes, 3u);
+
+    tracker.Observe(1, true, 0); // the clock went back: a new session starts empty
+    EXPECT_EQ(tracker.Read(2, 1).waitingMs, 0.0);
+    EXPECT_EQ(tracker.Read(2, 1).gameWaitEpisodes, 0u);
+    EXPECT_EQ(tracker.Read(2, 1).gameSeconds, 0.0);
+  }
+
+  void TestNetworkWaitGameTotals()
+  {
+    moho::NetworkWaitTracker tracker;
+    tracker.Observe(0, true, 0);
+    tracker.Observe(4, true, 0b10); // 4 s running, nobody waited on
+    tracker.Observe(5, true, 0);    // 1 s waiting on peer 1
+    tracker.Observe(10, false, 0);  // 5 s running, then paused
+    tracker.Observe(100, true, 0);  // the pause is not counted
+    const moho::NetworkWaitMetrics peer1 = tracker.Read(100, 1);
+    EXPECT_NEAR(peer1.gameSeconds, 10.0, 0.001);
+    EXPECT_NEAR(peer1.gameWaitPercent, 10.0, 0.001);
+    EXPECT_NEAR(peer1.gameAverageWaitMs, 1000.0, 0.001);
+    EXPECT_EQ(tracker.Read(100, 2).gameWaitPercent, 0.0);
+
+    // The average is over every stall: 0.2 s and 0.6 s average 400 ms.
+    moho::NetworkWaitTracker stalls;
+    stalls.Observe(0, true, 0b10);
+    stalls.Observe(0.2, true, 0);
+    stalls.Observe(1, true, 0b10);
+    stalls.Observe(1.6, true, 0);
+    EXPECT_EQ(stalls.Read(2, 1).gameWaitEpisodes, 2u);
+    EXPECT_NEAR(stalls.Read(2, 1).gameAverageWaitMs, 400.0, 0.001);
+
+    moho::NetworkWaitTracker hitch;
+    hitch.Observe(0, true, 0b10);
+    hitch.Observe(60, true, 0); // one 60 s gap between samples adds at most 5 s
+    EXPECT_NEAR(hitch.Read(60, 1).gameSeconds, moho::NetworkWaitTracker::kMaxSampleGapSeconds, 0.001);
+  }
+
+  // The client manager counts a wait only while the session asks for a beat a peer
+  // has not sent, after the load-in, and stops as soon as the beat arrives.
+  void TestNetworkWaitDemand()
+  {
+    auto* const fixture = new ClientFixture; // left alive, as the fixture's manager is
+    CClientManagerImpl* const manager = fixture->manager;
+    manager->mWeAreReady = true;
+    manager->mEveryoneIsReady = true;
+    manager->mLocalClient->mQueuedBeat = 200;
+    fixture->remote->mQueuedBeat = 1;
+
+    // Load-in: the first 100 beats blame nobody.
+    manager->mDispatchedBeat = 50;
+    manager->mAvailableBeat = 50;
+    manager->RecordNetworkWaitDemand(true, true, 51);
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    manager->RefreshNetworkWaitDiagnostics();
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[1].waitingMs, 0.0);
+
+    manager->mDispatchedBeat = 101;
+    manager->mAvailableBeat = 101;
+    manager->RecordNetworkWaitDemand(true, false, 102); // beat 102 not due yet: not a stall
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[1].waitingMs, 0.0);
+
+    manager->RecordNetworkWaitDemand(true, true, 102);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    EXPECT_GT(manager->GetNetworkWaitMetrics()[1].waitingMs, 0.0);
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[0].waitingMs, 0.0); // never the local client
+
+    manager->mAvailableBeat = 102; // the beat arrived: the next sample ends the wait
+    manager->RefreshNetworkWaitDiagnostics();
+    const double ended = manager->GetNetworkWaitMetrics()[1].waitingMs;
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[1].gameWaitEpisodes, 1u);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[1].waitingMs, ended);
+
+    manager->RecordNetworkWaitDemand(false, false, 102); // paused: time stops counting
+    const double observed = manager->GetNetworkWaitMetrics()[1].observedSeconds;
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[1].observedSeconds, observed);
+  }
+
+  // With two or more peers, a stall on all of them at once is this client's own
+  // hold-up and blames nobody; a stall on one of them blames that one.
+  void TestNetworkWaitSharedStall()
+  {
+    // Three clients: this one and two peers. Left alive, as ClientFixture's manager is.
+    auto* const ui = new QuietUi;
+    auto* const firstConnection = new FakeConnection{0x7F000001u, 6001};
+    auto* const otherConnection = new FakeConnection{0x7F000002u, 6002};
+    CClientManagerImpl* const manager = CLIENT_CreateClientManager(3, nullptr, 0, true);
+    manager->mInterface = ui;
+    manager->CreateLocalClient("local", 0, 1, 0);
+    auto* const first = static_cast<CNetClient*>(manager->CreateNetClient("remote", 1, 2, 1, firstConnection));
+    auto* const other = static_cast<CNetClient*>(manager->CreateNetClient("other", 2, 3, 2, otherConnection));
+    manager->mWeAreReady = true;
+    manager->mEveryoneIsReady = true;
+    manager->mDispatchedBeat = 101;
+    manager->mAvailableBeat = 101;
+    manager->mLocalClient->mQueuedBeat = 200;
+
+    first->mQueuedBeat = 1; // both peers are missing beat 102
+    other->mQueuedBeat = 1;
+    manager->RecordNetworkWaitDemand(true, true, 102);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    manager->RefreshNetworkWaitDiagnostics();
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[1].waitingMs, 0.0);
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[2].waitingMs, 0.0);
+
+    other->mQueuedBeat = 200; // only the first peer is missing it now
+    for (int32_t& ack : other->mLatestAckReceived) {
+      ack = 200; // and the second has acknowledged everyone up to it
+    }
+    manager->RefreshNetworkWaitDiagnostics();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    manager->RefreshNetworkWaitDiagnostics();
+    EXPECT_GT(manager->GetNetworkWaitMetrics()[1].waitingMs, 0.0);
+    EXPECT_EQ(manager->GetNetworkWaitMetrics()[2].waitingMs, 0.0);
   }
 
 } // namespace
@@ -1968,5 +2061,7 @@ TEST(
   TestStreamCheckStopsOnDifferentOrders();
 }
 
-TEST(Microchip_NetworkWait, Demand) { TestNetworkWaitDemand(); }
 TEST(Microchip_NetworkWait, Window) { TestNetworkWaitWindow(); }
+TEST(Microchip_NetworkWait, GameTotals) { TestNetworkWaitGameTotals(); }
+TEST(Microchip_NetworkWait, Demand) { TestNetworkWaitDemand(); }
+TEST(Microchip_NetworkWait, SharedStall) { TestNetworkWaitSharedStall(); }
