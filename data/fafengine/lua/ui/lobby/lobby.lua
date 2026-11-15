@@ -391,6 +391,8 @@ local function LagHeader()
     local first = GUI.slots and GUI.slots[1]
     if not first or not first.name or not GUI.labelGroup or GUI.microchipLagHeaderFor == GUI.labelGroup then return end
     GUI.microchipLagHeaderFor = GUI.labelGroup
+    -- A new lobby UI: reload the history so games played since the last lobby count.
+    WaitScores.Reset()
     -- Every row, open ones included, gets the narrower nickname box so the arrows line up.
     for _, slot in pairs(GUI.slots) do LagCell(slot) end
     local header = UIUtil.CreateText(GUI.labelGroup, 'Lag', 14, UIUtil.titleFont)
@@ -480,7 +482,8 @@ function CreateUI(maxPlayers)
         local launch = GUI.launchGameButton
         if launch then
             -- FAF anchors the bottom edge (Top derives from Height), so move Bottom to keep full height.
-            launch.Bottom:Set(function() return panel.Bottom() + LayoutHelpers.ScaleNumber(4) + launch.Height() end)        end
+            launch.Bottom:Set(function() return panel.Bottom() + LayoutHelpers.ScaleNumber(4) + launch.Height() end)
+        end
     end
     if connection then ConnectionTest.Show(parent, buttonAnchor) end
     if singlePlayer then return end
@@ -505,8 +508,8 @@ end
 
 end
 
--- Wrapped in do/end (and imports kept local to functions): FAF's lobby chunk is close to
--- Lua's 200-locals limit, and later top-level locals stopped resolving.
+-- Its own do/end block: locals of the block above (lines from `do` after the WP2.14 hook, such as
+-- WaitScores and UIUtil) are not in scope here, so this block imports what it needs.
 do
 -- Not in retail: typing "/" in lobby chat lists the chat commands; click one to fill it in.
 -- "/lag report" prints every human's lag score (waitscores.lua) to your own chat;

@@ -82,11 +82,6 @@ function Parse(text)
     return scores
 end
 
-function Format(entry)
-    if not entry then return nil end
-    return string.format('lag %.1fs', entry.average)
-end
-
 local cache
 -- Combines games recorded under the player's FAF ID with older games recorded only by name.
 function Get(name, id)
