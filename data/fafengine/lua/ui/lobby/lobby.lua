@@ -407,7 +407,7 @@ SetSlotInfo = function(slotNum, playerInfo)
     if cell then
         local text = ''
         if playerInfo and playerInfo.Human then
-            local ok, score = pcall(WaitScores.Get, playerInfo.PlayerName)
+            local ok, score = pcall(WaitScores.Get, playerInfo.PlayerName, playerInfo.OwnerID)
             text = ok and score and string.format('%.1fs', score.average) or ''
         end
         cell:SetText(text)
@@ -510,9 +510,12 @@ end
 -- "/lag report all" sends it to the lobby.
 local function LagReportLines()
     local lines, rows = {}, {}
-    for slot, player in pairs(gameInfo and gameInfo.PlayerOptions or {}) do
+    WaitScores.Reset() -- pick up games recorded since the lobby opened
+    -- PlayerOptions is a watched array, so pairs() sees nothing; index every slot.
+    for slot = 1, LobbyComm.maxPlayerSlots do
+        local player = gameInfo and gameInfo.PlayerOptions[slot]
         if player and player.Human and player.PlayerName then
-            local ok, score = pcall(WaitScores.Get, player.PlayerName)
+            local ok, score = pcall(WaitScores.Get, player.PlayerName, player.OwnerID)
             score = ok and score or nil
             table.insert(rows, {name = player.PlayerName, score = score})
         end

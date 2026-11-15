@@ -34,7 +34,8 @@ local function ParseList(text)
     return out
 end
 
--- Returns {[name] = {average = seconds, worstGames = n, games = n}}.
+-- Returns {[key] = {average = seconds, worstGames = n, games = n}}, keyed by 'id:<FAF id>'
+-- when the row recorded the player's ID, otherwise by 'name:<name>' (rows before IDs).
 function Parse(text)
     local scores = {}
     if type(text) ~= 'string' then return scores end
@@ -50,19 +51,27 @@ function Parse(text)
                 local minutes = tonumber(fields[columns.minutes_played or 0]) or 0
                 local players = ParseList(fields[columns.all_players_wait_percent or 0])
                 local seconds = ParseList(fields[columns.all_players_total_wait_seconds or 0])
+                local ids = ParseList(fields[columns.player_ids or 0])
                 local worst = fields[columns.worst_player or 0]
+                local function Key(name)
+                    local id = ids[name]
+                    if id and id > 0 then return 'id:' .. string.format('%d', id) end
+                    return 'name:' .. name
+                end
                 for name in pairs(players) do
-                    local entry = scores[name] or {total = 0, worstGames = 0, games = 0}
-                    scores[name] = entry
+                    local key = Key(name)
+                    local entry = scores[key] or {total = 0, worstGames = 0, games = 0}
+                    scores[key] = entry
                     entry.games = entry.games + 1
                 end
-                if worst and worst ~= '' and scores[worst] then
+                if worst and worst ~= '' and scores[Key(worst)] then
                     local wait = seconds[worst]
                     if not wait then
                         wait = minutes * 60 * (tonumber(fields[columns.worst_wait_percent or 0]) or 0) / 100
                     end
-                    scores[worst].total = scores[worst].total + wait
-                    scores[worst].worstGames = scores[worst].worstGames + 1
+                    local entry = scores[Key(worst)]
+                    entry.total = entry.total + wait
+                    entry.worstGames = entry.worstGames + 1
                 end
             end
         end
@@ -79,13 +88,21 @@ function Format(entry)
 end
 
 local cache
-function Get(name)
+-- Combines games recorded under the player's FAF ID with older games recorded only by name.
+function Get(name, id)
     if not cache then
         -- Only engines with the wait log have this function.
         local read = rawget(_G, 'MicrochipReadWaitHistory')
         cache = Parse(read and read() or nil)
     end
-    return cache[name]
+    local byId = id and cache['id:' .. tostring(id)]
+    local byName = name and cache['name:' .. name]
+    if not byId then return byName end
+    if not byName then return byId end
+    local games = byId.games + byName.games
+    local total = byId.total + byName.total
+    return {total = total, games = games, worstGames = byId.worstGames + byName.worstGames,
+            average = games > 0 and total / games or 0}
 end
 
 function Reset() cache = nil end

@@ -26,11 +26,25 @@ class WaitScoreTests(unittest.TestCase):
         ])
         scores = self.parse(csv)
         # Ann: worst once (30 s) over 3 games; Bob: 12 s + 10 min * 3 % = 18 s, over 3 games.
-        self.assertAlmostEqual(scores["Ann"].average, 10.0)
-        self.assertEqual(scores["Ann"].worstGames, 1)
-        self.assertAlmostEqual(scores["Bob"].average, 10.0)
-        self.assertEqual(scores["Bob"].worstGames, 2)
-        self.assertEqual(scores["Bob"].games, 3)
+        self.assertAlmostEqual(scores["name:Ann"].average, 10.0)
+        self.assertEqual(scores["name:Ann"].worstGames, 1)
+        self.assertAlmostEqual(scores["name:Bob"].average, 10.0)
+        self.assertEqual(scores["name:Bob"].worstGames, 2)
+        self.assertEqual(scores["name:Bob"].games, 3)
+
+    def test_scores_follow_the_faf_id_across_a_name_change(self):
+        csv = "\n".join([
+            HEADER + ",player_ids",
+            '"g1","a","b",ended,10.0,"Ann",5.00,"Ann 5.00%; Bob 1.00%","Ann 30.0; Bob 6.0",,,"Ann 11; Bob 22"',
+            '"g2","a","b",ended,10.0,"Anna",4.00,"Anna 4.00%; Bob 1.00%","Anna 24.0; Bob 6.0",,,"Anna 11; Bob 22"',
+        ])
+        self.lua.globals().MicrochipReadWaitHistory = lambda: csv
+        get = self.lua.globals().Get
+        # Same ID 11 under two names: 54 s over 2 games.
+        self.assertAlmostEqual(get("Anna", "11").average, 27.0)
+        self.assertEqual(get("Anna", "11").worstGames, 2)
+        self.assertIsNone(get("Bob", None))
+        self.assertEqual(get("Bob", "22").worstGames, 0)
 
     def test_games_without_a_worst_player_count_for_nobody(self):
         scores = self.parse(HEADER + '\n"g1","a","b",ended,24.0,,,"",,,\n')

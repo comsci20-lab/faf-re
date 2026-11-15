@@ -43,7 +43,7 @@ namespace
     std::string id, started;
     double lastTime = 0, lastWrite = 0, activeSeconds = 0;
     bool lastActive = false; std::uint64_t lastMissing = 0;
-    double peerSeconds[64]{}; std::string names[64];
+    double peerSeconds[64]{}; std::string names[64]; std::int32_t ownerIds[64]{};
   };
   struct WaitState { NetworkWaitTracker history; bool active = false; bool waiting = false; int target = 0; GameWaitTotals game; };
   struct WaitStore { std::mutex mutex; std::unordered_map<const CClientManagerImpl*, WaitState> sessions; };
@@ -73,16 +73,21 @@ namespace
     std::string dir = std::string(local) + "\\Microchip"; CreateDirectoryA(dir.c_str(), nullptr);
     dir += "\\faf-lag"; CreateDirectoryA(dir.c_str(), nullptr);
     const std::string path = dir + "\\game-waits.csv", temp = path + ".tmp";
-    const char* header = "game_id,started,last_updated,status,minutes_played,worst_player,worst_wait_percent,all_players_wait_percent,all_players_total_wait_seconds,all_players_wait_episodes,all_players_average_wait_ms";
-    bool legacy = false;
+    const char* header = "game_id,started,last_updated,status,minutes_played,worst_player,worst_wait_percent,all_players_wait_percent,all_players_total_wait_seconds,all_players_wait_episodes,all_players_average_wait_ms,player_ids";
+    bool legacy = false, noIds = false;
     std::vector<std::string> lines;
     if (FILE* in = std::fopen(path.c_str(), "rb")) {
       std::string line; int c;
       while ((c = std::fgetc(in)) != EOF || !line.empty()) {
         if (c == '\n' || c == EOF) {
           if (!line.empty() && line.back() == '\r') line.pop_back();
-          if (line.rfind("game_id,", 0) == 0) legacy = line.find("all_players_total_wait_seconds") == std::string::npos;
+          if (line.rfind("game_id,", 0) == 0) {
+            legacy = line.find("all_players_total_wait_seconds") == std::string::npos;
+            noIds = line.find("player_ids") == std::string::npos;
+          }
           if (legacy && !line.empty() && line.rfind("game_id,", 0) != 0) line += ",,,";
+          // Rows from before player_ids keep an empty player_ids field.
+          if (noIds && !line.empty() && line.rfind("game_id,", 0) != 0) line += ",";
           if (!line.empty() && line.rfind("game_id,", 0) != 0 && line.rfind(CsvField(game.id) + ",", 0) != 0) lines.push_back(line);
           line.clear(); if (c == EOF) break;
         } else line += static_cast<char>(c);
@@ -103,7 +108,7 @@ namespace
       + (ended ? "ended" : "in progress") + "," + number + ",";
     if (!peers.empty()) { std::snprintf(number, sizeof(number), "%.2f", peers.front().first); row += CsvField(peers.front().second) + "," + number + ","; }
     else row += ",,";
-    std::string totals, episodes, averages;
+    std::string totals, episodes, averages, ids;
     for (unsigned i = 0; i < 64; ++i) {
       if (game.names[i].empty()) continue;
       const auto count = history.Read(game.lastTime, i).gameWaitEpisodes;
@@ -113,8 +118,10 @@ namespace
       episodes += prefix + std::to_string(count);
       std::snprintf(number, sizeof(number), "%.6f", count ? game.peerSeconds[i] * 1000.0 / count : 0.0);
       averages += prefix + number;
+      // FAF account ID (OwnerID in the lobby): names can change, the ID does not.
+      ids += prefix + std::to_string(game.ownerIds[i]);
     }
-    lines.push_back(row + CsvField(all) + "," + CsvField(totals) + "," + CsvField(episodes) + "," + CsvField(averages));
+    lines.push_back(row + CsvField(all) + "," + CsvField(totals) + "," + CsvField(episodes) + "," + CsvField(averages) + "," + CsvField(ids));
     FILE* out = std::fopen(temp.c_str(), "wb"); if (!out) return;
     std::fprintf(out, "%s\r\n", header);
     for (const auto& line : lines) std::fprintf(out, "%s\r\n", line.c_str());
@@ -1329,7 +1336,10 @@ void CClientManagerImpl::RefreshNetworkWaitDiagnostics()
     }
     for (std::size_t i = 0; i < mClients.size() && i < 64; ++i)
       if (mClients[i] && mClients[i] != mLocalClient && game.names[i].empty())
+      {
         game.names[i] = mClients[i]->GetNickname().c_str();
+        game.ownerIds[i] = mClients[i]->GetOwnerId();
+      }
     if (now - game.lastWrite >= 60.0) { game.lastWrite = now; WriteGameWaitRow(game, state.history, false); }
   }
 }
