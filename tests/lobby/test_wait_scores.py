@@ -25,10 +25,10 @@ class WaitScoreTests(unittest.TestCase):
             '"g3","a","b",ended,10.0,"Bob",3.00,"Ann 0.50%; Bob 3.00%","",,',
         ])
         scores = self.parse(csv)
-        # Ann: worst once (30 s) over 3 games; Bob: 12 s + 10 min * 3 % = 18 s, over 3 games.
-        self.assertAlmostEqual(scores["name:Ann"].average, 10.0)
+        # Ann: worst once (30 s) in 30 min played; Bob: 12 s + 10 min * 3 % = 18 s in 30 min.
+        self.assertAlmostEqual(scores["name:Ann"].percent, 30 * 100 / (1800 + 1800))
         self.assertEqual(scores["name:Ann"].worstGames, 1)
-        self.assertAlmostEqual(scores["name:Bob"].average, 10.0)
+        self.assertAlmostEqual(scores["name:Bob"].percent, 30 * 100 / (1800 + 1800))
         self.assertEqual(scores["name:Bob"].worstGames, 2)
         self.assertEqual(scores["name:Bob"].games, 3)
 
@@ -40,11 +40,30 @@ class WaitScoreTests(unittest.TestCase):
         ])
         self.lua.globals().MicrochipReadWaitHistory = lambda: csv
         get = self.lua.globals().Get
-        # Same ID 11 under two names: 54 s over 2 games.
-        self.assertAlmostEqual(get("Anna", "11").average, 27.0)
+        # Same ID 11 under two names: 54 s in 20 min.
+        self.assertAlmostEqual(get("Anna", "11").percent, 54 * 100 / (1200 + 1800))
         self.assertEqual(get("Anna", "11").worstGames, 2)
         self.assertIsNone(get("Bob", None))
         self.assertEqual(get("Bob", "22").worstGames, 0)
+
+    def test_game_length_does_not_distort_the_score(self):
+        # Cat holds up one 60-min game for 6 min (10 %); Dan one 6-min game for 36 s (10 %).
+        # Both also played a clean 30-min game. Counted per game, their waits would weigh the same;
+        # by time, Cat's long game weighs ten times as much as Dan's short one.
+        csv = "\n".join([
+            HEADER,
+            '"g1","a","b",ended,60.0,"Cat",10.00,"Cat 10.00%; Eve 0.10%","Cat 360.0; Eve 3.6",,',
+            '"g2","a","b",ended,30.0,"Eve",1.00,"Cat 0.00%; Eve 1.00%","Cat 0; Eve 18.0",,',
+            '"g3","a","b",ended,6.0,"Dan",10.00,"Dan 10.00%; Eve 0.10%","Dan 36.0; Eve 0.36",,',
+            '"g4","a","b",ended,30.0,"Eve",1.00,"Dan 0.00%; Eve 1.00%","Dan 0; Eve 18.0",,',
+        ])
+        scores = self.parse(csv)
+        self.assertAlmostEqual(scores["name:Cat"].percent, 360 * 100 / (5400 + 1800))  # 5.0 %
+        self.assertAlmostEqual(scores["name:Dan"].percent, 36 * 100 / (2160 + 1800))   # 0.9 %: short game, little weight
+
+    def test_games_under_five_minutes_are_skipped(self):
+        csv = HEADER + '\n"g1","a","b",ended,2.0,"Fay",30.00,"Fay 30.00%","Fay 36.0",,\n'
+        self.assertEqual(len(list(self.parse(csv).items())), 0)
 
     def test_games_without_a_worst_player_count_for_nobody(self):
         scores = self.parse(HEADER + '\n"g1","a","b",ended,24.0,,,"",,,\n')

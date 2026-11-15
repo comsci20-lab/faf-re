@@ -371,7 +371,7 @@ SetSlotInfo = function(...)
 end
 
 -- Not in retail: a "Lag" column at the right of the Nickname column with each human's
--- average wait from past games where they were the worst (waitscores.lua). Empty when unknown.
+-- share of game time spent waiting on them in games where they were the worst (waitscores.lua).
 local WaitScores = import('/fafengine/lua/ui/lobby/waitscores.lua')
 local function LagCell(slot)
     if not slot or not slot.name then return nil end
@@ -410,7 +410,7 @@ SetSlotInfo = function(slotNum, playerInfo)
         local text = ''
         if playerInfo and playerInfo.Human then
             local ok, score = pcall(WaitScores.Get, playerInfo.PlayerName, playerInfo.OwnerID)
-            text = ok and score and string.format('%.1fs', score.average) or ''
+            text = ok and score and string.format('%.1f%%', score.percent) or ''
         end
         cell:SetText(text)
     end
@@ -531,14 +531,14 @@ local function LagReportLines()
         end
     end
     table.sort(rows, function(a, b)
-        local av, bv = a.score and a.score.average or -1, b.score and b.score.average or -1
+        local av, bv = a.score and a.score.percent or -1, b.score and b.score.percent or -1
         if av ~= bv then return av > bv end
         return a.name < b.name
     end)
     for _, row in ipairs(rows) do
         if row.score then
-            table.insert(lines, string.format('%s: %.1fs (worst in %d of %d games)',
-                row.name, row.score.average, row.score.worstGames, row.score.games))
+            table.insert(lines, string.format('%s: %.1f%% of %d min played (worst in %d of %d games)',
+                row.name, row.score.percent, math.floor(row.score.seconds / 60 + 0.5), row.score.worstGames, row.score.games))
         else
             table.insert(lines, row.name .. ': no lag recorded')
         end
@@ -556,10 +556,10 @@ commands.lag = function(params)
     local lines = LagReportLines()
     if table.getn(lines) == 0 then lines = {'No players in the lobby.'} end
     if words[2] == 'all' then
-        PublicChat('Lag report (avg wait in games where the player was worst):')
+        PublicChat('Lag report (wait caused when worst, as a share of game time):')
         for _, line in ipairs(lines) do PublicChat(line) end
     else
-        AddChatText('Lag report (avg wait in games where the player was worst):')
+        AddChatText('Lag report (wait caused when worst, as a share of game time):')
         for _, line in ipairs(lines) do AddChatText(line) end
     end
 end
