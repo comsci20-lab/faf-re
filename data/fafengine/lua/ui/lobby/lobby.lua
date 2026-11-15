@@ -505,10 +505,14 @@ end
 
 end
 
+-- Wrapped in do/end (and imports kept local to functions): FAF's lobby chunk is close to
+-- Lua's 200-locals limit, and later top-level locals stopped resolving.
+do
 -- Not in retail: typing "/" in lobby chat lists the chat commands; click one to fill it in.
 -- "/lag report" prints every human's lag score (waitscores.lua) to your own chat;
 -- "/lag report all" sends it to the lobby.
 local function LagReportLines()
+    local WaitScores = import('/fafengine/lua/ui/lobby/waitscores.lua')
     local lines, rows = {}, {}
     WaitScores.Reset() -- pick up games recorded since the lobby opened
     -- PlayerOptions is a watched array, so pairs() sees nothing; index every slot.
@@ -642,9 +646,10 @@ local function CreateCommandMenu()
 end
 
 local originalCommandMenuCreateUI = CreateUI
-function CreateUI(maxPlayers)
+CreateUI = function(maxPlayers)
     local result = originalCommandMenuCreateUI(maxPlayers)
     local ok, err = pcall(CreateCommandMenu)
     if not ok then LOG('Microchip chat command menu: ' .. tostring(err)) end
     return result
+end
 end
