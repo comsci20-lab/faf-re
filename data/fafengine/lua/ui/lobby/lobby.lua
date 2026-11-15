@@ -500,6 +500,9 @@ function CreateUI(maxPlayers)
                 if GUI == screen and lobbyComm then
                     return gameInfo.PlayerOptions
                 end
+            end, function()
+                -- The mod alerts when everyone except you is Ready.
+                return localPlayerID
             end)
             break
         end
